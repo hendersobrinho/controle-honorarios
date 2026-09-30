@@ -1,0 +1,44 @@
+[project]
+name = "honorarios"
+version = "0.1.0"
+description = "Controle de honorários, juros de atraso e cobrança por WhatsApp"
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6>=6.7",
+    "SQLAlchemy>=2.0",
+    "alembic>=1.13",
+    "openpyxl>=3.1",
+    "reportlab>=4.1",
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+honorarios = "honorarios.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["testes"]
+addopts = "-q"
+qt_api = "pyside6"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# migrations são geradas pelo Alembic: não vale reformatar à mão
+extend-exclude = ["src/honorarios/infra/migracoes/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

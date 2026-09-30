@@ -1,0 +1,454 @@
+"""Honorários: criação, edição, cancelamento e as consultas das telas."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
+from datetime import date
+from decimal import Decimal
+
+from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import Session
+
+from ..dominio.enums import (
+    ExigeCompetencia,
+    MeioCobranca,
+    ResultadoCobranca,
+    SituacaoEnvio,
+    StatusPagamento,
+    TipoPessoa,
+)
+from ..dominio.valores import ZERO, Competencia, agora_utc, dinheiro, hoje
+from ..infra.modelos import (
+    Cliente,
+    Cobranca,
+    GrupoHonorario,
+    Honorario,
+    LogAlteracao,
+    TipoHonorario,
+)
+from . import calculo
+from .erros import ErroDeValidacao, RegistroDuplicado
+
+
+def chave_competencia(competencia: Competencia) -> str:
+    if competencia.ano and competencia.mes:
+        return f"{competencia.ano:04d}-{competencia.mes:02d}"
+    if competencia.ano:
+        return f"{competencia.ano:04d}"
+    return ""
+
+
+@dataclass
+class DadosHonorario:
+    cliente_id: int
+    tipo_id: int
+    valor: Decimal
+    vencimento: date
+    competencia: Competencia = field(default_factory=Competencia)
+    descricao: str = ""
+    meio: MeioCobranca = MeioCobranca.BOLETO
+    forma_envio_id: int | None = None
+    observacoes: str = ""
+    numero_boleto: str = ""
+    contrato_id: int | None = None
+    situacao_envio: SituacaoEnvio = SituacaoEnvio.NAO_ENVIADO
+    enviado_em: date | None = None
+
+
+@dataclass
+class LinhaHonorario:
+    """Honorário pronto para a tabela, com cálculo e histórico de cobrança."""
+
+    honorario: Honorario
+    atualizacao: calculo.Atualizacao
+    cobrancas: int = 0
+    ultima_cobranca: date | None = None
+    promessa: date | None = None
+
+    @property
+    def cliente(self) -> Cliente:
+        return self.honorario.cliente
+
+    @property
+    def grupo(self) -> GrupoHonorario:
+        return self.honorario.tipo.grupo
+
+    @property
+    def nunca_cobrado(self) -> bool:
+        return self.cobrancas == 0
+
+    @property
+    def promessa_vencida(self) -> bool:
+        return self.promessa is not None and self.promessa < hoje()
+
+    @property
+    def cobranca_suspensa(self) -> bool:
+        return self.cliente.suspensao_ativa()
+
+
+@dataclass
+class Filtro:
+    termo: str = ""
+    cliente_id: int | None = None
+    tipo_pessoa: TipoPessoa | None = None
+    grupo_id: int | None = None
+    tipo_id: int | None = None
+    status: StatusPagamento | None = StatusPagamento.EM_ABERTO
+    vencimento_de: date | None = None
+    vencimento_ate: date | None = None
+    pago_de: date | None = None
+    pago_ate: date | None = None
+    competencia_ano: int | None = None
+    atraso_minimo: int | None = None
+    atraso_maximo: int | None = None
+    nunca_cobrado: bool = False
+    sem_cobranca_dias: int | None = None
+    somente_promessa_vencida: bool = False
+    # cliente com cobrança suspensa continua aparecendo na cobrança geral (a
+    # dívida existe), mas sai das filas de trabalho
+    incluir_cobranca_suspensa: bool = True
+    incluir_vinculados_de: int | None = None
+    data_referencia: date | None = None
+
+
+def _validar_competencia(tipo: TipoHonorario, competencia: Competencia, descricao: str) -> None:
+    if tipo.exige_competencia is ExigeCompetencia.MES and not (
+        competencia.ano and competencia.mes
+    ):
+        raise ErroDeValidacao(
+            f"O tipo {tipo.nome} exige competência no formato mm/aaaa.", "competencia"
+        )
+    if tipo.exige_competencia is ExigeCompetencia.ANO and not competencia.ano:
+        raise ErroDeValidacao(f"O tipo {tipo.nome} exige o ano de competência.", "competencia")
+    if tipo.exige_competencia is ExigeCompetencia.NENHUMA and not (descricao or "").strip():
+        raise ErroDeValidacao(
+            f"O tipo {tipo.nome} não usa competência: descreva o serviço.", "descricao"
+        )
+
+
+def existente(
+    sessao: Session, cliente_id: int, tipo_id: int, competencia: Competencia
+) -> Honorario | None:
+    chave = chave_competencia(competencia)
+    if not chave:
+        return None
+    return sessao.scalar(
+        select(Honorario).where(
+            Honorario.cliente_id == cliente_id,
+            Honorario.tipo_id == tipo_id,
+            Honorario.competencia_chave == chave,
+            Honorario.status != StatusPagamento.CANCELADO,
+        )
+    )
+
+
+def criar(sessao: Session, dados: DadosHonorario) -> Honorario:
+    cliente = sessao.get(Cliente, dados.cliente_id)
+    if cliente is None:
+        raise ErroDeValidacao("Selecione o cliente.", "cliente")
+    tipo = sessao.get(TipoHonorario, dados.tipo_id)
+    if tipo is None:
+        raise ErroDeValidacao("Selecione o tipo de honorário.", "tipo")
+    valor = dinheiro(dados.valor)
+    if valor <= 0:
+        raise ErroDeValidacao("O valor do honorário deve ser maior que zero.", "valor")
+    if dados.vencimento is None:
+        raise ErroDeValidacao("Informe o vencimento.", "vencimento")
+    _validar_competencia(tipo, dados.competencia, dados.descricao)
+
+    duplicado = existente(sessao, dados.cliente_id, dados.tipo_id, dados.competencia)
+    if duplicado is not None:
+        raise RegistroDuplicado(
+            f"{cliente.nome} já tem {tipo.nome} da competência "
+            f"{dados.competencia.rotulo()} lançado (vencimento "
+            f"{duplicado.vencimento:%d/%m/%Y})."
+        )
+
+    honorario = Honorario(
+        cliente_id=cliente.id,
+        tipo_id=tipo.id,
+        contrato_id=dados.contrato_id,
+        competencia_ano=dados.competencia.ano,
+        competencia_mes=dados.competencia.mes,
+        competencia_chave=chave_competencia(dados.competencia),
+        descricao=(dados.descricao or "").strip(),
+        valor_original=valor,
+        saldo_aberto=valor,
+        vencimento=dados.vencimento,
+        juros_dia_snapshot=calculo.taxa_vigente_em(cliente, dados.vencimento),
+        meio=dados.meio,
+        forma_envio_id=dados.forma_envio_id,
+        observacoes=dados.observacoes or "",
+        numero_boleto=dados.numero_boleto or "",
+        situacao_envio=dados.situacao_envio,
+        enviado_em=dados.enviado_em,
+        status=StatusPagamento.EM_ABERTO,
+    )
+    cliente.honorarios.append(honorario)
+    sessao.flush()
+    return honorario
+
+
+def atualizar(sessao: Session, honorario: Honorario, dados: DadosHonorario) -> Honorario:
+    if honorario.status is StatusPagamento.PAGO:
+        raise ErroDeValidacao(
+            "Honorário pago não pode ser editado. Estorne o pagamento antes."
+        )
+    tipo = sessao.get(TipoHonorario, dados.tipo_id)
+    if tipo is None:
+        raise ErroDeValidacao("Selecione o tipo de honorário.", "tipo")
+    _validar_competencia(tipo, dados.competencia, dados.descricao)
+    valor = dinheiro(dados.valor)
+    if valor <= 0:
+        raise ErroDeValidacao("O valor do honorário deve ser maior que zero.", "valor")
+
+    duplicado = existente(sessao, dados.cliente_id, dados.tipo_id, dados.competencia)
+    if duplicado is not None and duplicado.id != honorario.id:
+        raise RegistroDuplicado(
+            f"Já existe {tipo.nome} da competência {dados.competencia.rotulo()} "
+            "para este cliente."
+        )
+
+    pago = honorario.valor_original - honorario.saldo_aberto
+    honorario.tipo_id = tipo.id
+    honorario.competencia_ano = dados.competencia.ano
+    honorario.competencia_mes = dados.competencia.mes
+    honorario.competencia_chave = chave_competencia(dados.competencia)
+    honorario.descricao = (dados.descricao or "").strip()
+    honorario.valor_original = valor
+    honorario.saldo_aberto = max(ZERO, valor - pago)
+    honorario.vencimento = dados.vencimento
+    honorario.meio = dados.meio
+    honorario.forma_envio_id = dados.forma_envio_id
+    honorario.observacoes = dados.observacoes or ""
+    honorario.numero_boleto = dados.numero_boleto or ""
+    honorario.situacao_envio = dados.situacao_envio
+    honorario.enviado_em = dados.enviado_em
+    sessao.flush()
+    return honorario
+
+
+def cancelar(sessao: Session, honorario: Honorario, motivo: str) -> None:
+    if honorario.status is StatusPagamento.PAGO:
+        raise ErroDeValidacao("Honorário pago não pode ser cancelado; estorne primeiro.")
+    if not (motivo or "").strip():
+        raise ErroDeValidacao("Descreva o motivo do cancelamento.", "motivo")
+    honorario.status = StatusPagamento.CANCELADO
+    honorario.cancelado_em = agora_utc()
+    honorario.motivo_cancelamento = motivo.strip()
+    honorario.saldo_aberto = ZERO
+    sessao.add(
+        LogAlteracao(
+            entidade="honorario",
+            entidade_id=honorario.id,
+            acao="CANCELAR",
+            resumo=motivo.strip(),
+        )
+    )
+    sessao.flush()
+
+
+def marcar_enviado(
+    sessao: Session, honorarios: Iterable[Honorario], quando: date | None = None
+) -> int:
+    data = quando or hoje()
+    total = 0
+    for honorario in honorarios:
+        honorario.situacao_envio = SituacaoEnvio.ENVIADO
+        honorario.enviado_em = data
+        total += 1
+    sessao.flush()
+    return total
+
+
+# ----------------------------------------------------------------------- consultas
+
+
+def _resumo_cobrancas(honorario: Honorario) -> tuple[int, date | None, date | None]:
+    ativas = [c for c in honorario.cobrancas if c.ativa]
+    if not ativas:
+        return 0, None, None
+    ultima = max(c.data_hora for c in ativas)
+    promessas = [
+        c.promessa_data
+        for c in ativas
+        if c.resultado is ResultadoCobranca.PROMETEU_PAGAR and c.promessa_data
+    ]
+    return len(ativas), ultima.date(), max(promessas) if promessas else None
+
+
+def montar_linha(
+    honorario: Honorario, atualizacao: calculo.Atualizacao | None = None,
+    data_referencia: date | None = None,
+) -> LinhaHonorario:
+    quantidade, ultima, promessa = _resumo_cobrancas(honorario)
+    return LinhaHonorario(
+        honorario=honorario,
+        atualizacao=atualizacao or calculo.atualizar(honorario, data_referencia),
+        cobrancas=quantidade,
+        ultima_cobranca=ultima,
+        promessa=promessa,
+    )
+
+
+def consultar(sessao: Session, filtro: Filtro) -> list[LinhaHonorario]:
+    consulta = select(Honorario).join(Cliente).join(TipoHonorario)
+    if filtro.status is not None:
+        consulta = consulta.where(Honorario.status == filtro.status)
+    if filtro.cliente_id:
+        alvos = [filtro.cliente_id]
+        if filtro.incluir_vinculados_de == filtro.cliente_id:
+            # a empresa cobra também pelas pessoas físicas vinculadas a ela
+            alvos += [
+                identificador
+                for (identificador,) in sessao.execute(
+                    select(Cliente.id).where(
+                        Cliente.empresa_id == filtro.cliente_id,
+                        Cliente.excluido_em.is_(None),
+                    )
+                )
+            ]
+        consulta = consulta.where(Honorario.cliente_id.in_(alvos))
+    if filtro.tipo_pessoa is not None:
+        consulta = consulta.where(Cliente.tipo_pessoa == filtro.tipo_pessoa)
+    if filtro.grupo_id:
+        consulta = consulta.where(TipoHonorario.grupo_id == filtro.grupo_id)
+    if filtro.tipo_id:
+        consulta = consulta.where(Honorario.tipo_id == filtro.tipo_id)
+    if filtro.vencimento_de:
+        consulta = consulta.where(Honorario.vencimento >= filtro.vencimento_de)
+    if filtro.vencimento_ate:
+        consulta = consulta.where(Honorario.vencimento <= filtro.vencimento_ate)
+    # O recorte de período dos pagos entra na consulta, não na tela: o que está
+    # fora do período nem chega a ser lido nem calculado. Honorário importado da
+    # planilha antiga não tem data de pagamento (ela não existia lá), então nesse
+    # caso o vencimento serve de referência — senão o histórico sumiria.
+    if filtro.pago_de:
+        consulta = consulta.where(
+            or_(
+                Honorario.pago_em >= filtro.pago_de,
+                and_(Honorario.pago_em.is_(None), Honorario.vencimento >= filtro.pago_de),
+            )
+        )
+    if filtro.pago_ate:
+        consulta = consulta.where(
+            or_(
+                Honorario.pago_em <= filtro.pago_ate,
+                and_(Honorario.pago_em.is_(None), Honorario.vencimento <= filtro.pago_ate),
+            )
+        )
+    if filtro.competencia_ano:
+        consulta = consulta.where(Honorario.competencia_ano == filtro.competencia_ano)
+    if filtro.termo:
+        from ..dominio.valores import normalizar_busca
+
+        alvo = normalizar_busca(filtro.termo)
+        if alvo:
+            consulta = consulta.where(Cliente.nome_busca.contains(alvo))
+    consulta = consulta.where(Cliente.excluido_em.is_(None))
+
+    encontrados = sessao.scalars(consulta.order_by(Honorario.vencimento)).unique().all()
+    referencia = filtro.data_referencia or hoje()
+    atualizacoes = calculo.atualizar_varios(encontrados, referencia)
+
+    linhas: list[LinhaHonorario] = []
+    for honorario in encontrados:
+        linha = montar_linha(honorario, atualizacoes[honorario.id], referencia)
+        atraso = linha.atualizacao.dias_atraso
+        if filtro.atraso_minimo is not None and atraso < filtro.atraso_minimo:
+            continue
+        if filtro.atraso_maximo is not None and atraso > filtro.atraso_maximo:
+            continue
+        if filtro.nunca_cobrado and linha.cobrancas:
+            continue
+        if filtro.sem_cobranca_dias is not None:
+            limite = filtro.sem_cobranca_dias
+            if linha.ultima_cobranca and (referencia - linha.ultima_cobranca).days < limite:
+                continue
+        if filtro.somente_promessa_vencida and not linha.promessa_vencida:
+            continue
+        if not filtro.incluir_cobranca_suspensa and linha.cliente.suspensao_ativa(referencia):
+            continue
+        linhas.append(linha)
+    return linhas
+
+
+def pendentes(sessao: Session, filtro: Filtro | None = None) -> list[LinhaHonorario]:
+    filtro = filtro or Filtro()
+    filtro.status = StatusPagamento.EM_ABERTO
+    return consultar(sessao, filtro)
+
+
+def pagos(sessao: Session, filtro: Filtro | None = None) -> list[LinhaHonorario]:
+    filtro = filtro or Filtro()
+    filtro.status = StatusPagamento.PAGO
+    return consultar(sessao, filtro)
+
+
+def agrupar_por_grupo(
+    linhas: Sequence[LinhaHonorario],
+) -> list[tuple[str, list[LinhaHonorario]]]:
+    grupos: dict[tuple[int, str], list[LinhaHonorario]] = {}
+    for linha in linhas:
+        grupo = linha.grupo
+        chave = (grupo.ordem, grupo.nome)
+        grupos.setdefault(chave, []).append(linha)
+    saida = []
+    for (_, nome), itens in sorted(grupos.items()):
+        itens.sort(key=lambda linha: linha.atualizacao.dias_atraso, reverse=True)
+        saida.append((nome, itens))
+    return saida
+
+
+def agrupar_por_cliente(
+    linhas: Sequence[LinhaHonorario],
+) -> list[tuple[str, list[LinhaHonorario]]]:
+    grupos: dict[str, list[LinhaHonorario]] = {}
+    for linha in linhas:
+        rotulo = f"{linha.cliente.codigo} – {linha.cliente.nome}"
+        grupos.setdefault(rotulo, []).append(linha)
+    saida = []
+    for rotulo in sorted(grupos):
+        itens = grupos[rotulo]
+        itens.sort(key=lambda linha: linha.atualizacao.dias_atraso, reverse=True)
+        saida.append((rotulo, itens))
+    return saida
+
+
+def agrupar_por_mes_pagamento(
+    linhas: Sequence[LinhaHonorario],
+) -> list[tuple[str, list[LinhaHonorario]]]:
+    from ..dominio.valores import MESES_ABREVIADOS
+
+    grupos: dict[tuple[int, int, bool], list[LinhaHonorario]] = {}
+    for linha in linhas:
+        pago_em = linha.honorario.pago_em
+        # sem data de pagamento (veio da planilha antiga), o vencimento é a
+        # referência, e o rótulo avisa que a data é estimada
+        referencia = pago_em or linha.honorario.vencimento
+        grupos.setdefault(
+            (referencia.year, referencia.month, pago_em is None), []
+        ).append(linha)
+    saida = []
+    for ano, mes, sem_data in sorted(grupos, reverse=True):
+        rotulo = f"{MESES_ABREVIADOS[mes - 1]}/{ano}"
+        if sem_data:
+            rotulo += " (sem data de pagamento, pelo vencimento)"
+        saida.append((rotulo, grupos[(ano, mes, sem_data)]))
+    return saida
+
+
+def total_de(linhas: Iterable[LinhaHonorario]) -> Decimal:
+    return sum((linha.atualizacao.total for linha in linhas), start=ZERO)
+
+
+def contar_cobrancas_no_dia(sessao: Session, dia: date) -> int:
+    from sqlalchemy import func
+
+    return sessao.scalar(
+        select(func.count(Cobranca.id)).where(
+            func.date(Cobranca.data_hora) == dia.isoformat(),
+            Cobranca.estornada_em.is_(None),
+        )
+    ) or 0

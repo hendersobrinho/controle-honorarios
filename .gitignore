@@ -1,0 +1,30 @@
+# --- dados pessoais: nada disso entra no repositório ---
+dados/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.xlsx
+*.xls
+*.pdf
+migracao/
+backups/
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- SO / editores ---
+.DS_Store
+*.swp
+.idea/
+.vscode/
