@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QPlainTextEdit,
     QSpinBox,
@@ -60,6 +65,7 @@ class PainelConfiguracoes(QWidget):
         abas = QTabWidget()
         abas.addTab(self._aba_recebedor(), "Recebedor e PIX")
         abas.addTab(self._aba_modelos(), "Modelos de mensagem")
+        abas.addTab(self._aba_imagem(), "Imagem da cobrança")
         abas.addTab(self._aba_listas(), "Formas de envio")
         abas.addTab(self._aba_backup(), "Backup")
         layout.addWidget(abas, 1)
@@ -100,6 +106,200 @@ class PainelConfiguracoes(QWidget):
         )
         layout.addStretch(1)
         return pagina
+
+    # ---------------------------------------------------- imagem da cobrança
+    def _aba_imagem(self) -> QWidget:
+        from ...servicos import imagem_cobranca
+
+        pagina = QWidget()
+        layout = QVBoxLayout(pagina)
+        grupo = QGroupBox("Fundo da imagem")
+        caixa = QVBoxLayout(grupo)
+        self.fundo_atual = QLabel()
+        self.fundo_atual.setWordWrap(True)
+        caixa.addWidget(self.fundo_atual)
+        self.fundo_avisos = QLabel()
+        self.fundo_avisos.setObjectName("avisoForte")
+        self.fundo_avisos.setWordWrap(True)
+        self.fundo_avisos.setVisible(False)
+        caixa.addWidget(self.fundo_avisos)
+        botoes = QHBoxLayout()
+        for texto, funcao in (
+            ("Escolher fundo SVG…", self._escolher_fundo),
+            ("Usar o modelo do sistema", self._usar_modelo_fundo),
+            ("Salvar uma cópia do modelo…", self._exportar_modelo_fundo),
+            ("Ver prévia", self._previa_imagem),
+        ):
+            botao = widgets.QPushButton(texto)
+            botao.clicked.connect(funcao)
+            botoes.addWidget(botao)
+        botoes.addStretch(1)
+        caixa.addLayout(botoes)
+        layout.addWidget(grupo)
+
+        grupo_qr = QGroupBox("QR code do Pix")
+        caixa_qr = QVBoxLayout(grupo_qr)
+        self.qrcode_atual = QLabel()
+        self.qrcode_atual.setWordWrap(True)
+        caixa_qr.addWidget(self.qrcode_atual)
+        botoes_qr = QHBoxLayout()
+        for texto, funcao in (
+            ("Escolher PNG do QR code…", self._escolher_qrcode),
+            ("Remover", self._remover_qrcode),
+        ):
+            botao = widgets.QPushButton(texto)
+            botao.clicked.connect(lambda _=False, f=funcao: f())
+            botoes_qr.addWidget(botao)
+        botoes_qr.addStretch(1)
+        caixa_qr.addLayout(botoes_qr)
+        caixa_qr.addWidget(widgets.rotulo_fraco(
+            "Gere o QR code da chave Pix no app do banco, salve como PNG e escolha aqui. "
+            "Ele entra no retângulo id=\"qrcode\" do fundo, em toda imagem de cobrança. "
+            "É o QR da chave, sem valor: o cliente digita o valor ao pagar."
+        ))
+        layout.addWidget(grupo_qr)
+
+        campos = ", ".join("{" + nome + "}" for nome, _ in imagem_cobranca.CAMPOS)
+        layout.addWidget(
+            widgets.rotulo_fraco(
+                "Como fazer o fundo: desenhe o SVG no tamanho final (ex.: 1080 × 1350). "
+                f"Textos com {campos} são trocados pelos valores. Um retângulo com "
+                'id="lista" recebe os honorários marcados na cobrança, um por linha; um '
+                'retângulo com id="qrcode" recebe o QR code (270 px de lado ou mais). '
+                "Deixe esses dois retângulos transparentes. Opcional: no retângulo da "
+                "lista, data-fonte, data-cor, data-cor-fraca e data-cor-linha mudam a "
+                "fonte e as cores dos honorários. Agrupe a camada da cobrança (textos, "
+                'lista, QR) em um grupo com id="conteudo": o PDF da análise de juros '
+                "usa o fundo sem esse grupo como papel das páginas."
+            )
+        )
+        layout.addStretch(1)
+        return pagina
+
+    def _mostrar_fundo(self, avisos: list[str] | None = None) -> None:
+        from ...servicos import imagem_cobranca
+
+        sessao = self.contexto.sessao
+        if imagem_cobranca.usa_modelo(sessao):
+            self.fundo_atual.setText("Usando o <b>fundo modelo</b> do sistema.")
+        else:
+            caminho = imagem_cobranca.caminho_fundo(sessao)
+            self.fundo_atual.setText(f"Usando o seu fundo: <b>{caminho}</b>")
+        self.fundo_avisos.setText("\n".join(avisos or []))
+        self.fundo_avisos.setVisible(bool(avisos))
+
+    def _mostrar_qrcode(self) -> None:
+        from ...servicos import imagem_cobranca
+
+        caminho = imagem_cobranca.caminho_qrcode(self.contexto.sessao)
+        self.qrcode_atual.setText(
+            f"Usando: <b>{caminho}</b>" if caminho
+            else "Nenhum QR code escolhido: a imagem sai sem QR."
+        )
+
+    def _escolher_qrcode(self) -> None:
+        from ...servicos import imagem_cobranca
+
+        origem, _ = QFileDialog.getOpenFileName(
+            self, "Escolher o PNG do QR code", str(Path.home()), "PNG (*.png)"
+        )
+        if not origem:
+            return
+
+        def acao():
+            imagem_cobranca.definir_qrcode(self.contexto.sessao, Path(origem))
+            self.contexto.salvar()
+
+        if not widgets.executar(self, acao)[0]:
+            self.contexto.desfazer()
+        self._mostrar_qrcode()
+
+    def _remover_qrcode(self) -> None:
+        from ...servicos import imagem_cobranca
+
+        def acao():
+            imagem_cobranca.remover_qrcode(self.contexto.sessao)
+            self.contexto.salvar()
+
+        if not widgets.executar(self, acao)[0]:
+            self.contexto.desfazer()
+        self._mostrar_qrcode()
+
+    def _escolher_fundo(self) -> None:
+        from ...servicos import imagem_cobranca
+
+        origem, _ = QFileDialog.getOpenFileName(
+            self, "Escolher fundo da imagem", str(Path.home()), "SVG (*.svg)"
+        )
+        if not origem:
+            return
+
+        def acao():
+            avisos = imagem_cobranca.definir_fundo(self.contexto.sessao, Path(origem))
+            self.contexto.salvar()
+            return avisos
+
+        deu_certo, avisos = widgets.executar(self, acao)
+        if not deu_certo:
+            self.contexto.desfazer()
+            return
+        self._mostrar_fundo(avisos)
+
+    def _usar_modelo_fundo(self) -> None:
+        from ...servicos import imagem_cobranca
+
+        def acao():
+            imagem_cobranca.usar_modelo(self.contexto.sessao)
+            self.contexto.salvar()
+
+        deu_certo, _ = widgets.executar(self, acao)
+        if not deu_certo:
+            self.contexto.desfazer()
+            return
+        self._mostrar_fundo()
+
+    def _exportar_modelo_fundo(self) -> None:
+        """Uma cópia do modelo para servir de ponto de partida no editor de SVG."""
+        from ...servicos import imagem_cobranca
+
+        destino, _ = QFileDialog.getSaveFileName(
+            self, "Salvar cópia do modelo", str(Path.home() / "fundo_cobranca.svg"),
+            "SVG (*.svg)",
+        )
+        if not destino:
+            return
+
+        def acao():
+            shutil.copyfile(imagem_cobranca.FUNDO_MODELO, destino)
+
+        if widgets.executar(self, acao)[0]:
+            widgets.informar(self, f"Modelo salvo em {destino}.", "Pronto")
+
+    def _previa_imagem(self) -> None:
+        """Prévia com dados fictícios e o recebedor do jeito que está na tela (sem salvar)."""
+        from ...servicos import imagem_cobranca
+        from ..dialogos.imagem_cobranca import DialogoImagemCobranca
+
+        sessao = self.contexto.sessao
+
+        def acao():
+            # usa o que está digitado agora, mesmo sem ter clicado em Salvar
+            for chave, valor in (
+                ("recebedor_razao_social", self.razao_social.text().strip()),
+                ("recebedor_tipo_chave", self.tipo_chave.valor().value),
+                ("recebedor_chave", self.chave.text().strip()),
+            ):
+                servico.gravar(sessao, chave, valor)
+            try:
+                return imagem_cobranca.exemplo(sessao)
+            finally:
+                self.contexto.desfazer()
+
+        deu_certo, dados = widgets.executar(self, acao)
+        if deu_certo:
+            DialogoImagemCobranca(
+                self.contexto, dados, "previa_cobranca", "Prévia da imagem", self
+            ).exec()
 
     # -------------------------------------------------------------- modelos
     def _aba_modelos(self) -> QWidget:
@@ -212,6 +412,9 @@ class PainelConfiguracoes(QWidget):
         self.razao_social.setText(servico.obter(sessao, "recebedor_razao_social"))
         self.tipo_chave.definir(TipoChavePix(servico.obter(sessao, "recebedor_tipo_chave", "CNPJ")))
         self.chave.setText(servico.obter(sessao, "recebedor_chave"))
+
+        self._mostrar_qrcode()
+        self._mostrar_fundo()
         self.formato_link.definir(FormatoLinkWhatsapp(servico.formato_link(sessao)))
         self.ordem_saudacao.definir(servico.ordem_saudacao(sessao))
         self.dias_vence_breve.setValue(servico.obter_int(sessao, "dias_vence_em_breve", 5))

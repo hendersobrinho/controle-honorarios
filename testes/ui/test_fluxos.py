@@ -288,13 +288,29 @@ def test_dialogo_gerar_competencia_previa_e_geracao(qtbot, contexto, monkeypatch
 # ------------------------------------------------------------------ clientes
 
 
-def test_painel_clientes_filtra_e_mostra_total(qtbot, contexto, cliente_com_debito):
+def test_painel_clientes_separa_inativos_e_nao_mostra_divida(
+    qtbot, contexto, cliente_com_debito
+):
+    from honorarios.dominio.enums import SituacaoCliente
     from honorarios.ui.paineis.clientes import PainelClientes
+
+    inativo = fabricas.cliente(contexto.sessao, codigo="950", nome="INATIVA LTDA", documento="")
+    inativo.situacao = SituacaoCliente.INATIVO
+    contexto.salvar()
 
     painel = PainelClientes(contexto)
     qtbot.addWidget(painel)
+    titulos = [coluna.titulo for coluna in painel.modelo.colunas]
+    for removida in ("Situação", "Em aberto", "Total atualizado", "Maior atraso"):
+        assert removida not in titulos
+    # o inativo só aparece na aba dele
     assert painel.modelo.rowCount() == 1
-    assert "total em aberto R$ 1.551,00" in painel.resumo.text()
+    assert painel.abas.tabText(0) == "Ativos (1)"
+    assert painel.abas.tabText(1) == "Inativos (1)"
+    painel.abas.setCurrentIndex(1)
+    assert [linha.cliente.id for linha in painel.modelo.itens] == [inativo.id]
+    painel.abas.setCurrentIndex(0)
+    assert "1 cliente(s) ativo(s)" in painel.resumo.text()
 
     painel.busca.setText("inexistente")
     assert painel.modelo.rowCount() == 0
@@ -359,13 +375,28 @@ def test_ficha_reune_pendentes_pagos_e_linha_do_tempo(qtbot, contexto, cliente_c
 # -------------------------------------------------------------------- painel
 
 
-def test_painel_resumo_calcula_indicadores(qtbot, contexto, cliente_com_debito):
+def test_painel_mostra_o_ano_em_graficos_sem_atraso(qtbot, contexto, cliente_com_debito):
     from honorarios.ui.paineis.painel import PainelResumo
 
     painel = PainelResumo(contexto)
     qtbot.addWidget(painel)
-    assert painel.indicadores.quantidade_em_aberto == 2
-    assert painel.cartao_total._valor.text() == "R$ 1.551,00"
+    dados = painel.indicadores
+    assert painel.cartoes["emitido"]._valor.text() == "R$ 1.500,00"   # 1000 + 500
+    assert set(painel.cartoes) == {"emitido", "quitado", "aberto", "caixa", "clientes",
+                                   "ticket"}
+    # os gráficos recebem os meses e a composição do ano
+    assert len(painel.quitacao.meses) == 12
+    assert painel.origem.secoes[0][0] == "Por grupo"
+    assert painel.leituras.text()
+    # nada de atraso no painel: isso é do Ranking dos atrasados
+    textos = " ".join(cartao._rotulo.text() for cartao in painel.cartoes.values())
+    assert "Juros" not in textos and "Inadimpl" not in textos
+    assert "atraso" not in painel.leituras.text().lower()
+    # a mesma série em tabela, para conferir
+    painel.alternar.click()
+    assert painel.pilha_quitacao.currentWidget() is painel.tabela_mes
+    assert painel.modelo_mes.rowCount() == 12
+    assert dados.emitido == sum((mes.emitido for mes in dados.meses), start=Decimal(0))
 
 
 def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
@@ -376,7 +407,7 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
     assert janela.telas.count() == 14
     assert len(janela.linhas_de_tela) == 14
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
-    assert "Cobranças enviadas" in titulos and "Rankings" in titulos
+    assert "Cobranças enviadas" in titulos and "Ranking dos atrasados" in titulos
     assert "Imposto de Renda" in titulos and "Grupos e tipos" in titulos
     assert not any("Fila" in titulo for titulo in titulos)
     for linha in janela.linhas_de_tela:
@@ -766,7 +797,9 @@ def test_painel_de_rankings_monta_os_quatro_graficos(
     assert abertas == [cliente_com_debito.id]     # o clique leva à ficha do cliente
 
 
-def test_aba_de_analise_de_juros(qtbot, contexto, cliente_com_debito, monkeypatch):
+def test_aba_de_analise_de_juros(
+    qtbot, contexto, cliente_com_debito, monkeypatch, tmp_path
+):
     from honorarios.servicos import pagamentos
     from honorarios.ui.dialogos import ficha
     from honorarios.ui.paineis.rankings import PainelRankings
@@ -827,6 +860,27 @@ def test_aba_de_analise_de_juros(qtbot, contexto, cliente_com_debito, monkeypatc
     assert "Dobrar" in por_honorario.resumo.text()
     assert por_honorario.pagos.item(0, 6).text() == juros    # juros no cenário
     assert por_honorario.pagos.rowCount() == 2               # o honorário + total
+
+    # exportar o PDF da análise, com o cenário escolhido na tabela
+    from honorarios.ui.comum import widgets as widgets_comuns
+
+    abertos_pdf = []
+    monkeypatch.setattr(widgets_comuns, "abrir_url", lambda url: abertos_pdf.append(url))
+    arquivo_pdf = tmp_path / "analise.pdf"
+    from PySide6.QtWidgets import QFileDialog, QPushButton
+
+    # pelo botão, como o usuário faz: o clique manda um bool que não pode virar destino
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", lambda *a, **k: (str(arquivo_pdf), "PDF (*.pdf)")
+    )
+    botao_pdf = next(
+        b for b in detalhe.findChildren(QPushButton) if b.text() == "Exportar PDF…"
+    )
+    botao_pdf.click()
+    assert detalhe.pdf_gerado == arquivo_pdf
+    assert arquivo_pdf.read_bytes().startswith(b"%PDF")
+    assert detalhe.pdf_com_fundo                     # o modelo tem o grupo id="conteudo"
+    assert abertos_pdf == [f"file://{arquivo_pdf}"]
 
     # a busca filtra a lista; o botão leva à ficha
     aba.busca.setText("nao existe")
@@ -993,3 +1047,130 @@ def test_lista_de_clientes_marca_perfil_so_ir(qtbot, contexto, cliente_so_ir):
     coluna = next(c for c in painel.modelo.colunas if c.titulo == "Perfil")
     linha = next(item for item in painel.modelo.itens if item.cliente.id == cliente_so_ir.id)
     assert coluna.texto(linha) == "Só IR"
+
+
+# ------------------------------------------------------ imagem da cobrança
+
+
+def test_imagem_desenha_fundo_lista_e_qr(qtbot, contexto, cliente_com_debito, tmp_path):
+    from PySide6.QtGui import QColor
+
+    from honorarios.servicos import cobrancas as servico
+    from honorarios.servicos import imagem_cobranca
+    from honorarios.ui.comum.imagem_cobranca import renderizar
+    from testes.servicos.test_imagem_cobranca import png_de_qrcode
+
+    imagem_cobranca.definir_qrcode(contexto.sessao, png_de_qrcode(tmp_path / "qr.png"))
+    linhas = linhas_do(contexto.sessao, cliente_com_debito)
+    dados = imagem_cobranca.montar(
+        contexto.sessao, servico.Selecao(cliente=cliente_com_debito, linhas=linhas)
+    )
+    imagem = renderizar(imagem_cobranca.FUNDO_MODELO.read_text(encoding="utf-8"), dados)
+    assert (imagem.width(), imagem.height()) == (1080, 1350)   # proporção do SVG
+
+    # o PNG do QR fica no retângulo id="qrcode" (x 88–360, y 1008–1280)
+    pretos = sum(
+        1
+        for x in range(90, 358, 4)
+        for y in range(1010, 1278, 4)
+        if QColor(imagem.pixel(x, y)).lightness() < 60
+    )
+    assert pretos > 200
+
+    # sem QR, o mesmo retângulo fica com o fundo do cartão
+    dados.qrcode = None
+    sem_qr = renderizar(imagem_cobranca.FUNDO_MODELO.read_text(encoding="utf-8"), dados)
+    assert all(
+        QColor(sem_qr.pixel(x, y)).lightness() > 200
+        for x in range(90, 358, 20)
+        for y in range(1010, 1278, 20)
+    )
+
+
+def test_cobrar_gera_imagem_dos_honorarios_marcados(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from PySide6.QtGui import QGuiApplication
+
+    from honorarios.ui.dialogos import imagem_cobranca
+    from honorarios.ui.dialogos.cobrar import DialogoCobrar
+
+    abertos = []
+
+    def abrir(dialogo):
+        abertos.append(dialogo)
+        dialogo.copiar()
+        return 0
+
+    monkeypatch.setattr(imagem_cobranca.DialogoImagemCobranca, "exec", abrir)
+    linhas = linhas_do(contexto.sessao, cliente_com_debito)
+    dialogo = DialogoCobrar(contexto, cliente_com_debito, linhas)
+    qtbot.addWidget(dialogo)
+    dialogo._imagem()
+
+    [aberto] = abertos
+    assert len(aberto.dados.linhas) == len(dialogo.modelo.marcados())
+    # sem PNG do QR escolhido: a imagem sai sem QR, e a prévia avisa onde escolher
+    assert aberto.dados.qrcode is None
+    assert aberto.dados.campos["cliente"] == cliente_com_debito.nome
+    assert not QGuiApplication.clipboard().image().isNull()   # copiada para colar no WhatsApp
+    assert "copiada" in aberto.aviso.text()
+
+    # a chave vai também como texto, pelo botão (o clique manda um bool: não pode atrapalhar)
+    from PySide6.QtWidgets import QPushButton
+
+    botoes = {b.text(): b for b in aberto.findChildren(QPushButton)}
+    botoes["Copiar chave Pix"].click()
+    assert QGuiApplication.clipboard().text() == aberto.dados.campos["chave_pix"]
+    assert "Copiar Pix copia e cola" not in botoes            # o QR é o PNG do banco
+
+
+def test_imagem_estica_quando_os_honorarios_nao_cabem(qtbot, contexto, tmp_path):
+    from PySide6.QtGui import QColor
+
+    from honorarios.servicos import imagem_cobranca
+    from honorarios.ui.comum import imagem_cobranca as desenho
+    from testes.servicos.test_imagem_cobranca import png_de_qrcode
+
+    imagem_cobranca.definir_qrcode(contexto.sessao, png_de_qrcode(tmp_path / "qr.png"))
+    fundo = imagem_cobranca.FUNDO_MODELO.read_text(encoding="utf-8")
+    dados = imagem_cobranca.exemplo(contexto.sessao)
+
+    assert desenho.renderizar(fundo, dados).height() == 1350      # 3 cabem no fundo
+
+    dados.linhas = [dados.linhas[i % 3] for i in range(12)]
+    esticada = desenho.renderizar(fundo, dados)
+    # a lista do modelo tem 455 px; 12 linhas × 84 px pedem 553 px a mais
+    assert esticada.width() == 1080
+    assert esticada.height() == 1350 + 12 * desenho.ALTURA_ESTICADA - 455
+
+    # o QR desceu junto com o resto do desenho
+    deslocamento = esticada.height() - 1350
+    pretos = sum(
+        1
+        for x in range(90, 358, 4)
+        for y in range(1010 + deslocamento, 1278 + deslocamento, 4)
+        if QColor(esticada.pixel(x, y)).lightness() < 60
+    )
+    assert pretos > 200
+
+    # acima do máximo, a imagem para de crescer e o resto vira "e mais N"
+    dados.linhas = [dados.linhas[i % 3] for i in range(60)]
+    maior = desenho.renderizar(fundo, dados)
+    assert maior.height() == 1350 + desenho.MAXIMO_LINHAS * desenho.ALTURA_ESTICADA - 455
+
+
+def test_fundo_vira_papel_a4_sem_deformar(qtbot):
+    from PySide6.QtGui import QColor
+
+    from honorarios.servicos import imagem_cobranca
+    from honorarios.ui.comum.imagem_cobranca import renderizar_pagina
+
+    base = imagem_cobranca.base_do_fundo(
+        imagem_cobranca.FUNDO_MODELO.read_text(encoding="utf-8")
+    )
+    papel = renderizar_pagina(base, 1080, 1527)        # A4 na largura de 1080
+    assert (papel.width(), papel.height()) == (1080, 1527)
+    # o topo (faixa azul do modelo) e o pé (fundo claro) ficam onde estavam
+    assert QColor(papel.pixel(540, 100)).blue() > 150
+    assert QColor(papel.pixel(540, 1520)).lightness() > 220

@@ -187,7 +187,7 @@ em breve, promessa vencida). A etiqueta de situação não repete a data que já
 está na pílula.
 
 ### Análise de juros
-A aba "Análise de juros" (em Rankings) existe para uma decisão: aumentar ou não
+A aba "Análise de juros" (em Ranking dos atrasados) existe para uma decisão: aumentar ou não
 o juros. Por isso ela não mostra só quanto entrou, mas também:
 
 - **juros devido × cobrado × abonado**: se boa parte é abonada na baixa,
@@ -229,6 +229,60 @@ Entram só honorários quitados com `Pagamento` registrado: os pagos importados 
 planilha não têm valor nem data de pagamento e ficariam como "pagou exatamente
 o original", puxando a análise para baixo. A tela lembra de conferir o contrato
 de cada cliente antes de mudar a taxa.
+
+### PDF da análise de juros
+O botão **Exportar PDF…** da análise de um cliente gera o relatório com o
+mesmo conteúdo da tela, inclusive o cenário escolhido na tabela (que aparece
+destacado e detalhado honorário por honorário). Os textos dos indicadores vêm
+do serviço, não da tela, para a tela e o PDF mostrarem o mesmo número. O PDF é
+marcado como **documento interno** no rodapé: a "Leitura" do comportamento do
+cliente não é texto para mandar a ele.
+
+O PDF usa o fundo da imagem de cobrança como papel: o SVG sem o grupo
+`id="conteudo"` (a camada que só serve à imagem), desenhado a ~200 dpi e esticado
+para a proporção do A4 repetindo a faixa do meio — a mesma técnica da imagem
+comprida, que não deforma logos. O conteúdo vai num cartão branco entre o logo
+do topo e o do rodapé; as medidas do cartão são constantes em
+`servicos/relatorio_juros.py`, ajustadas ao fundo atual. Sem o grupo no SVG, o
+PDF sai no visual simples, sem fundo. Os blocos do relatório são mantidos
+inteiros na página (título, tabela e nota juntos), sem `KeepTogether` dentro de
+`KeepTogether`: aninhado, o reportlab calcula a altura errado e pula página.
+
+### Painel sem atraso, com gráficos
+O Painel mostra o ano: emitido e quitado por competência, o caixa pela data da
+baixa e a origem do faturamento. Faixas de atraso, maiores devedores, juros
+acumulado e inadimplência saíram — repetiam o Ranking dos atrasados. "Quitado"
+conta o valor original (parcial conta o que já foi abatido), para quitado +
+em aberto somar exatamente o emitido. A comparação com o ano anterior só
+aparece com dado em pelo menos metade dos meses do período: um honorário solto
+no ano anterior dava "19000% a mais".
+
+Os gráficos seguem regras fixas: uma escala por gráfico, empilhado só para parte
+do todo, legenda com duas séries ou mais, número escrito só onde ajuda e o mesmo
+dado em tabela. As cores (azul e laranja, e verde-água para a composição) foram
+validadas para daltonismo e contraste no fundo claro e no escuro.
+
+### Imagem da cobrança com fundo SVG
+O fundo é um SVG feito fora do sistema e desenhado em vetor na largura final
+(1080 px), então não perde qualidade. O sistema não posiciona nada por
+coordenada própria: textos `{campo}` são trocados no SVG, e a lista e o QR são
+desenhados dentro dos retângulos `lista` e `qrcode` que o próprio desenho
+define — trocar o layout é só trocar o arquivo. O SVG escolhido é copiado para a
+pasta de dados, para não depender de onde o original estava.
+
+A imagem segue a seleção do diálogo Cobrar, igual à mensagem. O QR code é o PNG
+da chave Pix gerado no app do banco e escolhido nas Configurações (o sistema
+guarda uma cópia na pasta de dados). Chegou a existir um QR gerado pelo próprio
+sistema, com o valor da cobrança (BR Code); foi retirado por decisão do
+usuário, que prefere o QR oficial do banco. O PNG é ampliado sem suavização,
+para a borda dos quadradinhos não borrar e o QR continuar legível.
+
+Com muitos honorários selecionados, a imagem estica em vez de virar duas: a
+faixa de 1 px logo acima do fim da lista é repetida e o que está abaixo (total,
+QR, logo) desce inteiro. Uma imagem só é mais fácil de copiar e mandar que
+"1 de 2, 2 de 2". O fundo precisa ter, nessa altura, algo que aguente ser
+repetido (cor lisa, cartão, faixa lateral) — degradê vertical ali ficaria
+esticado. Até 30 linhas; acima disso, "e mais N".
 
 ## Decisões técnicas
 

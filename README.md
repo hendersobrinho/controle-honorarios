@@ -66,8 +66,8 @@ Os testes de interface usam `pytest-qt` e rodam sem servidor gráfico
 | **Clientes** | PF \| PJ \| Todos, busca sem acento/pontuação, total em aberto e maior atraso; ficha completa da empresa. Aqui também se suspende e retoma a cobrança de um cliente |
 | **Honorários recorrentes** | Contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia |
 | **Honorários avulsos** | IRPF, alteração contratual, atas e afins |
-| **Painel** | Emitido, pago, em aberto, juros, inadimplência, faixas de atraso e maiores devedores |
-| **Rankings** | Pódio de quem mais deve em dinheiro, quem deve há mais tempo, quem junta mais boletos e quem mais foi cobrado — dois gráficos por aba; clicar num nome abre a ficha. A aba **Análise de juros** lista os clientes que pagaram e mostra, para cada um, original + juros = pago, o trabalho que deu para receber (atrasos, dias em atraso, cobranças feitas, juros por cobrança, comparados com a média), honorário por honorário, uma explicação em frases e cenários de taxa (+10% a dobrar, sem abono, valor testado) com o efeito de cada cenário honorário por honorário; o primeiro item é a visão geral de todos |
+| **Painel** | O ano em números e gráficos: emitido × quitado por mês de competência (com a opção de ver em tabela), o que entrou no caixa por mês, de onde vem o faturamento (grupo e PF/PJ) e frases com o que os números dizem, comparando com o ano anterior quando há base. Atraso e devedores ficam no Ranking dos atrasados |
+| **Ranking dos atrasados** | Pódio de quem mais deve em dinheiro, quem deve há mais tempo, quem junta mais boletos e quem mais foi cobrado — dois gráficos por aba; clicar num nome abre a ficha. A aba **Análise de juros** lista os clientes que pagaram e mostra, para cada um, original + juros = pago, o trabalho que deu para receber (atrasos, dias em atraso, cobranças feitas, juros por cobrança, comparados com a média), honorário por honorário, uma explicação em frases e cenários de taxa (+10% a dobrar, sem abono, valor testado) com o efeito de cada cenário honorário por honorário; **Exportar PDF…** gera o relatório da análise do cliente (documento interno) para compartilhar; o primeiro item é a visão geral de todos |
 | **Relatórios e exportação** | Planilha Excel da lista filtrada e extrato de débitos em PDF |
 | **Importar planilha** | Lê a planilha antiga, mostra prévia e relatório de erros, e só grava depois da confirmação |
 | **Grupos e tipos** | Grupos à esquerda (a ordem é a das seções nas telas), tipos do grupo à direita, cada um mostrando a frase como sai na cobrança e quanto é usado. O cadastro do tipo mostra a prévia da mensagem enquanto se digita |
@@ -127,6 +127,36 @@ honorário pertence: ele continua na ficha da pessoa.
    contestou, não respondeu.
 4. O **Histórico** de cada honorário mostra a linha do tempo completa e diz
    quando a cobrança saiu em lote e com quais outros honorários.
+
+### Imagem da cobrança
+
+No diálogo Cobrar, **Imagem da cobrança…** (Ctrl+I) gera uma imagem com os
+honorários marcados — um ou vários — sobre o fundo SVG do escritório, com o
+QR code do Pix. **Copiar imagem** põe no clipboard para colar no WhatsApp;
+**Copiar chave Pix** copia a chave para mandar como texto logo depois;
+**Salvar PNG…** guarda o arquivo. Copiar não registra a cobrança.
+
+O fundo é escolhido em **Configurações → Imagem da cobrança** (sem ele, vale o
+modelo do sistema, que também pode ser salvo como ponto de partida). No SVG:
+
+- textos com `{cliente}`, `{codigo}`, `{data}`, `{total}`, `{total_original}`,
+  `{total_juros}`, `{quantidade}`, `{recebedor}`, `{chave_pix}` viram os valores;
+- um retângulo transparente com `id="lista"` recebe os honorários, um por linha.
+  Se não couberem, a imagem **estica**: a faixa logo acima do fim da lista é
+  repetida e tudo o que está abaixo desce inteiro (até 30 linhas; dali em diante,
+  "e mais N honorários"); `data-fonte`, `data-cor`,
+  `data-cor-fraca` e `data-cor-linha` nesse retângulo mudam fonte e cores;
+- um retângulo transparente com `id="qrcode"` recebe o PNG do QR code (270 px de lado
+  ou mais, num fundo de 1080 de largura).
+
+- a camada da cobrança (textos, lista, QR) fica num grupo `<g id="conteudo">`:
+  o **PDF da análise de juros** usa o fundo sem esse grupo como papel das
+  páginas (esticado para A4 no meio, sem deformar os logos).
+
+O QR code é o da chave Pix, **gerado no app do banco**: salve como PNG e
+escolha em **Configurações → Imagem da cobrança → Escolher PNG do QR code…**.
+É o QR da chave, sem valor — o cliente digita o valor ao pagar. Sem PNG
+escolhido, a imagem sai sem QR e a prévia avisa onde escolher.
 
 ## Arquitetura
 

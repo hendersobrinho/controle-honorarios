@@ -376,64 +376,13 @@ def _numero(valor: Decimal) -> str:
 def _definir_trabalho(indicadores: dict[str, Indicador], analise: AnaliseJuros,
                       geral: AnaliseJuros | None) -> None:
     """Os indicadores do trabalho que deu para receber, comparados com a média."""
-    def media(texto: str) -> str:
-        return f"média dos clientes: {texto}" if geral is not None else ""
-
-    atrasados = len(analise.atrasados)
-    indicadores["atraso"].definir(
-        f"{atrasados} de {len(analise.honorarios)}",
-        (f"{percentual(analise.percentual_com_atraso, 0)} dos honorários pagos"
-         + (f" · {media(percentual(geral.percentual_com_atraso, 0))}" if geral else "")),
-    )
-    indicadores["tempo"].definir(
-        _dias(analise.dias_em_atraso) if atrasados else "em dia",
-        (f"média {_dias(analise.atraso_medio)} por honorário · o maior, "
-         f"{_dias(analise.maior_atraso)}" if atrasados else "nenhum dia de atraso")
-        + (f" · {media(_dias(geral.atraso_medio))}" if geral and geral.atrasados else ""),
-    )
-    cobrancas = analise.cobrancas
-    indicadores["cobrancas"].definir(
-        str(cobrancas) if cobrancas else "nenhuma",
-        (f"{_numero(analise.cobrancas_por_atrasado)} por honorário atrasado" if atrasados
-         else "pagou sem ser cobrado")
-        + (f" · {media(_numero(geral.cobrancas_por_atrasado))}"
-           if geral and geral.atrasados else ""),
-    )
-    por_cobranca = analise.juros_por_cobranca
-    indicadores["por_cobranca"].definir(
-        formatar_moeda(por_cobranca) if por_cobranca is not None else "—",
-        "juros recebido ÷ cobranças feitas"
-        + (f" · {media(formatar_moeda(geral.juros_por_cobranca))}"
-           if geral and geral.juros_por_cobranca is not None else ""),
-    )
-    efetiva, cadastrada = analise.taxa_mensal_efetiva, analise.taxa_mensal_cadastrada
-    indicadores["taxa"].definir(
-        percentual(efetiva, 2) if efetiva is not None else "—",
-        f"a taxa cadastrada daria {percentual(cadastrada, 2)} sem abono"
-        if cadastrada is not None else "",
-    )
-    hoje_ = analise.hoje
-    indicadores["hoje"].definir(
-        f"{hoje_.quantidade} honorário{'s' if hoje_.quantidade > 1 else ''}"
-        if hoje_.quantidade else "nada",
-        (f"o mais antigo há {_dias(hoje_.maior_atraso)} · "
-         f"{formatar_moeda(hoje_.juros_por_dia)} de juros por dia · "
-         f"{hoje_.cobrancas} cobrança(s) já feita(s)") if hoje_.quantidade else "",
-    )
+    for chave, (valor, nota) in servico.indicadores_de_trabalho(analise, geral).items():
+        indicadores[chave].definir(valor, nota)
 
 
 def _indicadores_de_trabalho() -> dict[str, Indicador]:
     return {
-        "atraso": Indicador("Pagos com atraso"),
-        "tempo": Indicador("Tempo em atraso", "Dias de atraso somados de todos os "
-                           "honorários pagos no período"),
-        "cobrancas": Indicador("Cobranças feitas até pagar", "Cada mensagem enviada conta "
-                               "uma vez, mesmo com vários honorários dentro"),
-        "por_cobranca": Indicador("Juros por cobrança", "Quanto de juros entrou para cada "
-                                  "cobrança feita: mostra se o trabalho de cobrar se paga"),
-        "taxa": Indicador("Juros efetivo ao mês", "Juros recebido ÷ (valor atrasado × "
-                          "meses de atraso)"),
-        "hoje": Indicador("Em atraso hoje"),
+        chave: Indicador(rotulo, dica) for chave, rotulo, dica in servico.INDICADORES_TRABALHO
     }
 
 
@@ -821,9 +770,12 @@ def cartao_de_pagamento(item: servico.HonorarioPago) -> DadosCartao:
 class _DetalheCliente(QWidget):
     abrir_ficha = Signal(object)
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
+        self.contexto = contexto
         self.analise: AnaliseJuros | None = None
+        self.pdf_gerado = None
+        self.pdf_com_fundo = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -836,6 +788,10 @@ class _DetalheCliente(QWidget):
         textos.addWidget(self.nome)
         textos.addWidget(self.subtitulo)
         topo.addLayout(textos, 1)
+        pdf = QPushButton("Exportar PDF…")
+        pdf.setToolTip("Gera o PDF desta análise, com o cenário escolhido, para compartilhar")
+        pdf.clicked.connect(lambda: self.exportar_pdf())   # clicked manda um bool
+        topo.addWidget(pdf)
         ficha = QPushButton("Abrir ficha / alterar juros")
         ficha.clicked.connect(lambda: self.analise and self.abrir_ficha.emit(self.analise.cliente))
         topo.addWidget(ficha)
@@ -873,6 +829,58 @@ class _DetalheCliente(QWidget):
         self.mais = widgets.rotulo_fraco("")
         layout.addWidget(self.mais)
         layout.addStretch(1)
+
+    def exportar_pdf(self, destino: str | None = None) -> None:
+        """PDF da análise do cliente, com o cenário escolhido na tabela."""
+        from pathlib import Path
+
+        from PySide6.QtWidgets import QFileDialog
+
+        from ...config.caminhos import pasta_exportacoes
+        from ...servicos import configuracoes, relatorio_juros
+
+        if self.analise is None:
+            return
+        cliente = self.analise.cliente
+        if destino is None:
+            sugestao = pasta_exportacoes() / f"analise-juros-{cliente.codigo}.pdf"
+            destino, _ = QFileDialog.getSaveFileName(
+                self, "Exportar análise de juros", str(sugestao), "PDF (*.pdf)"
+            )
+            if not destino:
+                return
+        if not destino.lower().endswith(".pdf"):
+            destino += ".pdf"
+        def acao():
+            import tempfile
+
+            from ...servicos import imagem_cobranca
+            from ..comum.imagem_cobranca import renderizar_pagina
+
+            sessao = self.contexto.sessao
+            svg = imagem_cobranca.caminho_fundo(sessao).read_text(encoding="utf-8")
+            base = imagem_cobranca.base_do_fundo(svg)
+            with tempfile.TemporaryDirectory() as pasta:
+                papel = None
+                if base is not None:
+                    # A4 a ~200 dpi: nítido na tela e na impressão, arquivo leve
+                    papel = Path(pasta) / "papel.png"
+                    renderizar_pagina(base, 1654, 2339).save(str(papel), "PNG")
+                arquivo = relatorio_juros.analise_cliente_pdf(
+                    self.analise,
+                    self.cenarios.escolhido(),
+                    configuracoes.recebedor(sessao),
+                    Path(destino),
+                    self.contexto.data_referencia,
+                    fundo=papel,
+                )
+            self.pdf_com_fundo = base is not None
+            return arquivo
+
+        deu_certo, arquivo = widgets.executar(self, acao)
+        if deu_certo:
+            self.pdf_gerado = arquivo
+            widgets.abrir_url(f"file://{arquivo}")
 
     def definir(self, analise: AnaliseJuros) -> None:
         self.analise = analise
@@ -964,7 +972,7 @@ class AbaAnaliseJuros(QWidget):
         self.paginas = QStackedWidget()
         self.visao_geral = _VisaoGeral()
         self.visao_geral.cliente_escolhido.connect(self.escolher_cliente)
-        self.detalhe = _DetalheCliente()
+        self.detalhe = _DetalheCliente(self.contexto)
         self.detalhe.abrir_ficha.connect(self.cliente_clicado)
         self.rolagem_geral = _rolavel(self.visao_geral)
         self.rolagem_cliente = _rolavel(self.detalhe)

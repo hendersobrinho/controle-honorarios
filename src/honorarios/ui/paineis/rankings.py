@@ -29,7 +29,7 @@ ABAS = (
 
 
 class PainelRankings(QWidget):
-    titulo = "Rankings"
+    titulo = "Ranking dos atrasados"
 
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
@@ -42,7 +42,7 @@ class PainelRankings(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
         self.cabecalho = widgets.Cabecalho(
-            "Rankings",
+            "Ranking dos atrasados",
             "Quem mais deve, quem deve há mais tempo, quem junta mais boletos, quem "
             "mais foi cobrado — e quanto o juros rende de verdade",
         )

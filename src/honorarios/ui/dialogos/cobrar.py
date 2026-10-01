@@ -170,6 +170,12 @@ class DialogoCobrar(QDialog):
         botao_copiar = widgets.QPushButton("Copiar mensagem")
         botao_copiar.setShortcut("Ctrl+C")
         botao_copiar.clicked.connect(self._copiar)
+        botao_imagem = widgets.QPushButton("Imagem da cobrança…")
+        botao_imagem.setShortcut("Ctrl+I")
+        botao_imagem.setToolTip(
+            "Gera a imagem com os honorários marcados e o QR code do Pix (Ctrl+I)"
+        )
+        botao_imagem.clicked.connect(self._imagem)
         botao_whats = widgets.QPushButton("Abrir no WhatsApp")
         botao_whats.setShortcut("Ctrl+W")
         botao_whats.clicked.connect(self._abrir_whatsapp)
@@ -179,7 +185,7 @@ class DialogoCobrar(QDialog):
         botao_registrar.clicked.connect(self._registrar)
         botao_fechar = widgets.QPushButton("Fechar")
         botao_fechar.clicked.connect(self.reject)
-        for botao in (botao_copiar, botao_whats, botao_registrar, botao_fechar):
+        for botao in (botao_copiar, botao_imagem, botao_whats, botao_registrar, botao_fechar):
             acoes.addWidget(botao)
         layout.addLayout(acoes)
 
@@ -281,6 +287,24 @@ class DialogoCobrar(QDialog):
             return
         widgets.copiar(texto)
         self.aviso.setText("Mensagem copiada. Copiar não registra a cobrança.")
+
+    def _imagem(self) -> None:
+        """Mesma seleção da mensagem: um honorário marcado, uma linha; vários, a lista."""
+        from ...servicos import imagem_cobranca
+        from .imagem_cobranca import DialogoImagemCobranca
+
+        selecao = self._selecao()
+
+        def acao():
+            return imagem_cobranca.montar(self.contexto.sessao, selecao)
+
+        deu_certo, dados = widgets.executar(self, acao)
+        if not deu_certo:
+            return
+        nome = f"cobranca_{self.cliente.codigo}_{selecao.data_referencia:%Y-%m-%d}"
+        DialogoImagemCobranca(
+            self.contexto, dados, nome, f"Imagem da cobrança – {self.cliente.nome}", self
+        ).exec()
 
     def _abrir_whatsapp(self) -> None:
         texto = self.texto.toPlainText().strip()

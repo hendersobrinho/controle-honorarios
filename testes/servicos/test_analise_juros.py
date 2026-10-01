@@ -367,3 +367,67 @@ def test_atrasados_de_hoje_so_mudam_daqui_para_frente(sessao, trabalhoso):
     )
     [igual] = analise_juros.atrasados_no_cenario(dele, sem_abono)
     assert igual.total_projetado_cenario == igual.total_projetado
+
+
+# ------------------------------------------------------------- PDF
+
+
+def test_pdf_da_analise_do_cliente(sessao, trabalhoso, tmp_path, monkeypatch):
+    from reportlab import rl_config
+
+    from honorarios.servicos import configuracoes, relatorio_juros
+
+    monkeypatch.setattr(rl_config, "pageCompression", 0)   # texto legível no arquivo
+    geral = analise_juros.analisar(sessao, referencia=REFERENCIA)
+    dele = geral.do_cliente(trabalhoso.id)
+    escolhido = analise_juros.cenario(dele, Decimal(30), "Testado (+30%)")
+
+    arquivo = relatorio_juros.analise_cliente_pdf(
+        dele, escolhido, configuracoes.recebedor(sessao), tmp_path / "analise.pdf", REFERENCIA
+    )
+    conteudo = arquivo.read_bytes()
+    assert conteudo.startswith(b"%PDF")
+    assert b"/Subtype /Image" not in conteudo          # sem fundo, nenhuma imagem
+    for trecho in (
+        b"DA TRABALHO LTDA",
+        b"O trabalho que deu para receber",
+        b"Testado \\(+30%\\)",               # o cenário escolhido entra na tabela
+        b"Em atraso hoje: daqui para frente",
+        b"Documento interno",
+    ):
+        assert trecho in conteudo, trecho
+
+
+def test_pdf_exige_analise_de_um_cliente(sessao, carteira, tmp_path):
+    from honorarios.servicos import configuracoes, relatorio_juros
+
+    geral = analise_juros.analisar(sessao, referencia=REFERENCIA)
+    with pytest.raises(ValueError, match="um cliente"):
+        relatorio_juros.analise_cliente_pdf(
+            geral, None, configuracoes.recebedor(sessao), tmp_path / "x.pdf"
+        )
+
+
+def test_pdf_com_o_fundo_como_papel(sessao, trabalhoso, tmp_path, monkeypatch):
+    from reportlab import rl_config
+    from reportlab.lib.utils import ImageReader
+
+    from honorarios.servicos import configuracoes, relatorio_juros
+
+    monkeypatch.setattr(rl_config, "pageCompression", 0)
+    papel = tmp_path / "papel.png"
+    # um PNG mínimo serve de papel; o desenho de verdade vem da tela (Qt)
+    from PIL import Image  # vem com o reportlab
+
+    Image.new("RGB", (165, 234), "#d9d9d9").save(papel)
+    assert ImageReader(str(papel)).getSize() == (165, 234)
+
+    dele = analise_juros.analisar(sessao, referencia=REFERENCIA).do_cliente(trabalhoso.id)
+    arquivo = relatorio_juros.analise_cliente_pdf(
+        dele, None, configuracoes.recebedor(sessao), tmp_path / "com_fundo.pdf",
+        REFERENCIA, fundo=papel,
+    )
+    conteudo = arquivo.read_bytes()
+    assert b"/Subtype /Image" in conteudo               # o papel está na página
+    assert b"lise de juros" in conteudo                 # o título vai sobre o papel
+    assert b"DA TRABALHO LTDA" in conteudo

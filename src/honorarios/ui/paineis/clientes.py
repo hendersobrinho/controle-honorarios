@@ -1,28 +1,30 @@
-"""Lista de clientes com alternância PF | PJ | Todos e totais em aberto."""
+"""Lista de clientes: cadastro, juros e cobrança. Ativos e inativos em abas.
+
+A dívida não aparece aqui: em aberto, atraso e totais têm as telas de cobrança.
+"""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QCheckBox,
     QHBoxLayout,
     QRadioButton,
+    QTabBar,
     QTableView,
     QVBoxLayout,
     QWidget,
 )
 
-from ...dominio.enums import SituacaoCliente, TipoPessoa
-from ...dominio.valores import ZERO, formatar_documento, formatar_moeda
+from ...dominio.enums import TipoPessoa
+from ...dominio.valores import formatar_documento
 from ...servicos import clientes as servico
 from ..comum import cores, widgets
-from ..comum.campos import CampoBusca, ComboEnum
+from ..comum.campos import CampoBusca
 from ..comum.tabelas import (
     Coluna,
     ModeloTabela,
     ajustar_colunas,
-    coluna_inteiro,
     coluna_moeda,
     item_atual,
     preparar_tabela,
@@ -56,6 +58,17 @@ class PainelClientes(QWidget):
         self.cabecalho.adicionar_botao("Atualizar", self.recarregar, atalho="F5")
         layout.addWidget(self.cabecalho)
 
+        self.abas = QTabBar()
+        self.abas.setExpanding(False)
+        self.abas.setDrawBase(False)
+        self.abas.addTab("Ativos")
+        self.abas.addTab("Inativos")
+        self.abas.setTabToolTip(
+            1, "Clientes marcados como inativos no cadastro. Ficam fora da lista principal."
+        )
+        self.abas.currentChanged.connect(lambda *_: self.recarregar())
+        layout.addWidget(self.abas)
+
         filtros = QHBoxLayout()
         self.grupo_tipo = QButtonGroup(self)
         for indice, rotulo in enumerate(("Todos", "PF", "PJ")):
@@ -64,15 +77,6 @@ class PainelClientes(QWidget):
             self.grupo_tipo.addButton(botao, indice)
             filtros.addWidget(botao)
         self.grupo_tipo.idToggled.connect(lambda *_: self.recarregar())
-        filtros.addSpacing(16)
-        self.situacao = ComboEnum(SituacaoCliente)
-        self.situacao.insertItem(0, "Qualquer situação", None)
-        self.situacao.setCurrentIndex(0)
-        self.situacao.currentIndexChanged.connect(lambda *_: self.recarregar())
-        filtros.addWidget(self.situacao)
-        self.com_debito = QCheckBox("Só com débito em aberto")
-        self.com_debito.toggled.connect(lambda *_: self.recarregar())
-        filtros.addWidget(self.com_debito)
         filtros.addStretch(1)
         self.busca = CampoBusca("Nome, código ou CPF/CNPJ…")
         self.busca.setMinimumWidth(280)
@@ -87,8 +91,6 @@ class PainelClientes(QWidget):
                 Coluna("Nome / razão social", lambda item: item.cliente.nome),
                 Coluna("CPF/CNPJ", lambda item: formatar_documento(item.cliente.documento) or "—"),
                 Coluna("Tipo", lambda item: item.cliente.tipo_pessoa.value,
-                       alinhamento=Qt.AlignmentFlag.AlignCenter),
-                Coluna("Situação", lambda item: item.cliente.situacao.rotulo,
                        alinhamento=Qt.AlignmentFlag.AlignCenter),
                 Coluna(
                     "Cobrança",
@@ -117,13 +119,6 @@ class PainelClientes(QWidget):
                     lambda item: item.cliente.empresa.nome if item.cliente.empresa else "—",
                 ),
                 coluna_moeda("Juros/dia", lambda item: item.juros_dia),
-                coluna_inteiro("Em aberto", lambda item: item.quantidade_em_aberto),
-                coluna_moeda("Total atualizado", lambda item: item.total_em_aberto, negrito=True),
-                coluna_inteiro(
-                    "Maior atraso",
-                    lambda item: item.maior_atraso,
-                    cor=lambda item: cores.cor_de_atraso(item.maior_atraso),
-                ),
             ]
         )
         self.tabela = preparar_tabela(QTableView(), esticar=1)
@@ -150,24 +145,34 @@ class PainelClientes(QWidget):
         self.so_ir = servico_honorarios.clientes_so_imposto_de_renda(self.contexto.sessao)
         indice = self.grupo_tipo.checkedId()
         tipo = {1: TipoPessoa.PF, 2: TipoPessoa.PJ}.get(indice)
-        linhas = servico.listar(
-            self.contexto.sessao,
+        filtro = dict(
             termo=self.busca.text(),
             tipo_pessoa=tipo,
-            situacao=self.situacao.currentData(),
-            somente_com_debito=self.com_debito.isChecked(),
             data_referencia=self.contexto.data_referencia,
+            com_totais=False,
         )
+        ativos = servico.listar(self.contexto.sessao, inativos=False, **filtro)
+        inativos = servico.listar(self.contexto.sessao, inativos=True, **filtro)
+        self.abas.setTabText(0, f"Ativos ({len(ativos)})")
+        self.abas.setTabText(1, f"Inativos ({len(inativos)})")
+        mostrar_inativos = self.abas.currentIndex() == 1
+        linhas = inativos if mostrar_inativos else ativos
         self.modelo.definir_itens(linhas)
         ajustar_colunas(self.tabela, self.modelo.colunas)
-        total = sum((linha.total_em_aberto for linha in linhas), start=ZERO)
-        com_debito = sum(1 for linha in linhas if linha.quantidade_em_aberto)
+        if mostrar_inativos:
+            self.resumo.setText(
+                f"{len(linhas)} cliente(s) inativo(s). Para reativar, edite o cadastro e "
+                "mude a situação."
+            )
+            return
         suspensos = sum(1 for linha in linhas if linha.cobranca_suspensa)
-        parte = f" · {suspensos} com cobrança suspensa" if suspensos else ""
-        self.resumo.setText(
-            f"{len(linhas)} cliente(s) · {com_debito} com débito · "
-            f"total em aberto {formatar_moeda(total)}{parte}"
-        )
+        so_ir = sum(1 for linha in linhas if linha.cliente.id in self.so_ir)
+        partes = [f"{len(linhas)} cliente(s) ativo(s)"]
+        if suspensos:
+            partes.append(f"{suspensos} com cobrança suspensa")
+        if so_ir:
+            partes.append(f"{so_ir} só de Imposto de Renda")
+        self.resumo.setText(" · ".join(partes))
 
     def _selecionado(self):
         linha = item_atual(self.tabela)

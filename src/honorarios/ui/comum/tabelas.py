@@ -15,7 +15,9 @@ from typing import Any
 from PySide6.QtCore import (
     QAbstractItemModel,
     QAbstractTableModel,
+    QEvent,
     QModelIndex,
+    QObject,
     QSortFilterProxyModel,
     Qt,
 )
@@ -250,6 +252,9 @@ def preparar_tabela(tabela: QTableView, esticar: int | None = None) -> QTableVie
     tabela.horizontalHeader().setSectionsMovable(True)
     tabela.horizontalHeader().setStretchLastSection(False)
     tabela.coluna_esticada = esticar
+    if esticar is not None:
+        filtro = _AoRedimensionar(tabela)
+        tabela.viewport().installEventFilter(filtro)
     return tabela
 
 
@@ -412,17 +417,36 @@ def ajustar_colunas(visao, colunas: Sequence[Coluna], folga: int = 18) -> None:
     # aqui seria pior: quando as outras colunas somam mais que a janela, a
     # esticada encolhe até sumir, e é justamente ela a mais importante.
     if esticar is not None and esticar < len(colunas):
-        largura_total = sum(visao.columnWidth(i) for i in range(len(colunas)))
-        disponivel = visao.viewport().width()
-        if disponivel > largura_total:
-            visao.setColumnWidth(
-                esticar, visao.columnWidth(esticar) + disponivel - largura_total
-            )
+        visao.largura_natural_esticada = visao.columnWidth(esticar)
+        distribuir_sobra(visao)
     # depois de mudar as larguras, volta ao começo: senão a tabela fica rolada e
     # a primeira coluna aparece cortada
     barra = visao.horizontalScrollBar()
     if barra is not None:
         barra.setValue(0)
+
+
+def distribuir_sobra(visao) -> None:
+    """Dá à coluna esticada o espaço que sobra na largura atual da tabela."""
+    esticar = getattr(visao, "coluna_esticada", None)
+    natural = getattr(visao, "largura_natural_esticada", None)
+    modelo = visao.model()
+    if esticar is None or natural is None or modelo is None:
+        return
+    quantidade = modelo.columnCount()
+    if esticar >= quantidade:
+        return
+    outras = sum(visao.columnWidth(i) for i in range(quantidade) if i != esticar)
+    visao.setColumnWidth(esticar, max(natural, visao.viewport().width() - outras))
+
+
+class _AoRedimensionar(QObject):
+    """A janela mudou de tamanho: a coluna esticada acompanha (só ela)."""
+
+    def eventFilter(self, objeto, evento) -> bool:  # noqa: N802
+        if evento.type() == QEvent.Type.Resize:
+            distribuir_sobra(self.parent())
+        return False
 
 
 def itens_selecionados_arvore(arvore: QTreeView) -> list[Any]:

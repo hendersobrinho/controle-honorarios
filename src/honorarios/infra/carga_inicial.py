@@ -128,6 +128,8 @@ CONFIGURACOES = (
     ("recebedor_razao_social", "Métodos Serviços Contábeis Ltda", "Nome que aparece no PIX"),
     ("recebedor_tipo_chave", TipoChavePix.CNPJ.value, "Tipo da chave PIX"),
     ("recebedor_chave", "02.294.442/0001-13", "Chave PIX da empresa"),
+    ("imagem_fundo", "", "Fundo SVG da imagem de cobrança (vazio = modelo do sistema)"),
+    ("imagem_qrcode_png", "", "PNG do QR code do Pix (gerado no banco) da imagem de cobrança"),
     ("formato_link_whatsapp", "WA_ME", "wa.me, api.whatsapp.com ou whatsapp://"),
     ("dias_vence_em_breve", "5", "Quantos dias antes do vencimento pintar de âmbar"),
     ("backup_ao_fechar", "1", "Gera backup automático ao fechar o app"),

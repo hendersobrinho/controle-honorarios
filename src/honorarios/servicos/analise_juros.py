@@ -798,6 +798,85 @@ def atrasados_no_cenario(
     ]
 
 
+# ------------------------------------------------- o trabalho para receber
+
+INDICADORES_TRABALHO = (
+    ("atraso", "Pagos com atraso", ""),
+    ("tempo", "Tempo em atraso",
+     "Dias de atraso somados de todos os honorários pagos no período"),
+    ("cobrancas", "Cobranças feitas até pagar",
+     "Cada mensagem enviada conta uma vez, mesmo com vários honorários dentro"),
+    ("por_cobranca", "Juros por cobrança",
+     "Quanto de juros entrou para cada cobrança feita: mostra se o trabalho de cobrar se paga"),
+    ("taxa", "Juros efetivo ao mês", "Juros recebido ÷ (valor atrasado × meses de atraso)"),
+    ("hoje", "Em atraso hoje", ""),
+)
+
+
+def indicadores_de_trabalho(
+    analise: AnaliseJuros, geral: AnaliseJuros | None = None
+) -> dict[str, tuple[str, str]]:
+    """Valor e nota de cada indicador; a nota compara com a média dos clientes.
+
+    A tela e o PDF usam os mesmos textos, para os dois mostrarem o mesmo número.
+    """
+
+    def media(texto: str) -> str:
+        return f"média dos clientes: {texto}"
+
+    atrasados = len(analise.atrasados)
+    tem_media = geral is not None and bool(geral.atrasados)
+    saida: dict[str, tuple[str, str]] = {}
+    saida["atraso"] = (
+        f"{atrasados} de {len(analise.honorarios)}",
+        f"{percentual(analise.percentual_com_atraso, 0)} dos honorários pagos"
+        + (f" · {media(percentual(geral.percentual_com_atraso, 0))}" if geral else ""),
+    )
+    saida["tempo"] = (
+        _dias(analise.dias_em_atraso) if atrasados else "em dia",
+        (
+            f"média {_dias(round(analise.atraso_medio))} por honorário · o maior, "
+            f"{_dias(analise.maior_atraso)}"
+            if atrasados else "nenhum dia de atraso"
+        )
+        + (f" · {media(_dias(round(geral.atraso_medio)))}" if tem_media else ""),
+    )
+    saida["cobrancas"] = (
+        str(analise.cobrancas) if analise.cobrancas else "nenhuma",
+        (
+            f"{_decimal(analise.cobrancas_por_atrasado)} por honorário atrasado"
+            if atrasados else "pagou sem ser cobrado"
+        )
+        + (f" · {media(_decimal(geral.cobrancas_por_atrasado))}" if tem_media else ""),
+    )
+    por_cobranca = analise.juros_por_cobranca
+    saida["por_cobranca"] = (
+        formatar_moeda(por_cobranca) if por_cobranca is not None else "—",
+        "juros recebido ÷ cobranças feitas"
+        + (
+            f" · {media(formatar_moeda(geral.juros_por_cobranca))}"
+            if geral is not None and geral.juros_por_cobranca is not None else ""
+        ),
+    )
+    efetiva, cadastrada = analise.taxa_mensal_efetiva, analise.taxa_mensal_cadastrada
+    saida["taxa"] = (
+        percentual(efetiva, 2) if efetiva is not None else "—",
+        f"a taxa cadastrada daria {percentual(cadastrada, 2)} sem abono"
+        if cadastrada is not None else "",
+    )
+    hoje_ = analise.hoje
+    saida["hoje"] = (
+        f"{hoje_.quantidade} honorário{'s' if hoje_.quantidade > 1 else ''}"
+        if hoje_.quantidade else "nada",
+        (
+            f"o mais antigo há {_dias(hoje_.maior_atraso)} · "
+            f"{formatar_moeda(hoje_.juros_por_dia)} de juros por dia · "
+            f"{hoje_.cobrancas} cobrança(s) já feita(s)"
+        ) if hoje_.quantidade else "",
+    )
+    return saida
+
+
 # ----------------------------------------------------------------- explicação
 
 
@@ -933,6 +1012,7 @@ __all__ = [
     "AtrasadoNoCenario",
     "CarteiraHoje",
     "HonorarioNoCenario",
+    "INDICADORES_TRABALHO",
     "Cenario",
     "HonorarioPago",
     "Mes",
@@ -941,6 +1021,7 @@ __all__ = [
     "cenario",
     "cenarios",
     "explicar_cliente",
+    "indicadores_de_trabalho",
     "percentual",
     "por_honorario",
 ]

@@ -464,13 +464,24 @@ def listar(
     situacao: SituacaoCliente | None = None,
     somente_com_debito: bool = False,
     data_referencia: date | None = None,
+    inativos: bool | None = None,
+    com_totais: bool = True,
 ) -> list[LinhaCliente]:
-    """Lista com os totais em aberto já atualizados na data de referência."""
+    """Lista com os totais em aberto já atualizados na data de referência.
+
+    ``inativos``: None traz todos; True só os inativos; False os demais.
+    ``com_totais=False`` pula o cálculo da dívida (a tela de clientes não mostra
+    mais o débito — para isso existem as telas de cobrança).
+    """
     consulta = select(Cliente).where(Cliente.excluido_em.is_(None))
     if tipo_pessoa is not None:
         consulta = consulta.where(Cliente.tipo_pessoa == tipo_pessoa)
     if situacao is not None:
         consulta = consulta.where(Cliente.situacao == situacao)
+    if inativos is True:
+        consulta = consulta.where(Cliente.situacao == SituacaoCliente.INATIVO)
+    elif inativos is False:
+        consulta = consulta.where(Cliente.situacao != SituacaoCliente.INATIVO)
     alvo = normalizar_busca(termo)
     if alvo:
         digitos = so_digitos(termo)
@@ -482,6 +493,17 @@ def listar(
     referencia = data_referencia or hoje()
     linhas: list[LinhaCliente] = []
     for cliente in sessao.scalars(consulta.order_by(Cliente.nome)).all():
+        if not com_totais:
+            linhas.append(
+                LinhaCliente(
+                    cliente=cliente,
+                    total_em_aberto=ZERO,
+                    quantidade_em_aberto=0,
+                    maior_atraso=0,
+                    juros_dia=juros_atual(cliente, referencia),
+                )
+            )
+            continue
         abertos = [
             h for h in cliente.honorarios if h.status is StatusPagamento.EM_ABERTO
         ]
