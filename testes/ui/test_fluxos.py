@@ -288,6 +288,32 @@ def test_dialogo_gerar_competencia_previa_e_geracao(qtbot, contexto, monkeypatch
 # ------------------------------------------------------------------ clientes
 
 
+def test_clientes_so_de_ir_ficam_na_aba_deles(qtbot, contexto, cliente_com_debito):
+    from honorarios.dominio.enums import SituacaoCliente, TipoPessoa
+    from honorarios.ui.paineis.clientes import PainelClientes
+
+    so_ir = fabricas.cliente(contexto.sessao, codigo="960", nome="SO IMPOSTO DE RENDA",
+                             documento=fabricas.CPF_FICTICIO, tipo=TipoPessoa.PF)
+    fabricas.honorario(contexto.sessao, so_ir, valor="400.00", vencimento=date(2026, 4, 30),
+                       competencia=Competencia(2026), tipo=fabricas.tipo_irpf(contexto.sessao))
+    ir_inativo = fabricas.cliente(contexto.sessao, codigo="961", nome="IR INATIVO",
+                                  documento="", tipo=TipoPessoa.PF)
+    fabricas.honorario(contexto.sessao, ir_inativo, valor="300.00", vencimento=date(2026, 4, 30),
+                       competencia=Competencia(2026), tipo=fabricas.tipo_irpf(contexto.sessao))
+    ir_inativo.situacao = SituacaoCliente.INATIVO
+    contexto.salvar()
+
+    painel = PainelClientes(contexto)
+    qtbot.addWidget(painel)
+    ids = lambda: [linha.cliente.id for linha in painel.modelo.itens]  # noqa: E731
+    assert ids() == [cliente_com_debito.id]              # ativos: sem os só de IR
+    painel.abas.setCurrentIndex(1)
+    assert ids() == [so_ir.id]
+    assert "só de Imposto de Renda" in painel.resumo.text()
+    painel.abas.setCurrentIndex(2)
+    assert ids() == [ir_inativo.id]                      # inativo fica em Inativos
+
+
 def test_painel_clientes_separa_inativos_e_nao_mostra_divida(
     qtbot, contexto, cliente_com_debito
 ):
@@ -301,13 +327,14 @@ def test_painel_clientes_separa_inativos_e_nao_mostra_divida(
     painel = PainelClientes(contexto)
     qtbot.addWidget(painel)
     titulos = [coluna.titulo for coluna in painel.modelo.colunas]
-    for removida in ("Situação", "Em aberto", "Total atualizado", "Maior atraso"):
+    for removida in ("Situação", "Em aberto", "Total atualizado", "Maior atraso", "Perfil"):
         assert removida not in titulos
     # o inativo só aparece na aba dele
     assert painel.modelo.rowCount() == 1
     assert painel.abas.tabText(0) == "Ativos (1)"
-    assert painel.abas.tabText(1) == "Inativos (1)"
-    painel.abas.setCurrentIndex(1)
+    assert painel.abas.tabText(1) == "Imposto de Renda (0)"
+    assert painel.abas.tabText(2) == "Inativos (1)"
+    painel.abas.setCurrentIndex(2)
     assert [linha.cliente.id for linha in painel.modelo.itens] == [inativo.id]
     painel.abas.setCurrentIndex(0)
     assert "1 cliente(s) ativo(s)" in painel.resumo.text()
@@ -1039,14 +1066,14 @@ def test_dialogo_de_tipo_mostra_previa_e_insere_variavel(qtbot, contexto):
     assert "⚠" in dialogo.previas[0].text()
 
 
-def test_lista_de_clientes_marca_perfil_so_ir(qtbot, contexto, cliente_so_ir):
+def test_lista_de_clientes_poe_o_so_ir_na_aba_dele(qtbot, contexto, cliente_so_ir):
     from honorarios.ui.paineis.clientes import PainelClientes
 
     painel = PainelClientes(contexto)
     qtbot.addWidget(painel)
-    coluna = next(c for c in painel.modelo.colunas if c.titulo == "Perfil")
-    linha = next(item for item in painel.modelo.itens if item.cliente.id == cliente_so_ir.id)
-    assert coluna.texto(linha) == "Só IR"
+    assert cliente_so_ir.id not in [item.cliente.id for item in painel.modelo.itens]
+    painel.abas.setCurrentIndex(1)                 # Imposto de Renda
+    assert cliente_so_ir.id in [item.cliente.id for item in painel.modelo.itens]
 
 
 # ------------------------------------------------------ imagem da cobrança

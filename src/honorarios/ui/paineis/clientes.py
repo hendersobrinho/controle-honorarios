@@ -1,4 +1,5 @@
-"""Lista de clientes: cadastro, juros e cobrança. Ativos e inativos em abas.
+"""Lista de clientes: cadastro, juros e cobrança. Abas: ativos, só de Imposto de
+Renda e inativos.
 
 A dívida não aparece aqui: em aberto, atraso e totais têm as telas de cobrança.
 """
@@ -62,9 +63,14 @@ class PainelClientes(QWidget):
         self.abas.setExpanding(False)
         self.abas.setDrawBase(False)
         self.abas.addTab("Ativos")
+        self.abas.addTab("Imposto de Renda")
         self.abas.addTab("Inativos")
         self.abas.setTabToolTip(
-            1, "Clientes marcados como inativos no cadastro. Ficam fora da lista principal."
+            1, "Clientes que só têm honorário de Imposto de Renda. A cobrança deles fica "
+            "na tela Imposto de Renda."
+        )
+        self.abas.setTabToolTip(
+            2, "Clientes marcados como inativos no cadastro. Ficam fora da lista principal."
         )
         self.abas.currentChanged.connect(lambda *_: self.recarregar())
         layout.addWidget(self.abas)
@@ -104,17 +110,6 @@ class PainelClientes(QWidget):
                     dica=lambda item: servico.suspensao(item.cliente),
                 ),
                 Coluna(
-                    "Perfil",
-                    lambda item: "Só IR" if item.cliente.id in self.so_ir else "—",
-                    alinhamento=Qt.AlignmentFlag.AlignCenter,
-                    dica=lambda item: (
-                        "Só tem honorário de Imposto de Renda: a cobrança dele fica "
-                        "na tela Imposto de Renda"
-                        if item.cliente.id in self.so_ir
-                        else ""
-                    ),
-                ),
-                Coluna(
                     "Paga pela empresa",
                     lambda item: item.cliente.empresa.nome if item.cliente.empresa else "—",
                 ),
@@ -151,27 +146,32 @@ class PainelClientes(QWidget):
             data_referencia=self.contexto.data_referencia,
             com_totais=False,
         )
-        ativos = servico.listar(self.contexto.sessao, inativos=False, **filtro)
+        nao_inativos = servico.listar(self.contexto.sessao, inativos=False, **filtro)
+        # quem só tem IR fica na aba dele; inativo vai para Inativos, seja IR ou não
+        ativos = [linha for linha in nao_inativos if linha.cliente.id not in self.so_ir]
+        so_ir = [linha for linha in nao_inativos if linha.cliente.id in self.so_ir]
         inativos = servico.listar(self.contexto.sessao, inativos=True, **filtro)
         self.abas.setTabText(0, f"Ativos ({len(ativos)})")
-        self.abas.setTabText(1, f"Inativos ({len(inativos)})")
-        mostrar_inativos = self.abas.currentIndex() == 1
-        linhas = inativos if mostrar_inativos else ativos
+        self.abas.setTabText(1, f"Imposto de Renda ({len(so_ir)})")
+        self.abas.setTabText(2, f"Inativos ({len(inativos)})")
+        aba = self.abas.currentIndex()
+        linhas = (ativos, so_ir, inativos)[aba]
         self.modelo.definir_itens(linhas)
         ajustar_colunas(self.tabela, self.modelo.colunas)
-        if mostrar_inativos:
+        if aba == 2:
             self.resumo.setText(
                 f"{len(linhas)} cliente(s) inativo(s). Para reativar, edite o cadastro e "
                 "mude a situação."
             )
             return
         suspensos = sum(1 for linha in linhas if linha.cobranca_suspensa)
-        so_ir = sum(1 for linha in linhas if linha.cliente.id in self.so_ir)
-        partes = [f"{len(linhas)} cliente(s) ativo(s)"]
+        partes = [
+            f"{len(linhas)} cliente(s) ativo(s)" if aba == 0
+            else f"{len(linhas)} cliente(s) só de Imposto de Renda — a cobrança deles fica "
+            "na tela Imposto de Renda"
+        ]
         if suspensos:
             partes.append(f"{suspensos} com cobrança suspensa")
-        if so_ir:
-            partes.append(f"{so_ir} só de Imposto de Renda")
         self.resumo.setText(" · ".join(partes))
 
     def _selecionado(self):
