@@ -407,6 +407,35 @@ def juros_atual(cliente: Cliente, referencia: date | None = None) -> Decimal:
 # ----------------------------------------------------------------------- consulta
 
 
+def buscar(
+    sessao: Session,
+    termo: str = "",
+    tipo_pessoa: TipoPessoa | None = None,
+    excluir_id: int | None = None,
+    limite: int = 200,
+) -> list[Cliente]:
+    """Busca leve para o seletor: nome sem acento, código ou CPF/CNPJ.
+
+    Não calcula dívida nenhuma — é para achar o cliente enquanto se digita.
+    """
+    consulta = select(Cliente).where(Cliente.excluido_em.is_(None))
+    if tipo_pessoa is not None:
+        consulta = consulta.where(Cliente.tipo_pessoa == tipo_pessoa)
+    if excluir_id:
+        consulta = consulta.where(Cliente.id != excluir_id)
+    alvo = normalizar_busca(termo)
+    if alvo:
+        condicoes = [Cliente.nome_busca.contains(alvo), Cliente.codigo.contains(termo.strip())]
+        digitos = so_digitos(termo)
+        if digitos:
+            condicoes.append(Cliente.documento.contains(digitos))
+        consulta = consulta.where(or_(*condicoes))
+    # código exato primeiro: quem digita "302" quer o 302, não o 1302
+    encontrados = list(sessao.scalars(consulta.order_by(Cliente.nome).limit(limite)).unique())
+    exato = [c for c in encontrados if c.codigo == termo.strip()]
+    return exato + [c for c in encontrados if c not in exato]
+
+
 def obter(sessao: Session, cliente_id: int) -> Cliente | None:
     return sessao.get(Cliente, cliente_id)
 

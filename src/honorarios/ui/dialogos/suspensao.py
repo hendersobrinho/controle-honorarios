@@ -55,9 +55,10 @@ class DialogoSuspensao(QDialog):
 
         layout.addWidget(
             widgets.rotulo_fraco(
-                "O cliente sai da Fila do dia e da Fila de envio, e o sistema recusa "
-                "registrar cobrança dele. Os honorários continuam em aberto e o juros "
-                "continua correndo — o que para é a cobrança, não a dívida."
+                "O cartão do cliente fica cinza com a etiqueta \"Cobrança suspensa\" e "
+                "o sistema recusa registrar cobrança dele. Os honorários continuam em "
+                "aberto e o juros continua correndo — o que para é a cobrança, não a "
+                "dívida."
             )
         )
         layout.addStretch(1)

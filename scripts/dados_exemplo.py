@@ -141,6 +141,13 @@ PESSOAS = [
      cpf("153122359"), "0.10", "Cida", "27999910021"),
     ("502", "JOSEFA LIMA DA CONCEICAO", TipoPessoa.PF, SubtipoCliente.DOMESTICA,
      cpf("764188942"), "0.08", "Josefa", "27999910022"),
+    # clientes que só fazem imposto de renda com o escritório
+    ("601", "ROBERTO ALVES LIMA", TipoPessoa.PF, SubtipoCliente.NENHUM,
+     cpf("123456789"), "0.20", "Roberto", "27999910031"),
+    ("602", "SANDRA MOURA CASTRO", TipoPessoa.PF, SubtipoCliente.NENHUM,
+     cpf("987654321"), "0.15", "Sandra", "27999910032"),
+    ("603", "PAULO HENRIQUE DIAS", TipoPessoa.PF, SubtipoCliente.NENHUM,
+     cpf("246813579"), "0.30", "Paulo", "27999910033"),
 ]
 
 # código do cliente, valor, dia de vencimento, periodicidade, suspenso
@@ -324,6 +331,39 @@ MESES_EM_ABERTO = {
 }
 
 
+# clientes que dão trabalho: quando atrasam, atrasam mais e precisam de várias
+# cobranças até pagar (código → cobranças por honorário atrasado)
+TRABALHOSOS = {"306": 3, "401": 2, "302": 2}
+
+
+def _cobrar_antes_de_pagar(sessao, honorario: Honorario, pagamento: date, vezes: int) -> None:
+    """Cobranças enviadas a cada semana de atraso, até o dia do pagamento."""
+    for semana in range(vezes):
+        dia = honorario.vencimento + timedelta(days=1 + semana * 7)
+        if dia >= pagamento:
+            break
+        linhas = [
+            linha
+            for linha in servico_cobrancas.linhas_em_aberto_do_cliente(
+                sessao, honorario.cliente_id, dia
+            )
+            if linha.honorario.id == honorario.id
+        ]
+        if not linhas:
+            break
+        selecao = servico_cobrancas.Selecao(
+            cliente=honorario.cliente, linhas=linhas, data_referencia=dia,
+            hora_referencia=time(10, 0),
+        )
+        servico_cobrancas.registrar(
+            sessao,
+            selecao,
+            texto=servico_cobrancas.gerar_texto(sessao, selecao),
+            canal=Canal.WHATSAPP,
+            quando=datetime.combine(dia, time(10, 0)),
+        )
+
+
 def registrar_pagamentos(sessao) -> None:
     """Paga o histórico, deixando em aberto só o que cada cliente deve.
 
@@ -346,7 +386,12 @@ def registrar_pagamentos(sessao) -> None:
                 continue
             # parte paga em dia, parte com alguns dias de atraso
             atraso = 0 if honorario.id % 3 else (honorario.id % 9) + 1
+            vezes = TRABALHOSOS.get(codigo, 1)
+            if atraso and codigo in TRABALHOSOS:
+                atraso += 7 * vezes
             data_pagamento = min(honorario.vencimento + timedelta(days=atraso), hoje_)
+            if atraso >= 3:
+                _cobrar_antes_de_pagar(sessao, honorario, data_pagamento, vezes)
             previa = servico_pagamentos.previa(honorario, data_pagamento)
             servico_pagamentos.registrar(
                 sessao,
@@ -450,6 +495,37 @@ def criar_avulsos(sessao, clientes: dict[str, Cliente]) -> None:
                 honorario,
                 servico_pagamentos.DadosPagamento(
                     data=date(hoje_.year, 6, 25), valor_pago=previa.total_devido
+                ),
+            )
+    sessao.commit()
+
+    # clientes só de IR: um atrasado, um pago e um com parcela a vencer
+    for codigo, valor, vencimento, ano, pago_em in (
+        ("601", "450.00", date(hoje_.year, 6, 25), hoje_.year, None),
+        ("602", "380.00", date(hoje_.year, 6, 25), hoje_.year, date(hoje_.year, 7, 2)),
+        ("603", "520.00", hoje_ + timedelta(days=10), hoje_.year, None),
+        ("603", "480.00", date(hoje_.year - 1, 6, 28), hoje_.year - 1,
+         date(hoje_.year - 1, 6, 28)),
+    ):
+        honorario = servico_honorarios.criar(
+            sessao,
+            servico_honorarios.DadosHonorario(
+                cliente_id=clientes[codigo].id,
+                tipo_id=tipos["Imposto de Renda"].id,
+                valor=Decimal(valor),
+                vencimento=vencimento,
+                competencia=Competencia(ano),
+                meio=MeioCobranca.PIX,
+            ),
+        )
+        if pago_em is not None:
+            previa = servico_pagamentos.previa(honorario, pago_em)
+            servico_pagamentos.registrar(
+                sessao,
+                honorario,
+                servico_pagamentos.DadosPagamento(
+                    data=pago_em, valor_pago=previa.total_devido,
+                    forma_pagamento=FormaPagamento.PIX,
                 ),
             )
     sessao.commit()

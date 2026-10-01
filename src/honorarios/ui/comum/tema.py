@@ -16,6 +16,7 @@ CORES = {
         "atencao": "#b7791f",
         "pago": "#1f7a45",
         "faixa": "#f0f2f5",
+        "roxo": "#7c5cff",
     },
     "escuro": {
         "fundo": "#161a1f",
@@ -28,6 +29,7 @@ CORES = {
         "atencao": "#e9b949",
         "pago": "#5fd08a",
         "faixa": "#222a31",
+        "roxo": "#a48bff",
     },
 }
 
@@ -66,6 +68,39 @@ def folha_de_estilo(tema: str = "claro") -> str:
     }}
     QLabel#titulo {{ font-size: 20px; font-weight: 600; }}
     QLabel#subtitulo {{ color: {c["texto_fraco"]}; }}
+    QLabel#rankingTitulo {{ font-size: 17px; font-weight: 700; }}
+    QLabel#rankingCuriosidade {{
+        background: {c["faixa"]};
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 12px;
+    }}
+    QListWidget#listaGrupos {{
+        background: transparent;
+        border: none;
+    }}
+    QListWidget#listaGrupos::item {{
+        padding: 10px 12px;
+        margin-bottom: 4px;
+        border: 1px solid {c["borda"]};
+        border-radius: 8px;
+    }}
+    QListWidget#listaGrupos::item:selected {{
+        background: {c["destaque"]};
+        color: #ffffff;
+        border-color: {c["destaque"]};
+    }}
+    QLabel#previaMensagem {{
+        background: {c["faixa"]};
+        border-left: 3px solid {c["destaque"]};
+        border-radius: 4px;
+        padding: 6px 10px;
+        color: {c["texto"]};
+    }}
+    QLabel#previaMensagem[erro="true"] {{
+        border-left-color: {c["atrasado"]};
+        color: {c["atrasado"]};
+    }}
     QLabel#avisoForte {{
         background: {c["faixa"]};
         color: {c["atrasado"]};
@@ -136,7 +171,19 @@ def folha_de_estilo(tema: str = "claro") -> str:
     QLabel#cartaoSubtitulo {{ color: {c["texto_fraco"]}; font-size: 12px; }}
     QLabel#cartaoDetalheRotulo {{ color: {c["texto_fraco"]}; font-size: 10px; }}
     QLabel#cartaoDetalheValor {{ font-size: 12px; }}
-    QLabel#cartaoEtiqueta {{ font-size: 11px; font-weight: 600; }}
+    QLabel#cartaoEtiqueta {{
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 9px;
+        padding: 2px 9px;
+    }}
+    QLabel#cartaoData {{
+        font-size: 12px;
+        border-radius: 10px;
+        padding: 3px 10px;
+        background: {c["faixa"]};
+        border: 1px solid {c["borda"]};
+    }}
     QLabel#cartaoValor {{ font-size: 16px; font-weight: 600; }}
     QPushButton#cartaoAcao {{
         padding: 4px 10px;

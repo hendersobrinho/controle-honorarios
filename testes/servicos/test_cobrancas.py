@@ -124,42 +124,6 @@ def test_link_whatsapp_precisa_de_telefone(sessao):
         cobrancas.link_whatsapp(sessao, contato, "oi")
 
 
-def test_fila_do_dia_separa_as_situacoes(sessao):
-    cliente, honorario = cenario(sessao)
-    vence_hoje = fabricas.honorario(
-        sessao, cliente, valor="300.00", vencimento=date(2026, 9, 29),
-        competencia=Competencia(2026, 9),
-    )
-    cobrancas.registrar(
-        sessao,
-        cobrancas.Selecao(
-            cliente=cliente,
-            linhas=[servico_honorarios.montar_linha(honorario, data_referencia=date(2026, 9, 29))],
-        ),
-        resultado=ResultadoCobranca.PROMETEU_PAGAR,
-        promessa_data=date(2026, 9, 26),
-    )
-    sessao.commit()
-    secoes = {secao.titulo: secao for secao in cobrancas.fila_do_dia(sessao, date(2026, 9, 29))}
-    assert [linha.honorario.id for linha in secoes["Promessa de pagamento vencida"].linhas] == [
-        honorario.id
-    ]
-    assert [linha.honorario.id for linha in secoes["Vence hoje"].linhas] == [vence_hoje.id]
-    assert secoes["Nunca cobrado"].linhas == []
-
-
-def test_fila_de_envio_agrupa_por_empresa(sessao):
-    cliente, _ = cenario(sessao)
-    outro = fabricas.cliente(
-        sessao, codigo="901", nome="OUTRA EMPRESA LTDA", documento="", juros_dia="0.50"
-    )
-    fabricas.honorario(sessao, outro, valor="200.00", vencimento=date(2026, 7, 10))
-    grupos = cobrancas.fila_de_envio(sessao, Filtro(data_referencia=date(2026, 9, 29)))
-    assert len(grupos) == 2
-    # maior atraso primeiro
-    assert grupos[0][0].nome == "OUTRA EMPRESA LTDA"
-
-
 def test_filtro_nunca_cobrado_e_sem_cobranca_ha_dias(sessao):
     cliente, _ = cenario(sessao)
     assert len(servico_honorarios.pendentes(sessao, Filtro(nunca_cobrado=True))) == 1

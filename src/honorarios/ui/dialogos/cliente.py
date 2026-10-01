@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
     QLineEdit,
     QPlainTextEdit,
     QTableWidget,
@@ -22,7 +23,8 @@ from ...dominio.enums import SituacaoCliente, SubtipoCliente, TipoPessoa
 from ...dominio.valores import formatar_moeda, formatar_telefone
 from ...servicos import clientes
 from ..comum import widgets
-from ..comum.campos import CampoDocumento, CampoTaxa, ComboEnum, ComboRegistros
+from ..comum.campos import CampoDocumento, CampoTaxa, ComboEnum
+from ..comum.seletor_cliente import CampoCliente
 from ..contexto import Contexto
 
 COLUNAS_CONTATO = ("Nome", "Como chamar", "WhatsApp", "E-mail", "Principal")
@@ -58,12 +60,11 @@ class DialogoCliente(QDialog):
         formulario.addRow("Subtipo:", self.subtipo)
         self.situacao = ComboEnum(SituacaoCliente, SituacaoCliente.ATIVO)
         formulario.addRow("Situação:", self.situacao)
-        self.empresa = ComboRegistros(
-            clientes.empresas_para_vinculo(
-                self.contexto.sessao, self.cliente.id if self.cliente else None
-            ),
-            rotulo=lambda c: f"{c.codigo} – {c.nome}",
-            vazio="— cobra em nome próprio —",
+        self.empresa = CampoCliente(
+            self.contexto.sessao,
+            tipo_pessoa=TipoPessoa.PJ,
+            excluir_id=self.cliente.id if self.cliente else None,
+            vazio="Em branco: cobra em nome próprio",
         )
         self.empresa.setToolTip(
             "Quando a pessoa física paga os honorários por uma empresa, a cobrança "
@@ -77,13 +78,21 @@ class DialogoCliente(QDialog):
 
         grupo_juros = QGroupBox("Juros ao dia")
         caixa_juros = QVBoxLayout(grupo_juros)
-        linha = QFormLayout()
+        linha = QHBoxLayout()
+        linha.addWidget(QLabel("Valor por dia de atraso:"))
         self.juros = CampoTaxa(Decimal("0.00"))
-        linha.addRow("Valor por dia de atraso:", self.juros)
+        linha.addWidget(self.juros)
+        # no cliente já cadastrado o valor muda por aqui, com vigência e histórico
+        self.botao_juros = widgets.QPushButton("Alterar juros ao dia…")
+        self.botao_juros.setObjectName("primario")
+        self.botao_juros.clicked.connect(self._alterar_juros)
+        self.botao_juros.setVisible(False)
+        linha.addWidget(self.botao_juros)
+        linha.addStretch(1)
         caixa_juros.addLayout(linha)
         self.nota_juros = widgets.rotulo_fraco(
-            "Obrigatório. Alterações depois do cadastro passam pelo botão "
-            "\"Juros ao dia\", que guarda o histórico de vigência."
+            "Obrigatório. Depois do cadastro, o valor muda pelo botão \"Alterar juros "
+            "ao dia\", que guarda a data de vigência e o histórico."
         )
         caixa_juros.addWidget(self.nota_juros)
         layout.addWidget(grupo_juros)
@@ -172,15 +181,28 @@ class DialogoCliente(QDialog):
         self.situacao.definir(cliente.situacao)
         self.empresa.definir(cliente.empresa_id)
         self.observacoes.setPlainText(cliente.observacoes)
-        self.juros.definir(clientes.juros_atual(cliente))
-        self.juros.setEnabled(False)
-        self.nota_juros.setText(
-            f"Vigente hoje: {formatar_moeda(clientes.juros_atual(cliente))} por dia. "
-            "Para alterar, use o botão \"Juros ao dia\" na lista de clientes."
-        )
+        self._mostrar_juros()
         for contato in cliente.contatos:
             self._nova_linha(contato)
         self._ajustar_subtipo()
+
+    def _mostrar_juros(self) -> None:
+        atual = clientes.juros_atual(self.cliente)
+        self.juros.definir(atual)
+        self.juros.setEnabled(False)
+        self.botao_juros.setVisible(True)
+        historico = len(self.cliente.juros)
+        self.nota_juros.setText(
+            f"Vigente hoje: {formatar_moeda(atual)} por dia · "
+            f"{historico} registro(s) no histórico. A mudança vale a partir da data "
+            "que você escolher, nunca para trás."
+        )
+
+    def _alterar_juros(self) -> None:
+        from .juros import DialogoJuros
+
+        if DialogoJuros(self.contexto, self.cliente, self).exec():
+            self._mostrar_juros()
 
     def _texto(self, linha: int, coluna: int) -> str:
         item = self.contatos.item(linha, coluna)

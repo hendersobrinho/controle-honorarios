@@ -30,7 +30,7 @@ calculado, para o mesmo período não ser cobrado duas vezes.
 
 ### Pagamento parcial não cria status novo
 O honorário continua `Em aberto` com `saldo_aberto` menor. Um status "parcial"
-faria o honorário sumir das filas de cobrança, que é justamente onde ele precisa
+faria o honorário sumir das telas de cobrança, que é justamente onde ele precisa
 continuar aparecendo.
 
 ### Arredondamento só no total
@@ -66,14 +66,32 @@ enviar é situação comum.
 Quando a mensagem sai, ainda não existe resposta — pedir o resultado ali é
 contraditório e polui a tela. Toda cobrança nasce com resultado
 `AGUARDANDO` ("Aguardando resposta"), e o retorno é anotado depois, na tela
-**Acompanhamento** ou pelo Histórico do honorário.
+**Cobranças enviadas** ou pelo Histórico do honorário.
 
 A unidade de acompanhamento é a **mensagem enviada** (o lote), não cada
 honorário: foi uma conversa só com a empresa, e a resposta vale para todos os
 honorários que estavam nela.
 
+### Uma tela por situação: atrasados, a vencer e pagos
+A antiga "Cobrança geral" tinha uma alternância Pendentes | Pagos | Todos e
+filtros que valiam para uma situação e não para outra (faixa de atraso não faz
+sentido em pagos; período não faz sentido em pendentes). Virou três telas, cada
+uma com só o que importa para ela:
+
+* **Atrasados** — seções por faixa de atraso, da dívida mais antiga para a mais
+  recente; cobrar, cobrança em lote, renegociar e simular data.
+* **A vencer** — seções por proximidade do vencimento (hoje, próximos dias, mais
+  adiante); o botão principal é o lembrete.
+* **Pagos** — seções por mês do pagamento, com período; cartão próprio que diz
+  se pagou em dia ou com atraso, com juros cobrados e abono.
+
+O critério é o vencimento, e a data é a de referência do cálculo — a mesma que
+decide os juros —, não o relógio do sistema. Honorário atrasado com promessa de
+pagamento continua em Atrasados: a promessa aparece no cartão, e o que ela pede
+de ação está em Cobranças enviadas.
+
 ### Lista em cartões, não em tabela, nas telas de cobrança
-Cobrança geral, Fila do dia e Acompanhamento mostram cada registro como um
+Atrasados, A vencer, Pagos e Cobranças enviadas mostram cada registro como um
 cartão com faixa colorida à esquerda (vermelho em atraso, âmbar pedindo atenção,
 verde resolvido) e os botões daquele registro no próprio cartão. Tabela continua
 onde a leitura é comparativa (Clientes, Contratos, Painel, Importação).
@@ -96,7 +114,7 @@ lá), então o recorte de período usa o vencimento nesses casos, e o rótulo do
 avisa: "(sem data de pagamento, pelo vencimento)".
 
 ### Suspender cobrança não suspende a dívida
-A suspensão tira o cliente das filas de trabalho e faz o sistema recusar o
+A suspensão marca o cliente (cartão cinza, etiqueta própria) e faz o sistema recusar o
 registro de cobrança dele. Os honorários continuam em aberto e o juros continua
 correndo: quem suspende quer parar de cobrar, não perdoar. Para perdoar existe
 cancelar ou renegociar.
@@ -118,6 +136,99 @@ honorários dela. O vínculo:
 Quando a mensagem mistura titulares, ela usa obrigatoriamente o modelo de lista
 e cada linha começa com o nome de quem deve — cobrar "o honorário de agosto" de
 alguém que não o reconhece é o caminho mais curto para uma discussão.
+
+### Clientes só de Imposto de Renda têm tela própria
+É cliente só de IR quem tem honorário (não cancelado) e todos eles são de tipos
+do grupo marcado como Imposto de Renda, sem contrato recorrente ativo de outro
+tipo. Quem tem mensal e IR continua sendo cliente comum.
+
+A regra é calculada, não um campo do cadastro: não há o que esquecer de marcar e
+não sai de sincronia. E segue a **marcação do grupo** (`imposto_de_renda`), não
+o nome — renomear o grupo não quebra nada. Só um grupo pode ter a marcação.
+
+Esses clientes saem de Atrasados, A vencer e Pagos e aparecem na tela Imposto de
+Renda, que alterna em aberto e pagos (nunca misturados) e filtra pelo ano do IR.
+
+### Grupos e tipos numa tela própria
+Era uma aba escondida em Configurações, com grupos criados por uma caixinha de
+texto e sem lista. Virou tela em Cadastros: grupos à esquerda, na ordem das
+seções, com subir/descer; tipos do grupo à direita em cartões que mostram a
+frase como sai na cobrança e quantos honorários e contratos usam o tipo. O
+cadastro do tipo explica quando cada um dos três textos é usado, mostra a prévia
+enquanto se digita e insere as variáveis por botão.
+
+### Sem Fila do dia e Fila de envio
+As duas telas saíram a pedido (30/09/2026): repetiam o que Atrasados já mostra e
+não ficava claro para que serviam. O que tinham de útil foi para outro lugar —
+a promessa vencida aparece no cartão e em Cobranças enviadas, e a cobrança de
+várias empresas em sequência (o antigo assistente) é disparada selecionando
+honorários de mais de uma empresa em Atrasados.
+
+### "Acompanhamento" virou "Cobranças enviadas"
+O nome antigo não dizia o que a tela mostra. O novo diz: são as cobranças que
+já saíram, e é ali que se anota o que o cliente respondeu.
+
+### Escolha de cliente por busca, não por lista suspensa
+Com centenas de clientes, a lista suspensa ficava impraticável. O seletor usa
+uma busca leve (sem calcular dívida) por nome sem acento, código ou parte do
+CPF/CNPJ; código exato ou resultado único escolhem direto, sem abrir janela.
+
+### Rankings desenhados à mão
+Os quatro rankings (valor, tempo, quantidade de boletos, tentativas de cobrança)
+são pintados com QPainter e não com QtCharts: medalhas de pódio, coroa no
+primeiro lugar, barras que crescem ao abrir a aba e uma curiosidade por gráfico.
+Cada mensagem enviada conta uma tentativa — uma mensagem com três honorários é
+uma tentativa, não três.
+
+### Datas em destaque nos cartões
+Vencimento, pagamento, última cobrança e promessa aparecem como pílulas (só
+texto, sem ícone) no topo do cartão, tingidas com a cor da situação quando pedem atenção (atrasado, vence
+em breve, promessa vencida). A etiqueta de situação não repete a data que já
+está na pílula.
+
+### Análise de juros
+A aba "Análise de juros" (em Rankings) existe para uma decisão: aumentar ou não
+o juros. Por isso ela não mostra só quanto entrou, mas também:
+
+- **juros devido × cobrado × abonado**: se boa parte é abonada na baixa,
+  aumentar a taxa não aumenta a receita. Com abono a partir de 25% do devido, a
+  tela sugere olhar os abonos antes;
+- **juros efetivo ao mês**: juros recebido ÷ (original atrasado × meses de
+  atraso), ao lado do que a taxa cadastrada daria sem abono. Serve para comparar
+  com uma taxa de mercado, já que o juros do cliente é um valor fixo por dia;
+- **simulação**: com +X% e o mesmo comportamento do período, quanto teria
+  entrado, e quanto os honorários atrasados de hoje renderiam a mais por mês.
+  A simulação só olha para frente, igual à regra da taxa: mudança de juros
+  nunca é retroativa.
+
+A análise é **por cliente**: à esquerda ficam os clientes que pagaram no período
+(quem paga entra na lista) e, ao escolher um, a tela mostra original + juros =
+pago, cada honorário quitado com suas datas, uma explicação em frases e os
+cenários com o juros ao dia dele (+10%, +25%, +50%, dobrar, sem abono e um valor
+testado à mão). A frase "Leitura:" no fim da explicação é uma observação sobre o
+comportamento do cliente (atrasa com frequência, dá mais trabalho que a média,
+paga em dia, abono alto) — a decisão continua sendo de quem usa a tela. A visão
+geral de todos fica no primeiro item da lista.
+
+A análise também mostra **o trabalho que o cliente deu para pagar**: quantos
+honorários pagou com atraso, os dias de atraso somados (média e maior), quantas
+cobranças foram feitas até o pagamento, quanto de juros entrou por cobrança e o
+que ele tem atrasado hoje. Cada número do cliente vem comparado com a média dos
+clientes. As cobranças contam como no ranking "mais cobrados": cada mensagem é
+uma tentativa, mesmo com vários honorários dentro.
+
+Clicando num cenário, a seção **Cenário honorário por honorário** aplica aquele
+cenário a cada honorário: para os pagos, o juros pago contra o juros no cenário
+(mesmo atraso, mesma proporção de abono), a diferença e o total; para os que
+estão em atraso hoje, o juros por dia hoje → no cenário e o total se ele pagar
+daqui a 30 dias. O juros que já correu não muda, porque a taxa nova só valeria
+da data da mudança. O cenário da tabela geral é a soma desses honorários (cada
+um arredondado), para os números das duas tabelas baterem.
+
+Entram só honorários quitados com `Pagamento` registrado: os pagos importados da
+planilha não têm valor nem data de pagamento e ficariam como "pagou exatamente
+o original", puxando a análise para baixo. A tela lembra de conferir o contrato
+de cada cliente antes de mudar a taxa.
 
 ## Decisões técnicas
 

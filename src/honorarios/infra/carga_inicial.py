@@ -129,7 +129,6 @@ CONFIGURACOES = (
     ("recebedor_tipo_chave", TipoChavePix.CNPJ.value, "Tipo da chave PIX"),
     ("recebedor_chave", "02.294.442/0001-13", "Chave PIX da empresa"),
     ("formato_link_whatsapp", "WA_ME", "wa.me, api.whatsapp.com ou whatsapp://"),
-    ("dias_sem_cobranca", "7", "Fila do dia: dias sem cobrança para reaparecer"),
     ("dias_vence_em_breve", "5", "Quantos dias antes do vencimento pintar de âmbar"),
     ("backup_ao_fechar", "1", "Gera backup automático ao fechar o app"),
     ("backup_manter", "20", "Quantos backups manter na rotação"),
@@ -140,7 +139,11 @@ CONFIGURACOES = (
 def aplicar(sessao: Session) -> None:
     for nome, ordem in GRUPOS:
         if not sessao.scalar(select(GrupoHonorario).where(GrupoHonorario.nome == nome)):
-            sessao.add(GrupoHonorario(nome=nome, ordem=ordem))
+            sessao.add(
+                GrupoHonorario(
+                    nome=nome, ordem=ordem, imposto_de_renda=(nome == "Imposto de Renda")
+                )
+            )
     sessao.flush()
 
     grupos = {g.nome: g for g in sessao.scalars(select(GrupoHonorario)).all()}

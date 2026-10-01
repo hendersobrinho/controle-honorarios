@@ -21,14 +21,19 @@ from .contexto import Contexto
 from .paineis.acompanhamento import PainelAcompanhamento
 from .paineis.avulsos import PainelAvulsos
 from .paineis.clientes import PainelClientes
-from .paineis.cobranca_geral import PainelCobrancaGeral
 from .paineis.configuracoes import PainelConfiguracoes
 from .paineis.contratos import PainelContratos
-from .paineis.fila_dia import PainelFilaDia
-from .paineis.fila_envio import PainelFilaEnvio
+from .paineis.honorarios import (
+    PainelAtrasados,
+    PainelAVencer,
+    PainelImpostoRenda,
+    PainelPagos,
+)
 from .paineis.importar import PainelImportar
 from .paineis.painel import PainelResumo
+from .paineis.rankings import PainelRankings
 from .paineis.relatorios import PainelRelatorios
+from .paineis.tipos import PainelTipos
 
 
 class JanelaPrincipal(QMainWindow):
@@ -56,17 +61,21 @@ class JanelaPrincipal(QMainWindow):
         layout.addWidget(self.telas, 1)
         self.setCentralWidget(central)
 
-        # a navegação é agrupada pelo momento do trabalho: cobrar, cadastrar, gerir
+        # a navegação é agrupada pelo momento do trabalho. Cada situação de
+        # honorário tem a sua tela (atrasado, a vencer e pago nunca se misturam),
+        # e as cobranças já feitas ficam ao lado, para anotar a resposta.
         grupos = (
             ("COBRANÇA", (
-                PainelCobrancaGeral,
-                PainelFilaDia,
-                PainelFilaEnvio,
+                PainelAtrasados,
+                PainelAVencer,
+                PainelPagos,
+                PainelImpostoRenda,
                 PainelAcompanhamento,
             )),
-            ("CADASTROS", (PainelClientes, PainelContratos, PainelAvulsos)),
+            ("CADASTROS", (PainelClientes, PainelContratos, PainelAvulsos, PainelTipos)),
             ("GESTÃO", (
                 PainelResumo,
+                PainelRankings,
                 PainelRelatorios,
                 PainelImportar,
                 PainelConfiguracoes,
@@ -75,6 +84,7 @@ class JanelaPrincipal(QMainWindow):
 
         self.paineis: list[QWidget] = []
         self.linhas_de_tela: dict[int, int] = {}   # linha da lista -> índice da tela
+        self.itens_de_tela: dict[str, QListWidgetItem] = {}
         for titulo_grupo, classes in grupos:
             if self.navegacao.count():
                 self._separador()
@@ -86,9 +96,11 @@ class JanelaPrincipal(QMainWindow):
                 item = QListWidgetItem(classe.titulo)
                 self.navegacao.addItem(item)
                 self.linhas_de_tela[self.navegacao.row(item)] = indice
+                self.itens_de_tela[classe.titulo] = item
 
         self.navegacao.currentRowChanged.connect(self._trocar_tela)
         self.navegacao.setCurrentRow(next(iter(self.linhas_de_tela)))
+        self._atualizar_contadores()
 
         self.statusBar().showMessage(self._mensagem_status())
 
@@ -133,13 +145,38 @@ class JanelaPrincipal(QMainWindow):
         if indice is None:  # clicou num título de grupo
             return
         self.telas.setCurrentIndex(indice)
-        self._recarregar_atual()
+        self._recarregar_atual()  # também atualiza os contadores
         self.statusBar().showMessage(self._mensagem_status())
+
+    def _atualizar_contadores(self) -> None:
+        """Quantidade ao lado das telas de cobrança, para ver o volume sem abrir."""
+        from ..servicos import honorarios as servico_honorarios
+        from ..servicos.honorarios import Filtro
+
+        try:
+            so_ir = servico_honorarios.clientes_so_imposto_de_renda(self.contexto.sessao)
+            pendentes = servico_honorarios.pendentes(
+                self.contexto.sessao, Filtro(data_referencia=self.contexto.data_referencia)
+            )
+        except Exception:  # noqa: BLE001 - contador nunca derruba a navegação
+            return
+        demais = [linha for linha in pendentes if linha.cliente.id not in so_ir]
+        atrasados = sum(1 for linha in demais if linha.atualizacao.dias_atraso > 0)
+        contagens = (
+            (PainelAtrasados.titulo, atrasados),
+            (PainelAVencer.titulo, len(demais) - atrasados),
+            (PainelImpostoRenda.titulo, len(pendentes) - len(demais)),
+        )
+        for titulo, quantidade in contagens:
+            item = self.itens_de_tela.get(titulo)
+            if item is not None:
+                item.setText(f"{titulo}   {quantidade}" if quantidade else titulo)
 
     def _recarregar_atual(self) -> None:
         painel = self.telas.currentWidget()
         if hasattr(painel, "recarregar"):
             widgets.executar(self, painel.recarregar)
+        self._atualizar_contadores()
 
     def _aplicar_tema(self) -> None:
         """Aplica no aplicativo, não só na janela, para os diálogos herdarem."""

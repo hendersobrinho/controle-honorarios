@@ -58,20 +58,24 @@ Os testes de interface usam `pytest-qt` e rodam sem servidor gráfico
 
 | Tela | Para que serve |
 |---|---|
-| **Cobrança geral** | Tela de trabalho. Pendentes \| Pagos \| Todos, nunca misturados; cada honorário é um cartão com faixa colorida de situação e botão para o seu histórico. O histórico de pagos tem seletor de período (padrão: últimos 3 meses) |
-| **Fila do dia** | Promessa vencida, vence hoje, nunca cobrado e sem cobrança há X dias (substitui a aba "Recall Inadimplentes") |
-| **Fila de envio** | Cobrança em lote: marca as empresas e o assistente passa uma por vez com a mensagem pronta |
-| **Acompanhamento** | Cada mensagem enviada e o que o cliente respondeu, com período e agrupamento à escolha. É aqui que a resposta é anotada |
+| **Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, agrupados por faixa de atraso (a dívida mais antiga primeiro), com cobrar, cobrança em lote e renegociação |
+| **A vencer** | Em aberto e dentro do prazo: vence hoje, nos próximos dias e mais adiante. Daqui sai o lembrete antes do vencimento |
+| **Pagos** | Registro dos quitados, por mês do pagamento, com seletor de período (padrão: últimos 3 meses). Mostra se pagou em dia ou com atraso, os juros cobrados e o abono |
+| **Imposto de Renda** | Cobrança própria dos clientes que só fazem IR com o escritório: em aberto (atrasados e a vencer) ou pagos, com filtro por ano do IR. Esses clientes não aparecem em Atrasados, A vencer e Pagos |
+| **Cobranças enviadas** | Cada mensagem enviada e o que o cliente respondeu, com período e agrupamento à escolha. É aqui que a resposta é anotada |
 | **Clientes** | PF \| PJ \| Todos, busca sem acento/pontuação, total em aberto e maior atraso; ficha completa da empresa. Aqui também se suspende e retoma a cobrança de um cliente |
 | **Honorários recorrentes** | Contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia |
 | **Honorários avulsos** | IRPF, alteração contratual, atas e afins |
 | **Painel** | Emitido, pago, em aberto, juros, inadimplência, faixas de atraso e maiores devedores |
+| **Rankings** | Pódio de quem mais deve em dinheiro, quem deve há mais tempo, quem junta mais boletos e quem mais foi cobrado — dois gráficos por aba; clicar num nome abre a ficha. A aba **Análise de juros** lista os clientes que pagaram e mostra, para cada um, original + juros = pago, o trabalho que deu para receber (atrasos, dias em atraso, cobranças feitas, juros por cobrança, comparados com a média), honorário por honorário, uma explicação em frases e cenários de taxa (+10% a dobrar, sem abono, valor testado) com o efeito de cada cenário honorário por honorário; o primeiro item é a visão geral de todos |
 | **Relatórios e exportação** | Planilha Excel da lista filtrada e extrato de débitos em PDF |
 | **Importar planilha** | Lê a planilha antiga, mostra prévia e relatório de erros, e só grava depois da confirmação |
-| **Configurações** | PIX, modelos de mensagem, tipos, grupos, formas de envio e backup |
+| **Grupos e tipos** | Grupos à esquerda (a ordem é a das seções nas telas), tipos do grupo à direita, cada um mostrando a frase como sai na cobrança e quanto é usado. O cadastro do tipo mostra a prévia da mensagem enquanto se digita |
+| **Configurações** | PIX, modelos de mensagem, formas de envio e backup |
 
-A navegação é agrupada por momento do trabalho: **Cobrança**, **Cadastros** e
-**Gestão**.
+A navegação é agrupada por momento do trabalho: **Honorários** (Atrasados, A
+vencer e Pagos, cada um com a sua tela e o contador ao lado), **Cobrança**,
+**Cadastros** e **Gestão**.
 
 Atalhos: `F5` atualiza, `Ctrl+1..9` troca de tela, `Ctrl+B` cobra, `Ctrl+P`
 registra pagamento, `Ctrl+R` registra a resposta, `Ctrl+F` abre a ficha, `Ctrl+C`
@@ -80,12 +84,23 @@ copia a mensagem, `Ctrl+W` abre o WhatsApp, `Ctrl+G` gera competência.
 ### Suspender a cobrança de um cliente
 
 Na ficha do cliente (ou na lista), **Suspender cobrança** pede o motivo e, se
-você quiser, a data de retomada automática. O cliente sai da **Fila do dia** e
-da **Fila de envio**, o cartão dele fica cinza com a etiqueta "Cobrança
-suspensa", e o sistema recusa registrar cobrança dele até você retomar.
+você quiser, a data de retomada automática. O cartão dele fica cinza com a
+etiqueta "Cobrança suspensa" e o sistema recusa registrar cobrança dele até você
+retomar.
 
 A dívida não muda: os honorários seguem em aberto e o juros continua correndo —
 o que para é a cobrança.
+
+### Escolher cliente e alterar juros
+
+Onde se escolhe um cliente (contrato, honorário avulso, extrato, empresa que
+paga), há um campo de busca: digite nome (sem se preocupar com acento), código
+ou parte do CPF/CNPJ e aperte Enter. Com o código exato ou um resultado só, a
+escolha é direta; senão abre a janela de busca, que filtra enquanto você digita.
+
+O juros ao dia muda pelo botão **Alterar juros ao dia…** no cadastro do cliente
+ou **Alterar juros** no topo da ficha. A mudança pede a data de vigência e vale
+só dali para frente.
 
 ### Pessoa física que paga pela empresa
 
@@ -100,11 +115,14 @@ honorário pertence: ele continua na ficha da pessoa.
 
 ### Como a cobrança anda
 
-1. **Cobrança geral** ou **Fila do dia**: escolhe os honorários e clica em Cobrar.
+1. **Atrasados**: escolhe os honorários e clica em Cobrar. Selecionando
+   honorários de várias empresas, a cobrança passa uma empresa por vez, com a
+   mensagem de cada uma pronta.
+   Para o que ainda não venceu, **A vencer** manda um lembrete.
 2. O diálogo monta a mensagem; você copia ou abre o WhatsApp e clica em
    **Marcar como cobrado**. A cobrança nasce *aguardando resposta* — nada de
    resposta é pedido nesse momento, porque ela ainda não existe.
-3. Quando o cliente responde, a resposta entra no **Acompanhamento** (ou pelo
+3. Quando o cliente responde, a resposta entra em **Cobranças enviadas** (ou pelo
    botão Histórico do próprio honorário): prometeu pagar, pediu renegociação,
    contestou, não respondeu.
 4. O **Histórico** de cada honorário mostra a linha do tempo completa e diz

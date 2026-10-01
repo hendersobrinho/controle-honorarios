@@ -284,6 +284,8 @@ class GrupoHonorario(Base):
     nome: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     ordem: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # o grupo de Imposto de Renda: quem só tem honorário dele vai para a tela própria
+    imposto_de_renda: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     tipos: Mapped[list[TipoHonorario]] = relationship(back_populates="grupo")
 

@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
 
 from ...dominio.enums import MeioCobranca, Periodicidade
 from ...dominio.valores import formatar_moeda, hoje
-from ...servicos import clientes as servico_clientes
 from ...servicos import contratos as servico
 from ...servicos import tipos as servico_tipos
 from ..comum import widgets
@@ -31,6 +30,7 @@ from ..comum.campos import (
     ComboEnum,
     ComboRegistros,
 )
+from ..comum.seletor_cliente import CampoCliente
 from ..comum.tabelas import (
     Coluna,
     ModeloTabelaMarcavel,
@@ -56,11 +56,7 @@ class DialogoContrato(QDialog):
         sessao = self.contexto.sessao
         layout = QVBoxLayout(self)
         formulario = QFormLayout()
-        self.cliente = ComboRegistros(
-            [linha.cliente for linha in servico_clientes.listar(sessao)],
-            rotulo=lambda c: f"{c.codigo} – {c.nome}",
-            vazio="— selecione —",
-        )
+        self.cliente = CampoCliente(sessao)
         formulario.addRow("Cliente:", self.cliente)
         self.tipo = ComboRegistros(
             [

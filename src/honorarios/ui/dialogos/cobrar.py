@@ -160,7 +160,7 @@ class DialogoCobrar(QDialog):
         layout.addWidget(
             widgets.rotulo_fraco(
                 "A resposta do cliente não se anota agora: quando ela chegar, use a "
-                "tela Acompanhamento."
+                "tela Cobranças enviadas."
             )
         )
 
@@ -325,7 +325,7 @@ class DialogoCobrar(QDialog):
             return
 
         def acao():
-            # nasce aguardando resposta; o retorno entra depois, no Acompanhamento
+            # nasce aguardando resposta; o retorno entra depois, em Cobranças enviadas
             cobrancas.registrar(
                 self.contexto.sessao,
                 selecao,

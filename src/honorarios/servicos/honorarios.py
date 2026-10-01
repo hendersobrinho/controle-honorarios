@@ -109,7 +109,52 @@ class Filtro:
     # dívida existe), mas sai das filas de trabalho
     incluir_cobranca_suspensa: bool = True
     incluir_vinculados_de: int | None = None
+    # None = todos; True = só clientes de Imposto de Renda; False = sem eles
+    clientes_so_ir: bool | None = None
     data_referencia: date | None = None
+
+
+def clientes_so_imposto_de_renda(sessao: Session) -> set[int]:
+    """Clientes cujo único assunto com o escritório é o Imposto de Renda.
+
+    É cliente só de IR quem tem honorário (não cancelado) e todos eles são de
+    tipos do grupo marcado como Imposto de Renda — e não tem contrato recorrente
+    ativo de outro tipo. Quem tem mensal e IR continua sendo cliente mensal.
+    """
+    from ..infra.modelos import Contrato, GrupoHonorario
+
+    tipos_ir = set(
+        sessao.scalars(
+            select(TipoHonorario.id)
+            .join(GrupoHonorario)
+            .where(GrupoHonorario.imposto_de_renda.is_(True))
+        )
+    )
+    if not tipos_ir:
+        return set()
+
+    tipos_por_cliente: dict[int, set[int]] = {}
+    for cliente_id, tipo_id in sessao.execute(
+        select(Honorario.cliente_id, Honorario.tipo_id).where(
+            Honorario.status != StatusPagamento.CANCELADO
+        )
+    ):
+        tipos_por_cliente.setdefault(cliente_id, set()).add(tipo_id)
+
+    com_contrato_de_outro_tipo = {
+        cliente_id
+        for cliente_id, tipo_id in sessao.execute(
+            select(Contrato.cliente_id, Contrato.tipo_id).where(
+                Contrato.excluido_em.is_(None), Contrato.suspenso.is_(False)
+            )
+        )
+        if tipo_id not in tipos_ir
+    }
+    return {
+        cliente_id
+        for cliente_id, tipos in tipos_por_cliente.items()
+        if tipos <= tipos_ir and cliente_id not in com_contrato_de_outro_tipo
+    }
 
 
 def _validar_competencia(tipo: TipoHonorario, competencia: Competencia, descricao: str) -> None:
@@ -347,6 +392,12 @@ def consultar(sessao: Session, filtro: Filtro) -> list[LinhaHonorario]:
         if alvo:
             consulta = consulta.where(Cliente.nome_busca.contains(alvo))
     consulta = consulta.where(Cliente.excluido_em.is_(None))
+    if filtro.clientes_so_ir is not None:
+        so_ir = clientes_so_imposto_de_renda(sessao)
+        if filtro.clientes_so_ir:
+            consulta = consulta.where(Honorario.cliente_id.in_(so_ir))
+        elif so_ir:
+            consulta = consulta.where(Honorario.cliente_id.not_in(so_ir))
 
     encontrados = sessao.scalars(consulta.order_by(Honorario.vencimento)).unique().all()
     referencia = filtro.data_referencia or hoje()
@@ -413,6 +464,61 @@ def agrupar_por_cliente(
         itens = grupos[rotulo]
         itens.sort(key=lambda linha: linha.atualizacao.dias_atraso, reverse=True)
         saida.append((rotulo, itens))
+    return saida
+
+
+FAIXAS_ATRASO = (
+    ("Mais de 90 dias", 91, None),
+    ("61 a 90 dias", 61, 90),
+    ("31 a 60 dias", 31, 60),
+    ("1 a 30 dias", 1, 30),
+)
+
+
+def agrupar_por_faixa_de_atraso(
+    linhas: Sequence[LinhaHonorario],
+) -> list[tuple[str, list[LinhaHonorario]]]:
+    """Seções da tela de atrasados, da dívida mais antiga para a mais recente."""
+    saida = []
+    for rotulo, minimo, maximo in FAIXAS_ATRASO:
+        itens = [
+            linha
+            for linha in linhas
+            if linha.atualizacao.dias_atraso >= minimo
+            and (maximo is None or linha.atualizacao.dias_atraso <= maximo)
+        ]
+        if itens:
+            itens.sort(key=lambda linha: linha.atualizacao.dias_atraso, reverse=True)
+            saida.append((rotulo, itens))
+    return saida
+
+
+def agrupar_por_proximidade(
+    linhas: Sequence[LinhaHonorario],
+    referencia: date | None = None,
+    dias_em_breve: int = 5,
+) -> list[tuple[str, list[LinhaHonorario]]]:
+    """Seções da tela de honorários no prazo: o que vence primeiro vem primeiro."""
+    hoje_ = referencia or hoje()
+    grupos: dict[str, list[LinhaHonorario]] = {
+        "Vence hoje": [],
+        f"Vence nos próximos {dias_em_breve} dias": [],
+        "Vence mais adiante": [],
+    }
+    chaves = list(grupos)
+    for linha in linhas:
+        falta = (linha.honorario.vencimento - hoje_).days
+        if falta <= 0:
+            grupos[chaves[0]].append(linha)
+        elif falta <= dias_em_breve:
+            grupos[chaves[1]].append(linha)
+        else:
+            grupos[chaves[2]].append(linha)
+    saida = []
+    for rotulo, itens in grupos.items():
+        if itens:
+            itens.sort(key=lambda linha: linha.honorario.vencimento)
+            saida.append((rotulo, itens))
     return saida
 
 

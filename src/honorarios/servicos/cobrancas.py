@@ -249,88 +249,6 @@ def atualizar_resultado(
 # --------------------------------------------------------------------- filas
 
 
-@dataclass
-class SecaoFila:
-    titulo: str
-    descricao: str
-    linhas: list[LinhaHonorario]
-
-    @property
-    def total(self) -> Decimal:
-        return sum((linha.atualizacao.total for linha in self.linhas), start=ZERO)
-
-
-def fila_do_dia(sessao: Session, referencia: date | None = None) -> list[SecaoFila]:
-    """Substitui a aba "Recall Inadimplentes": o que precisa de ação hoje."""
-    dia = referencia or hoje()
-    dias_sem_cobranca = configuracoes.obter_int(sessao, "dias_sem_cobranca", 7)
-    # quem está com a cobrança suspensa não entra na fila de trabalho
-    todas = servico_honorarios.pendentes(
-        sessao, Filtro(data_referencia=dia, incluir_cobranca_suspensa=False)
-    )
-
-    vence_hoje = [linha for linha in todas if linha.honorario.vencimento == dia]
-    promessa_vencida = [
-        linha
-        for linha in todas
-        if linha.promessa is not None and linha.promessa < dia
-    ]
-    ids_promessa = {linha.honorario.id for linha in promessa_vencida}
-    sem_cobranca = [
-        linha
-        for linha in todas
-        if linha.atualizacao.dias_atraso > 0
-        and linha.honorario.id not in ids_promessa
-        and (
-            linha.ultima_cobranca is None
-            or (dia - linha.ultima_cobranca).days >= dias_sem_cobranca
-        )
-    ]
-    nunca_cobrado = [linha for linha in sem_cobranca if linha.nunca_cobrado]
-    parados = [linha for linha in sem_cobranca if not linha.nunca_cobrado]
-
-    for lista in (vence_hoje, promessa_vencida, nunca_cobrado, parados):
-        lista.sort(key=lambda linha: linha.atualizacao.dias_atraso, reverse=True)
-
-    return [
-        SecaoFila(
-            "Promessa de pagamento vencida",
-            "Prometeu pagar e a data passou",
-            promessa_vencida,
-        ),
-        SecaoFila("Vence hoje", f"Vencimento em {dia:%d/%m/%Y}", vence_hoje),
-        SecaoFila("Nunca cobrado", "Em atraso e sem nenhuma cobrança registrada", nunca_cobrado),
-        SecaoFila(
-            f"Sem cobrança há {dias_sem_cobranca} dias ou mais",
-            "Já foi cobrado, mas parou",
-            parados,
-        ),
-    ]
-
-
-def fila_de_envio(
-    sessao: Session, filtro: Filtro | None = None
-) -> list[tuple[Cliente, list[LinhaHonorario]]]:
-    """Pendências agrupadas por empresa, na ordem do maior atraso."""
-    filtro = filtro or Filtro()
-    filtro.incluir_cobranca_suspensa = False
-    linhas = servico_honorarios.pendentes(sessao, filtro)
-    por_cliente: dict[int, list[LinhaHonorario]] = {}
-    for linha in linhas:
-        por_cliente.setdefault(linha.cliente.id, []).append(linha)
-    grupos = []
-    for itens in por_cliente.values():
-        itens.sort(key=lambda linha: linha.honorario.vencimento)
-        grupos.append((itens[0].cliente, itens))
-    grupos.sort(
-        key=lambda grupo: max(
-            (linha.atualizacao.dias_atraso for linha in grupo[1]), default=0
-        ),
-        reverse=True,
-    )
-    return grupos
-
-
 def historico_do_cliente(sessao: Session, cliente_id: int) -> list[Cobranca]:
     return list(
         sessao.scalars(
@@ -369,12 +287,9 @@ def linhas_em_aberto_do_cliente(
 
 __all__ = [
     "Selecao",
-    "SecaoFila",
     "StatusPagamento",
     "atualizar_resultado",
     "estornar",
-    "fila_de_envio",
-    "fila_do_dia",
     "gerar_texto",
     "historico_do_cliente",
     "link_whatsapp",

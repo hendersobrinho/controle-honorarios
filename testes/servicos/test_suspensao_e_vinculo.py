@@ -64,14 +64,6 @@ def test_suspender_tira_das_filas_sem_mexer_na_divida(sessao, empresa):
     assert sem_suspensos == []
 
 
-def test_fila_do_dia_e_de_envio_ignoram_suspensos(sessao, empresa):
-    assert cobrancas.fila_de_envio(sessao)
-    clientes.suspender_cobranca(sessao, empresa, "Negociação em curso")
-    sessao.commit()
-    assert cobrancas.fila_de_envio(sessao) == []
-    assert all(not secao.linhas for secao in cobrancas.fila_do_dia(sessao))
-
-
 def test_registrar_cobranca_de_suspenso_e_recusado(sessao, empresa):
     linhas = cobrancas.linhas_em_aberto_do_cliente(sessao, empresa.id)
     clientes.suspender_cobranca(sessao, empresa, "Empresa baixada")
@@ -108,7 +100,12 @@ def test_retomar_libera_a_cobranca(sessao, empresa):
     sessao.commit()
     assert not empresa.suspensao_ativa()
     assert clientes.suspensao(empresa) == ""
-    assert cobrancas.fila_de_envio(sessao)
+    # depois de retomar, a cobrança volta a ser aceita
+    linhas = cobrancas.linhas_em_aberto_do_cliente(sessao, empresa.id)
+    lote = cobrancas.registrar(
+        sessao, cobrancas.Selecao(cliente=empresa, linhas=linhas), texto="oi"
+    )
+    assert lote.id is not None
     with pytest.raises(ErroDeValidacao, match="não está suspensa"):
         clientes.retomar_cobranca(sessao, empresa)
 

@@ -1,4 +1,4 @@
-"""Assistente da fila de envio: passa empresa por empresa, uma mensagem por vez.
+"""Cobrança de várias empresas: passa uma por uma, com a mensagem pronta.
 
 Reaproveita o diálogo "Cobrar" para não existirem duas formas de gerar a mesma
 mensagem.
@@ -52,7 +52,7 @@ def executar_assistente(contexto: Contexto, grupos, parent=None) -> Andamento:
             if indice < total_grupos and not widgets.confirmar(
                 parent,
                 "Continuar com as próximas empresas da fila?",
-                "Fila de envio",
+                "Cobrança de várias empresas",
                 f"Faltam {total_grupos - indice} empresa(s). "
                 "Cancelar encerra o assistente.",
             ):

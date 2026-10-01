@@ -98,6 +98,7 @@ class DialogoFicha(QDialog):
         self.cabecalho = widgets.Cabecalho(self.cliente.nome)
         self.cabecalho.adicionar_botao("Cobrar", self._cobrar, primario=True, atalho="Ctrl+B")
         self.cabecalho.adicionar_botao("Novo honorário", self._novo_honorario)
+        self.cabecalho.adicionar_botao("Alterar juros", self._alterar_juros)
         self.botao_suspensao = self.cabecalho.adicionar_botao(
             "Suspender cobrança", self._alternar_suspensao
         )
@@ -114,7 +115,9 @@ class DialogoFicha(QDialog):
         self.cartao_total = widgets.Cartao("Total em aberto atualizado")
         self.cartao_qtd = widgets.Cartao("Boletos em aberto")
         self.cartao_atraso = widgets.Cartao("Maior atraso")
-        self.cartao_juros = widgets.Cartao("Juros ao dia")
+        self.cartao_juros = widgets.Cartao(
+            "Juros ao dia", dica="Use \"Alterar juros\" no topo para mudar o valor"
+        )
         for cartao in (self.cartao_total, self.cartao_qtd, self.cartao_atraso, self.cartao_juros):
             cartoes.addWidget(cartao)
         caixa_resumo.addLayout(cartoes)
@@ -382,6 +385,12 @@ class DialogoFicha(QDialog):
         dialogo = DialogoCobrar(self.contexto, self.cliente, list(self.resumo.pendentes), self)
         dialogo.exec()
         if dialogo.registrou:
+            self.recarregar()
+
+    def _alterar_juros(self) -> None:
+        from .juros import DialogoJuros
+
+        if DialogoJuros(self.contexto, self.cliente, self).exec():
             self.recarregar()
 
     def _alternar_suspensao(self) -> None:

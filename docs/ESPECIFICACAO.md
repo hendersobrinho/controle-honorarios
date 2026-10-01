@@ -92,7 +92,7 @@ cancelados: é o que impede a geração de competência duplicar.
 | 1 | Clientes PF/PJ/Doméstica, contatos, juros com vigência, cálculo com testes | concluída |
 | 2 | Tipos, contratos, geração de competência, avulsos, baixa (total, parcial, abono) | concluída |
 | 3 | Cobrança geral, ficha da empresa, fluxo "Cobrar" com WhatsApp | concluída |
-| 4 | Fila de envio com assistente, fila do dia, importação da planilha, backup | concluída |
+| 4 | Cobrança em sequência de várias empresas, importação da planilha, backup (as filas do dia e de envio saíram depois, a pedido) | concluída |
 | 5 | Painel, exportação Excel/PDF, renegociação, reajuste em massa | concluída |
 
 ## 6. O que continua fora do sistema

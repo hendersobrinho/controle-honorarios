@@ -1,4 +1,4 @@
-"""Acompanhamento: o que já foi cobrado e o que cada cliente respondeu.
+"""Cobranças enviadas: o que já foi cobrado e o que cada cliente respondeu.
 
 A resposta não é anotada na hora de cobrar — quando a mensagem sai, ainda não
 existe resposta. É aqui que o retorno entra, com o período à escolha e cada
@@ -23,7 +23,7 @@ from ...servicos import acompanhamento as servico
 from ...servicos import cobrancas as servico_cobrancas
 from ..comum import cores, tema, widgets
 from ..comum.campos import CampoBusca, ComboEnum
-from ..comum.cartoes import Acao, DadosCartao, PainelDeCartoes, SecaoCartoes
+from ..comum.cartoes import Acao, DadosCartao, DataCartao, PainelDeCartoes, SecaoCartoes
 from ..contexto import Contexto
 from ..dialogos.cobrar import DialogoCobrar
 from ..dialogos.ficha import DialogoFicha
@@ -49,7 +49,7 @@ CORES_SITUACAO = {
 
 
 class PainelAcompanhamento(QWidget):
-    titulo = "Acompanhamento"
+    titulo = "Cobranças enviadas"
 
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
@@ -62,7 +62,8 @@ class PainelAcompanhamento(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
         self.cabecalho = widgets.Cabecalho(
-            "Acompanhamento", "Cada mensagem enviada e o que o cliente respondeu"
+            "Cobranças enviadas",
+            "Cada mensagem enviada e o que o cliente respondeu — anote aqui o retorno",
         )
         self.cabecalho.adicionar_botao(
             "Registrar resposta", self._responder, primario=True, atalho="Ctrl+R"
@@ -143,15 +144,23 @@ class PainelAcompanhamento(QWidget):
         )
 
     def _cartao(self, linha: servico.LinhaAcompanhamento) -> DadosCartao:
+        cor = tema.cor(CORES_SITUACAO.get(linha.situacao, "texto_fraco"), cores.tema_atual())
+        datas = [
+            DataCartao(
+                "Cobrado em", f"{formatar_data(linha.data)} · há {linha.dias} dia(s)", cor
+            )
+        ]
+        if linha.promessa:
+            datas.append(
+                DataCartao(
+                    "Promessa", formatar_data(linha.promessa), tema.cor("roxo", cores.tema_atual())
+                )
+            )
         detalhes = [
-            ("Cobrado em", formatar_data(linha.data)),
-            ("Há", f"{linha.dias} dia(s)"),
             ("Canal", linha.canal.rotulo),
             ("Honorários", linha.competencias or f"{linha.quantidade}"),
             ("Valor na época", formatar_moeda(linha.lote.total_no_momento)),
         ]
-        if linha.promessa:
-            detalhes.append(("Promessa", formatar_data(linha.promessa)))
         if linha.quitados:
             detalhes.append(("Quitados", f"{linha.quitados} de {linha.quantidade}"))
         acoes = [Acao("Registrar resposta", self._responder_linha, primaria=True)]
@@ -167,9 +176,10 @@ class PainelAcompanhamento(QWidget):
             valor=formatar_moeda(linha.saldo_atual),
             valor_rotulo="Em aberto hoje",
             situacao=linha.situacao,
-            cor=tema.cor(CORES_SITUACAO.get(linha.situacao, "texto_fraco"), cores.tema_atual()),
+            cor=cor,
             item=linha,
             acoes=acoes,
+            datas=datas,
         )
 
     def recarregar(self) -> None:

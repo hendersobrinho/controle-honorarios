@@ -40,6 +40,7 @@ class PainelClientes(QWidget):
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
         self.contexto = contexto
+        self.so_ir: set[int] = set()
         self._montar()
         self.recarregar()
 
@@ -101,6 +102,17 @@ class PainelClientes(QWidget):
                     dica=lambda item: servico.suspensao(item.cliente),
                 ),
                 Coluna(
+                    "Perfil",
+                    lambda item: "Só IR" if item.cliente.id in self.so_ir else "—",
+                    alinhamento=Qt.AlignmentFlag.AlignCenter,
+                    dica=lambda item: (
+                        "Só tem honorário de Imposto de Renda: a cobrança dele fica "
+                        "na tela Imposto de Renda"
+                        if item.cliente.id in self.so_ir
+                        else ""
+                    ),
+                ),
+                Coluna(
                     "Paga pela empresa",
                     lambda item: item.cliente.empresa.nome if item.cliente.empresa else "—",
                 ),
@@ -133,6 +145,9 @@ class PainelClientes(QWidget):
     # ------------------------------------------------------------------ dados
     def recarregar(self) -> None:
         self.contexto.atualizar()
+        from ...servicos import honorarios as servico_honorarios
+
+        self.so_ir = servico_honorarios.clientes_so_imposto_de_renda(self.contexto.sessao)
         indice = self.grupo_tipo.checkedId()
         tipo = {1: TipoPessoa.PF, 2: TipoPessoa.PJ}.get(indice)
         linhas = servico.listar(

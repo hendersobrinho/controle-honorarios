@@ -53,6 +53,15 @@ class Acao:
 
 
 @dataclass
+class DataCartao:
+    """Data em destaque no cartão: pílula com o rótulo e a data em negrito."""
+
+    rotulo: str
+    valor: str
+    cor: QColor | None = None
+
+
+@dataclass
 class DadosCartao:
     titulo: str
     subtitulo: str = ""
@@ -64,6 +73,7 @@ class DadosCartao:
     cor: QColor | None = None
     item: Any = None
     acoes: list[Acao] = field(default_factory=list)
+    datas: list[DataCartao] = field(default_factory=list)
 
 
 @dataclass
@@ -94,6 +104,16 @@ class SecaoCartoes:
     def cartoes(self) -> list[DadosCartao]:
         """Todos os cartões da seção. A tela usa só a fatia visível."""
         return [self.cartao(item) for item in self.itens]
+
+
+def _estilo_pilula(cor: QColor, preenchida: bool = False) -> str:
+    """Fundo tingido com a cor da situação; a borda e o texto na própria cor."""
+    alfa = 0.16 if preenchida else 0.09
+    return (
+        f"background: rgba({cor.red()}, {cor.green()}, {cor.blue()}, {alfa});"
+        f"border: 1px solid rgba({cor.red()}, {cor.green()}, {cor.blue()}, 0.55);"
+        f"color: {cor.name()};"
+    )
 
 
 class CartaoRegistro(QFrame):
@@ -137,10 +157,27 @@ class CartaoRegistro(QFrame):
             etiqueta = QLabel(self.dados.situacao)
             etiqueta.setObjectName("cartaoEtiqueta")
             if self.dados.cor:
-                etiqueta.setStyleSheet(f"color: {self.dados.cor.name()};")
+                etiqueta.setStyleSheet(_estilo_pilula(self.dados.cor, preenchida=True))
             primeira.addWidget(etiqueta)
         primeira.addStretch(1)
         texto.addLayout(primeira)
+
+        if self.dados.datas:
+            datas = QHBoxLayout()
+            datas.setSpacing(6)
+            datas.setContentsMargins(0, 2, 0, 2)
+            for data in self.dados.datas:
+                pilula = QLabel(
+                    f"<span style='font-size:10px'>{data.rotulo}</span>"
+                    f"&nbsp;<b>{data.valor}</b>"
+                )
+                pilula.setObjectName("cartaoData")
+                pilula.setTextFormat(Qt.TextFormat.RichText)
+                if data.cor:
+                    pilula.setStyleSheet(_estilo_pilula(data.cor))
+                datas.addWidget(pilula)
+            datas.addStretch(1)
+            texto.addLayout(datas)
 
         if self.dados.subtitulo:
             subtitulo = QLabel(_encurtar(self.dados.subtitulo, LARGURA_SUBTITULO))
@@ -307,15 +344,18 @@ class PainelDeCartoes(QScrollArea):
                 continue
             self._layout.addWidget(self._cabecalho(secao))
             limite = min(self._limites.get(secao.titulo, self._limite_secao), max(0, restante))
-            for item in secao.itens[:limite]:
+            # o orçamento desconta o que foi desenhado de fato, não o limite da
+            # seção: seções pequenas não podem consumir o espaço das seguintes
+            desenhar = min(limite, secao.quantidade)
+            for item in secao.itens[:desenhar]:
                 dados = secao.cartao(item)
                 cartao = CartaoRegistro(dados)
                 cartao.clicado.connect(self._ao_clicar)
                 cartao.duplo_clique.connect(self.item_ativado.emit)
                 self._cartoes[id(dados.item)] = cartao
                 self._layout.addWidget(cartao)
-            restante -= limite
-            faltam = secao.quantidade - limite
+            restante -= desenhar
+            faltam = secao.quantidade - desenhar
             if faltam > 0:
                 passo = min(faltam, self._limite_secao)
                 mais = QPushButton(f"Mostrar mais {passo} de {faltam}")

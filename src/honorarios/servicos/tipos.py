@@ -49,6 +49,57 @@ def desativar_grupo(sessao: Session, grupo: GrupoHonorario) -> None:
     sessao.flush()
 
 
+def salvar_grupo(
+    sessao: Session,
+    grupo: GrupoHonorario | None,
+    nome: str,
+    imposto_de_renda: bool = False,
+) -> GrupoHonorario:
+    """Cria ou renomeia um grupo. Só um grupo pode ser o de Imposto de Renda."""
+    nome = (nome or "").strip()
+    if not nome:
+        raise ErroDeValidacao("Informe o nome do grupo.", "nome")
+    consulta = select(GrupoHonorario).where(GrupoHonorario.nome == nome)
+    if grupo is not None and grupo.id:
+        consulta = consulta.where(GrupoHonorario.id != grupo.id)
+    if sessao.scalar(consulta):
+        raise RegistroDuplicado(f"Já existe o grupo {nome}.")
+    if grupo is None:
+        grupo = criar_grupo(sessao, nome)
+    grupo.nome = nome
+    if imposto_de_renda:
+        for outro in listar_grupos(sessao):
+            if outro.id != grupo.id:
+                outro.imposto_de_renda = False
+    grupo.imposto_de_renda = imposto_de_renda
+    sessao.flush()
+    return grupo
+
+
+def mover_grupo(sessao: Session, grupo: GrupoHonorario, direcao: int) -> None:
+    """Sobe (-1) ou desce (+1) o grupo; a ordem é a das seções nas telas."""
+    grupos = listar_grupos(sessao)
+    # normaliza a ordem antes de trocar, para não depender de valores repetidos
+    for posicao, item in enumerate(grupos):
+        item.ordem = (posicao + 1) * 10
+    indice = next(i for i, item in enumerate(grupos) if item.id == grupo.id)
+    alvo = indice + direcao
+    if 0 <= alvo < len(grupos):
+        grupos[indice].ordem, grupos[alvo].ordem = grupos[alvo].ordem, grupos[indice].ordem
+    sessao.flush()
+
+
+def reativar_grupo(sessao: Session, grupo: GrupoHonorario) -> None:
+    grupo.ativo = True
+    sessao.flush()
+
+
+def grupo_do_imposto_de_renda(sessao: Session) -> GrupoHonorario | None:
+    return sessao.scalar(
+        select(GrupoHonorario).where(GrupoHonorario.imposto_de_renda.is_(True))
+    )
+
+
 # ------------------------------------------------------------------------- tipos
 
 
@@ -134,6 +185,63 @@ def desativar_tipo(sessao: Session, tipo: TipoHonorario) -> None:
     """Desativar não apaga: honorários antigos continuam apontando para o tipo."""
     tipo.ativo = False
     sessao.flush()
+
+
+def previa_dos_textos(
+    nome_do_tipo: str,
+    exige_competencia: ExigeCompetencia,
+    texto_mensagem: str,
+    texto_mensagem_empresa: str,
+    texto_item_lista: str,
+) -> tuple[str, str, str]:
+    """Os três textos do tipo preenchidos com um exemplo, para a tela mostrar.
+
+    Variável inexistente não derruba a prévia: aparece o aviso no lugar do texto.
+    """
+    from datetime import date
+    from decimal import Decimal
+
+    from ..dominio.mensagens import VariavelDesconhecida, renderizar
+    from ..dominio.valores import Competencia, formatar_data, formatar_moeda
+
+    if exige_competencia is ExigeCompetencia.MES:
+        competencia = Competencia(2026, 8)
+    elif exige_competencia is ExigeCompetencia.ANO:
+        competencia = Competencia(2026)
+    else:
+        competencia = Competencia()
+    variaveis = {
+        "empresa": "EMPRESA EXEMPLO LTDA",
+        "titular": "",
+        "nome_do_tipo": nome_do_tipo or "Tipo",
+        "competencia": competencia.rotulo(),
+        "ano": str(competencia.ano or ""),
+        "vencimento": formatar_data(date(2026, 9, 8)),
+        "valor": formatar_moeda(Decimal("599.70")),
+        "valor_original": formatar_moeda(Decimal("592.90")),
+        "juros": formatar_moeda(Decimal("6.80")),
+        "dias_atraso": "9",
+    }
+    saida = []
+    for texto in (texto_mensagem, texto_mensagem_empresa, texto_item_lista):
+        try:
+            saida.append(renderizar(texto or "", variaveis))
+        except VariavelDesconhecida as erro:
+            saida.append(f"⚠ variável {{{erro.variavel}}} não existe")
+    return saida[0], saida[1], saida[2]
+
+
+VARIAVEIS_DO_TIPO = (
+    ("competencia", "competência (08/2026)"),
+    ("ano", "ano (2026)"),
+    ("empresa", "nome da empresa"),
+    ("nome_do_tipo", "nome deste tipo"),
+    ("vencimento", "vencimento"),
+    ("valor", "valor atualizado"),
+    ("valor_original", "valor original"),
+    ("juros", "juros"),
+    ("dias_atraso", "dias de atraso"),
+)
 
 
 def tipo_em_uso(sessao: Session, tipo: TipoHonorario) -> tuple[int, int]:

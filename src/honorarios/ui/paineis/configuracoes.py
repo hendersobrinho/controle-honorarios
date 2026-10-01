@@ -1,4 +1,4 @@
-"""Configurações: listas, tipos, PIX, modelos de mensagem e backup."""
+"""Configurações: PIX, modelos de mensagem, formas de envio e backup."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from ...dominio.valores import formatar_data_hora
 from ...servicos import backup as servico_backup
 from ...servicos import configuracoes as servico
 from ...servicos import tipos as servico_tipos
-from ..comum import cores, widgets
+from ..comum import widgets
 from ..comum.campos import ComboEnum
 from ..comum.tabelas import (
     Coluna,
@@ -60,7 +60,6 @@ class PainelConfiguracoes(QWidget):
         abas = QTabWidget()
         abas.addTab(self._aba_recebedor(), "Recebedor e PIX")
         abas.addTab(self._aba_modelos(), "Modelos de mensagem")
-        abas.addTab(self._aba_tipos(), "Tipos e grupos")
         abas.addTab(self._aba_listas(), "Formas de envio")
         abas.addTab(self._aba_backup(), "Backup")
         layout.addWidget(abas, 1)
@@ -85,9 +84,6 @@ class PainelConfiguracoes(QWidget):
         geral.addRow("Link do WhatsApp:", self.formato_link)
         self.ordem_saudacao = ComboEnum(OrdemSaudacao, OrdemSaudacao.SAUDACAO_NOME)
         geral.addRow("Ordem da saudação:", self.ordem_saudacao)
-        self.dias_sem_cobranca = QSpinBox()
-        self.dias_sem_cobranca.setRange(1, 90)
-        geral.addRow("Fila do dia: sem cobrança há (dias):", self.dias_sem_cobranca)
         self.dias_vence_breve = QSpinBox()
         self.dias_vence_breve.setRange(0, 30)
         geral.addRow("Marcar \"vence em breve\" com (dias):", self.dias_vence_breve)
@@ -137,45 +133,7 @@ class PainelConfiguracoes(QWidget):
         )
         return pagina
 
-    # ---------------------------------------------------------------- tipos
-    def _aba_tipos(self) -> QWidget:
-        pagina = QWidget()
-        layout = QVBoxLayout(pagina)
-        botoes = QHBoxLayout()
-        novo = widgets.QPushButton("Novo tipo")
-        novo.clicked.connect(lambda: self._editar_tipo(None))
-        editar = widgets.QPushButton("Editar tipo")
-        editar.clicked.connect(lambda: self._editar_tipo(item_atual(self.tabela_tipos)))
-        desativar = widgets.QPushButton("Ativar / desativar")
-        desativar.clicked.connect(self._alternar_tipo)
-        novo_grupo = widgets.QPushButton("Novo grupo")
-        novo_grupo.clicked.connect(self._novo_grupo)
-        for botao in (novo, editar, desativar, novo_grupo):
-            botoes.addWidget(botao)
-        botoes.addStretch(1)
-        layout.addLayout(botoes)
-
-        self.modelo_tipos = ModeloTabela(
-            [
-                Coluna("Tipo", lambda t: t.nome),
-                Coluna("Grupo", lambda t: t.grupo.nome),
-                Coluna("Periodicidade", lambda t: t.periodicidade.rotulo,
-                       alinhamento=Qt.AlignmentFlag.AlignCenter),
-                Coluna("Competência", lambda t: t.exige_competencia.rotulo),
-                Coluna("Texto da mensagem", lambda t: t.texto_mensagem),
-                Coluna("Situação", lambda t: "Ativo" if t.ativo else "Inativo",
-                       alinhamento=Qt.AlignmentFlag.AlignCenter,
-                       cor=lambda t: None if t.ativo else cores.tema.cor("texto_fraco")),
-            ]
-        )
-        self.tabela_tipos = preparar_tabela(QTableView(), esticar=4)
-        self.tabela_tipos.setModel(self.modelo_tipos)
-        self.tabela_tipos.doubleClicked.connect(
-            lambda *_: self._editar_tipo(item_atual(self.tabela_tipos))
-        )
-        layout.addWidget(self.tabela_tipos, 1)
-        return pagina
-
+    # ------------------------------------------------------- formas de envio
     def _aba_listas(self) -> QWidget:
         pagina = QWidget()
         layout = QVBoxLayout(pagina)
@@ -256,7 +214,6 @@ class PainelConfiguracoes(QWidget):
         self.chave.setText(servico.obter(sessao, "recebedor_chave"))
         self.formato_link.definir(FormatoLinkWhatsapp(servico.formato_link(sessao)))
         self.ordem_saudacao.definir(servico.ordem_saudacao(sessao))
-        self.dias_sem_cobranca.setValue(servico.obter_int(sessao, "dias_sem_cobranca", 7))
         self.dias_vence_breve.setValue(servico.obter_int(sessao, "dias_vence_em_breve", 5))
         indice = self.tema.findData(servico.obter(sessao, "tema", "claro"))
         self.tema.setCurrentIndex(max(0, indice))
@@ -265,11 +222,9 @@ class PainelConfiguracoes(QWidget):
         )
         self.backup_manter.setValue(servico.obter_int(sessao, "backup_manter", 20))
         self._carregar_modelo()
-        self.modelo_tipos.definir_itens(servico_tipos.listar_tipos(sessao, somente_ativos=False))
         self.modelo_formas.definir_itens(servico_tipos.listar_formas(sessao, somente_ativas=False))
         self.modelo_backups.definir_itens(servico_backup.listar())
         for tabela, modelo in (
-            (self.tabela_tipos, self.modelo_tipos),
             (self.tabela_formas, self.modelo_formas),
             (self.tabela_backups, self.modelo_backups),
         ):
@@ -348,7 +303,6 @@ class PainelConfiguracoes(QWidget):
             servico.gravar(sessao, "recebedor_tipo_chave", self.tipo_chave.valor().value)
             servico.gravar(sessao, "recebedor_chave", self.chave.text().strip())
             servico.gravar(sessao, "formato_link_whatsapp", self.formato_link.valor().value)
-            servico.gravar(sessao, "dias_sem_cobranca", str(self.dias_sem_cobranca.value()))
             servico.gravar(sessao, "dias_vence_em_breve", str(self.dias_vence_breve.value()))
             servico.gravar(sessao, "tema", self.tema.currentData())
             servico.gravar(sessao, "backup_ao_fechar", self.backup_ao_fechar.currentData())
@@ -362,49 +316,6 @@ class PainelConfiguracoes(QWidget):
             self.contexto.desfazer()
             return
         widgets.informar(self, "Configurações salvas.", "Pronto")
-
-    def _editar_tipo(self, tipo) -> None:
-        from ..dialogos.tipo import DialogoTipo
-
-        if DialogoTipo(self.contexto, tipo, parent=self).exec():
-            self.recarregar()
-
-    def _alternar_tipo(self) -> None:
-        tipo = item_atual(self.tabela_tipos)
-        if tipo is None:
-            widgets.aviso(self, "Selecione um tipo.")
-            return
-        if tipo.ativo:
-            honorarios, contratos = servico_tipos.tipo_em_uso(self.contexto.sessao, tipo)
-            if not widgets.confirmar(
-                self,
-                f"Desativar o tipo {tipo.nome}?",
-                "Desativar tipo",
-                f"Ele é usado em {honorarios} honorário(s) e {contratos} contrato(s), "
-                "que continuam como estão — o tipo só deixa de aparecer em novos lançamentos.",
-            ):
-                return
-
-        def acao():
-            tipo.ativo = not tipo.ativo
-            self.contexto.salvar()
-
-        deu_certo, _ = widgets.executar(self, acao)
-        if deu_certo:
-            self.recarregar()
-
-    def _novo_grupo(self) -> None:
-        nome, confirmou = QInputDialog.getText(self, "Novo grupo", "Nome do grupo:")
-        if not confirmou or not nome.strip():
-            return
-
-        def acao():
-            servico_tipos.criar_grupo(self.contexto.sessao, nome)
-            self.contexto.salvar()
-
-        deu_certo, _ = widgets.executar(self, acao)
-        if deu_certo:
-            self.recarregar()
 
     def _nova_forma(self) -> None:
         nome, confirmou = QInputDialog.getText(

@@ -9,7 +9,7 @@ from ...servicos import clientes as servico_clientes
 from ...servicos import honorarios as servico
 from ...servicos.honorarios import Filtro
 from ..comum import widgets
-from ..comum.campos import ComboRegistros
+from ..comum.seletor_cliente import CampoCliente
 from ..contexto import Contexto
 from ..dialogos.exportar import exportar_extrato, exportar_linhas
 
@@ -54,39 +54,18 @@ class PainelRelatorios(QWidget):
         grupo_extrato = QGroupBox("Extrato de débitos em PDF")
         caixa_extrato = QVBoxLayout(grupo_extrato)
         linha = QHBoxLayout()
-        self.cliente = ComboRegistros(
-            [
-                linha_cliente.cliente
-                for linha_cliente in servico_clientes.listar(
-                    self.contexto.sessao, somente_com_debito=True
-                )
-            ],
-            rotulo=lambda c: f"{c.codigo} – {c.nome}",
-            vazio="— selecione a empresa —",
-        )
+        self.cliente = CampoCliente(self.contexto.sessao, vazio="Digite para procurar a empresa…")
         linha.addWidget(self.cliente, 1)
         gerar = widgets.QPushButton("Gerar extrato")
         gerar.setObjectName("primario")
         gerar.clicked.connect(self._extrato)
         linha.addWidget(gerar)
-        atualizar = widgets.QPushButton("Atualizar lista")
-        atualizar.clicked.connect(self.recarregar)
-        linha.addWidget(atualizar)
         caixa_extrato.addLayout(linha)
         layout.addWidget(grupo_extrato)
         layout.addStretch(1)
 
     def recarregar(self) -> None:
         self.contexto.atualizar()
-        self.cliente.recarregar(
-            [
-                linha.cliente
-                for linha in servico_clientes.listar(
-                    self.contexto.sessao, somente_com_debito=True
-                )
-            ],
-            vazio="— selecione a empresa —",
-        )
 
     def _exportar(self, status: StatusPagamento, atraso: int | None = None) -> None:
         linhas = servico.consultar(

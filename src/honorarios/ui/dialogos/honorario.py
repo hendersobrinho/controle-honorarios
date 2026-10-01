@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
 
 from ...dominio.enums import ExigeCompetencia, MeioCobranca, SituacaoEnvio
 from ...dominio.valores import Competencia, hoje
-from ...servicos import clientes as servico_clientes
 from ...servicos import honorarios as servico
 from ...servicos import tipos as servico_tipos
 from ..comum import widgets
@@ -23,6 +22,7 @@ from ..comum.campos import (
     ComboEnum,
     ComboRegistros,
 )
+from ..comum.seletor_cliente import CampoCliente
 from ..contexto import Contexto
 
 
@@ -42,12 +42,7 @@ class DialogoHonorario(QDialog):
         layout = QVBoxLayout(self)
         formulario = QFormLayout()
 
-        lista = servico_clientes.listar(sessao)
-        self.cliente = ComboRegistros(
-            [linha.cliente for linha in lista],
-            rotulo=lambda c: f"{c.codigo} – {c.nome}",
-            vazio="— selecione —",
-        )
+        self.cliente = CampoCliente(sessao)
         if cliente_inicial is not None:
             self.cliente.definir(cliente_inicial.id)
         formulario.addRow("Cliente:", self.cliente)
