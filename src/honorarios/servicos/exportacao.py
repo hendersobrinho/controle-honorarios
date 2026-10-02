@@ -212,20 +212,3 @@ def extrato_pdf(
     )
     documento.build(corpo)
     return arquivo
-
-
-def painel_pdf(indicadores: dict, destino: Path | None = None) -> Path:
-    """PDF simples do painel, para arquivar o fechamento do mês."""
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
-
-    arquivo = Path(destino) if destino else _nome_arquivo("painel", "pdf")
-    estilos = getSampleStyleSheet()
-    documento = SimpleDocTemplate(str(arquivo), pagesize=A4, title="Painel")
-    corpo = [Paragraph("Painel de honorários", estilos["Title"]), Spacer(1, 10)]
-    dados = [[chave, valor] for chave, valor in indicadores.items()]
-    corpo.append(Table(dados, colWidths=[80 * mm, 60 * mm]))
-    documento.build(corpo)
-    return arquivo

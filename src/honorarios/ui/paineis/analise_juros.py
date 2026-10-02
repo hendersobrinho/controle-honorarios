@@ -52,6 +52,14 @@ from ..comum import cores, tema, widgets
 from ..comum.cartoes import CartaoRegistro, DadosCartao, DataCartao
 from ..comum.grafico_meses import GraficoMeses
 from ..comum.grafico_ranking import GraficoRanking, fonte_ajustada
+from ..comum.graficos_analise import (
+    GraficoAntesDepois,
+    GraficoAtrasos,
+    GraficoCenarios,
+    GraficoComparacao,
+    LinhaAntesDepois,
+    Medida,
+)
 from ..contexto import Contexto
 
 LIMITE_PAGAMENTOS = 40
@@ -377,7 +385,34 @@ def _definir_trabalho(indicadores: dict[str, Indicador], analise: AnaliseJuros,
                       geral: AnaliseJuros | None) -> None:
     """Os indicadores do trabalho que deu para receber, comparados com a média."""
     for chave, (valor, nota) in servico.indicadores_de_trabalho(analise, geral).items():
-        indicadores[chave].definir(valor, nota)
+        if chave in indicadores:   # a análise de um cliente mostra parte deles em gráfico
+            indicadores[chave].definir(valor, nota)
+
+
+def _medidas(analise: AnaliseJuros, geral: AnaliseJuros | None) -> list[Medida]:
+    """O que vai no gráfico "ele × a média": medidas do trabalho para receber."""
+    tem_media = geral is not None and bool(geral.atrasados)
+
+    def media(valor):
+        return float(valor) if tem_media and valor is not None else None
+
+    def dinheiro_ou_traco(valor: float) -> str:
+        return formatar_moeda(Decimal(str(round(valor, 2)))) if valor else "sem cobranças"
+
+    return [
+        Medida("Pagos com atraso", float(analise.percentual_com_atraso),
+               media(geral.percentual_com_atraso) if geral else None,
+               lambda v: f"{v:.0f}% dos honorários"),
+        Medida("Atraso médio", float(analise.atraso_medio),
+               media(geral.atraso_medio) if geral else None,
+               lambda v: _dias(v) if v else "em dia"),
+        Medida("Cobranças por atraso", float(analise.cobrancas_por_atrasado),
+               media(geral.cobrancas_por_atrasado) if geral else None,
+               lambda v: f"{v:.1f} por honorário".replace(".", ",")),
+        Medida("Juros por cobrança", float(analise.juros_por_cobranca or 0),
+               media(geral.juros_por_cobranca) if geral else None,
+               dinheiro_ou_traco),
+    ]
 
 
 def _indicadores_de_trabalho() -> dict[str, Indicador]:
@@ -559,6 +594,65 @@ def _diferenca(valor: Decimal) -> tuple[str, QColor | None]:
     return "—", None
 
 
+def _variacao(antes: Decimal, depois: Decimal) -> str:
+    diferenca = depois - antes
+    if diferenca == 0:
+        return formatar_moeda(depois)
+    sinal = "+" if diferenca > 0 else "−"
+    return (
+        f"{formatar_moeda(antes)} → {formatar_moeda(depois)}  "
+        f"({sinal}{formatar_moeda(abs(diferenca))})"
+    )
+
+
+def linhas_pagos_no_cenario(analise: AnaliseJuros, cenario, so_atrasados: bool = True):
+    """Cada honorário pago: juros pago (como foi) e juros no cenário."""
+    linhas = servico.por_honorario(analise, cenario)
+    if so_atrasados:
+        linhas = [linha for linha in linhas if linha.item.com_atraso]
+    saida = []
+    for linha in sorted(linhas, key=lambda linha: linha.item.honorario.vencimento):
+        item = linha.item
+        saida.append(LinhaAntesDepois(
+            rotulo=_rotulo_curto(item.honorario),
+            antes=float(item.juros_cobrados),
+            depois=float(linha.juros_cenario),
+            texto=_variacao(item.juros_cobrados, linha.juros_cenario),
+            dica=(
+                f"<b>{_rotulo_curto(item.honorario)}</b><br>Venceu "
+                f"{formatar_data(item.honorario.vencimento)} · pago em "
+                f"{formatar_data(item.pago_em)} · {_dias(item.dias_atraso)} de atraso"
+                f"<br>Juros pago: {formatar_moeda(item.juros_cobrados)}"
+                f"<br>No cenário: {formatar_moeda(linha.juros_cenario)} "
+                f"(total {formatar_moeda(linha.total_cenario)})"
+            ),
+        ))
+    return saida, linhas
+
+
+def linhas_atrasados_no_cenario(analise: AnaliseJuros, cenario):
+    """Cada honorário em atraso hoje: o juros de mais 30 dias, como está e no cenário."""
+    saida = []
+    for linha in servico.atrasados_no_cenario(analise, cenario):
+        atrasado = linha.atrasado
+        como_esta = dinheiro(atrasado.juros_por_dia * 30)
+        no_cenario = dinheiro(linha.juros_por_dia_cenario * 30)
+        saida.append(LinhaAntesDepois(
+            rotulo=_rotulo_curto(atrasado.honorario),
+            antes=float(como_esta),
+            depois=float(no_cenario),
+            texto=_variacao(como_esta, no_cenario),
+            dica=(
+                f"<b>{_rotulo_curto(atrasado.honorario)}</b><br>"
+                f"{_dias(atrasado.dias_atraso)} de atraso · total hoje "
+                f"{formatar_moeda(atrasado.total)}<br>Pagando daqui a 30 dias: "
+                f"{formatar_moeda(linha.total_projetado)} como está, "
+                f"{formatar_moeda(linha.total_projetado_cenario)} no cenário"
+            ),
+        ))
+    return saida
+
+
 class CenarioPorHonorario(QWidget):
     """O cenário escolhido aplicado a cada honorário: como foi e como ficaria."""
 
@@ -585,27 +679,39 @@ class CenarioPorHonorario(QWidget):
         layout.addWidget(self.resumo)
 
         topo = QHBoxLayout()
-        self.titulo_pagos = QLabel("<b>Honorários pagos no período</b>")
+        self.titulo_pagos = QLabel("<b>Honorários pagos: o juros que pagou e o do cenário</b>")
         topo.addWidget(self.titulo_pagos)
         topo.addStretch(1)
+        self.ver_tabela = QPushButton("Ver em tabela")
+        self.ver_tabela.setCheckable(True)
+        self.ver_tabela.toggled.connect(lambda *_: self._mostrar())
+        topo.addWidget(self.ver_tabela)
         self.so_atrasados = QCheckBox("Só os pagos com atraso")
         self.so_atrasados.setChecked(True)
         self.so_atrasados.setToolTip("Quem pagou em dia não teve juros: o cenário não muda nada")
         self.so_atrasados.toggled.connect(lambda *_: self._preencher_pagos())
         topo.addWidget(self.so_atrasados)
         layout.addLayout(topo)
+        self.grafico_pagos = GraficoAntesDepois()
+        layout.addWidget(self.grafico_pagos)
+        self.total_pagos = widgets.rotulo_fraco("")
+        layout.addWidget(self.total_pagos)
         self.pagos = _tabela(self.COLUNAS_PAGOS)
         layout.addWidget(self.pagos)
         self.vazio_pagos = widgets.rotulo_fraco("Nenhum honorário pago com atraso no período.")
         layout.addWidget(self.vazio_pagos)
 
-        self.titulo_abertos = QLabel("<b>Em atraso hoje: daqui para frente</b>")
+        self.titulo_abertos = QLabel(
+            "<b>Em atraso hoje: o juros de mais 30 dias, como está e no cenário</b>"
+        )
         layout.addWidget(self.titulo_abertos)
+        self.grafico_abertos = GraficoAntesDepois()
+        layout.addWidget(self.grafico_abertos)
         self.abertos = _tabela(self.COLUNAS_ABERTOS)
         layout.addWidget(self.abertos)
         self.nota_abertos = widgets.rotulo_fraco(
             "O juros que já correu não muda: a taxa nova só valeria da data da mudança em "
-            "diante. As duas últimas colunas mostram o total se ele pagar daqui a 30 dias."
+            "diante. Por isso a comparação é do que ainda vai correr, em 30 dias."
         )
         layout.addWidget(self.nota_abertos)
 
@@ -642,9 +748,10 @@ class CenarioPorHonorario(QWidget):
     def _preencher_pagos(self) -> None:
         if self.analise is None or self.cenario is None:
             return
-        linhas = servico.por_honorario(self.analise, self.cenario)
-        if self.so_atrasados.isChecked():
-            linhas = [linha for linha in linhas if linha.item.com_atraso]
+        barras, linhas = linhas_pagos_no_cenario(
+            self.analise, self.cenario, self.so_atrasados.isChecked()
+        )
+        self.grafico_pagos.definir(barras, ("Juros que pagou", "A mais no cenário"))
         from .honorarios import _descricao
 
         self.pagos.setRowCount(len(linhas) + (1 if linhas else 0))
@@ -688,11 +795,21 @@ class CenarioPorHonorario(QWidget):
             )
             for coluna, celula in enumerate(valores):
                 self.pagos.setItem(total, coluna, celula)
-        self.pagos.setVisible(bool(linhas))
-        self.vazio_pagos.setVisible(not linhas)
+        if linhas:
+            juros = sum((linha.item.juros_cobrados for linha in linhas), start=ZERO)
+            no_cenario = sum((linha.juros_cenario for linha in linhas), start=ZERO)
+            self.total_pagos.setText(
+                f"Total de {len(linhas)} honorário(s): {_variacao(juros, no_cenario)}"
+            )
+        self.tem_pagos = bool(linhas)
         _ajustar_altura(self.pagos)
+        self._mostrar()
 
     def _preencher_abertos(self) -> None:
+        self.grafico_abertos.definir(
+            linhas_atrasados_no_cenario(self.analise, self.cenario),
+            ("Juros de 30 dias, como está", "A mais no cenário"),
+        )
         linhas = servico.atrasados_no_cenario(self.analise, self.cenario)
         from .honorarios import _descricao
 
@@ -724,10 +841,24 @@ class CenarioPorHonorario(QWidget):
             )
             for coluna, celula in enumerate(valores):
                 self.abertos.setItem(posicao, coluna, celula)
-        tem = bool(linhas)
-        for widget in (self.titulo_abertos, self.abertos, self.nota_abertos):
-            widget.setVisible(tem)
+        self.tem_abertos = bool(linhas)
         _ajustar_altura(self.abertos)
+        self._mostrar()
+
+    def _mostrar(self) -> None:
+        """Gráfico por padrão; a tabela, com todos os números, a um clique."""
+        tabela = self.ver_tabela.isChecked()
+        self.ver_tabela.setText("Ver em gráfico" if tabela else "Ver em tabela")
+        pagos = getattr(self, "tem_pagos", False)
+        abertos = getattr(self, "tem_abertos", False)
+        self.grafico_pagos.setVisible(pagos and not tabela)
+        self.total_pagos.setVisible(pagos and not tabela)
+        self.pagos.setVisible(pagos and tabela)
+        self.vazio_pagos.setVisible(not pagos)
+        for widget in (self.titulo_abertos, self.nota_abertos):
+            widget.setVisible(abertos)
+        self.grafico_abertos.setVisible(abertos and not tabela)
+        self.abertos.setVisible(abertos and tabela)
 
 
 # ---------------------------------------------------------- um cliente só
@@ -802,8 +933,23 @@ class _DetalheCliente(QWidget):
         layout.addWidget(self.equacao.rodape)
 
         layout.addWidget(_titulo("O trabalho que deu para receber"))
-        self.cartoes = _indicadores_de_trabalho()
-        layout.addLayout(_grade(self.cartoes, 3))
+        layout.addWidget(widgets.rotulo_fraco(
+            "Comparado com a média dos clientes que pagaram no período. Cada linha tem a "
+            "sua escala; o traço é a média."
+        ))
+        self.comparacao = GraficoComparacao()
+        layout.addWidget(self.comparacao)
+        todos = _indicadores_de_trabalho()
+        self.cartoes = {chave: todos[chave] for chave in ("taxa", "hoje")}
+        layout.addLayout(_grade(self.cartoes, 2))
+
+        layout.addWidget(_titulo("Atraso honorário por honorário"))
+        layout.addWidget(widgets.rotulo_fraco(
+            "Do mais antigo ao mais recente. A barra é quantos dias atrasou; cada ponto é "
+            "uma cobrança feita até ele pagar. Passe o mouse para ver os detalhes."
+        ))
+        self.atrasos = GraficoAtrasos()
+        layout.addWidget(self.atrasos)
 
         layout.addWidget(_titulo("Explicando"))
         self.explicacao = QLabel()
@@ -812,8 +958,14 @@ class _DetalheCliente(QWidget):
         layout.addWidget(self.explicacao)
 
         layout.addWidget(_titulo("Cenários: e se o juros dele fosse outro?"))
+        self.grafico_cenarios = GraficoCenarios()
+        layout.addWidget(self.grafico_cenarios)
         self.cenarios = TabelaCenarios(por_cliente=True)
         layout.addWidget(self.cenarios)
+        # gráfico e tabela andam juntos: clicar num escolhe no outro
+        self.grafico_cenarios.escolhido.connect(self.cenarios.escolher)
+        self.cenarios.cenario_escolhido.connect(lambda *_: self._atualizar_grafico_cenarios())
+        self.cenarios.valor.valueChanged.connect(lambda *_: self._atualizar_grafico_cenarios())
 
         layout.addWidget(_titulo("Cenário honorário por honorário"))
         self.por_honorario = CenarioPorHonorario()
@@ -822,13 +974,73 @@ class _DetalheCliente(QWidget):
         )
         layout.addWidget(self.por_honorario)
 
-        layout.addWidget(_titulo("Histórico dos pagamentos"))
-        self.pagamentos = QVBoxLayout()
+        topo_historico = QHBoxLayout()
+        topo_historico.addWidget(_titulo("Histórico dos pagamentos"), 1)
+        self.mostrar_historico = QPushButton("Mostrar os cartões")
+        self.mostrar_historico.setCheckable(True)
+        self.mostrar_historico.toggled.connect(lambda marcado: self._alternar_historico(marcado))
+        topo_historico.addWidget(self.mostrar_historico)
+        layout.addLayout(topo_historico)
+        self.caixa_historico = QWidget()
+        self.pagamentos = QVBoxLayout(self.caixa_historico)
+        self.pagamentos.setContentsMargins(0, 0, 0, 0)
         self.pagamentos.setSpacing(8)
-        layout.addLayout(self.pagamentos)
+        self.caixa_historico.setVisible(False)
+        layout.addWidget(self.caixa_historico)
         self.mais = widgets.rotulo_fraco("")
         layout.addWidget(self.mais)
         layout.addStretch(1)
+
+    def _imagens_para_pdf(self, pasta) -> dict:
+        """Os gráficos da tela, redesenhados como imagem para o PDF (mesmos dados)."""
+        from pathlib import Path
+
+        from ..comum.graficos_analise import salvar_como_imagem
+
+        analise = self.analise
+        cenario = self.cenarios.escolhido()
+        largura = 880
+        saida = {}
+
+        comparacao = GraficoComparacao()
+        comparacao.definir(_medidas(analise, analise.geral), animar=False)
+        atrasos = GraficoAtrasos()
+        atrasos.definir(analise.honorarios, animar=False)
+        cenarios = GraficoCenarios()
+        lista = list(self.cenarios.cenarios)
+        if self.cenarios.testado is not None:
+            lista.append(self.cenarios.testado)
+        linha = self.cenarios.tabela.currentRow()
+        cenarios.definir(lista, linha if 0 <= linha < len(lista) else None)
+        graficos = [("comparacao", comparacao, None), ("atrasos", atrasos, 300),
+                    ("cenarios", cenarios, None)]
+        if cenario is not None:
+            pagos = GraficoAntesDepois()
+            pagos.definir(linhas_pagos_no_cenario(analise, cenario)[0],
+                          ("Juros que pagou", "A mais no cenário"))
+            abertos = GraficoAntesDepois()
+            abertos.definir(linhas_atrasados_no_cenario(analise, cenario),
+                            ("Juros de 30 dias, como está", "A mais no cenário"))
+            graficos += [("pagos_cenario", pagos, None), ("abertos_cenario", abertos, None)]
+        for chave, grafico, altura in graficos:
+            if chave in ("pagos_cenario", "abertos_cenario") and not grafico.linhas:
+                continue
+            caminho = Path(pasta) / f"{chave}.png"
+            salvar_como_imagem(grafico, caminho, largura, altura)
+            saida[chave] = caminho
+        return saida
+
+    def _atualizar_grafico_cenarios(self) -> None:
+        cenarios = list(self.cenarios.cenarios)
+        if self.cenarios.testado is not None:
+            cenarios.append(self.cenarios.testado)
+        linha = self.cenarios.tabela.currentRow()
+        self.grafico_cenarios.definir(cenarios, linha if 0 <= linha < len(cenarios) else None)
+
+    def _alternar_historico(self, mostrar: bool) -> None:
+        self.caixa_historico.setVisible(mostrar)
+        self.mais.setVisible(mostrar and bool(self.mais.text()))
+        self.mostrar_historico.setText("Esconder os cartões" if mostrar else "Mostrar os cartões")
 
     def exportar_pdf(self, destino: str | None = None) -> None:
         """PDF da análise do cliente, com o cenário escolhido na tabela."""
@@ -873,6 +1085,7 @@ class _DetalheCliente(QWidget):
                     Path(destino),
                     self.contexto.data_referencia,
                     fundo=papel,
+                    graficos=self._imagens_para_pdf(Path(pasta)),
                 )
             self.pdf_com_fundo = base is not None
             return arquivo
@@ -892,6 +1105,8 @@ class _DetalheCliente(QWidget):
         )
         self.equacao.definir(analise)
         _definir_trabalho(self.cartoes, analise, analise.geral)
+        self.comparacao.definir(_medidas(analise, analise.geral))
+        self.atrasos.definir(analise.honorarios)
         self.explicacao.setText(
             "\n".join(f"•  {frase}" for frase in servico.explicar_cliente(analise))
         )
@@ -909,7 +1124,7 @@ class _DetalheCliente(QWidget):
             f"… e mais {restantes} mais antigo(s). Reduza o período para vê-los."
             if restantes > 0 else ""
         )
-        self.mais.setVisible(restantes > 0)
+        self.mais.setVisible(restantes > 0 and self.mostrar_historico.isChecked())
 
 
 # ------------------------------------------------------------------- a aba

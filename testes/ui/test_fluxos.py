@@ -65,7 +65,9 @@ def test_cartao_de_atrasado_mostra_situacao_e_leva_ao_historico(
     cartao = painel.lista.secoes[0].cartoes[0]
     assert "Em atraso há" in cartao.situacao
     assert cartao.cor is not None                      # faixa vermelha de atraso
-    assert [acao.texto for acao in cartao.acoes] == ["Histórico", "Cobrar"]
+    assert [acao.texto for acao in cartao.acoes] == [
+        "Histórico", "Editar", "Cobrar", "Confirmar pagamento",
+    ]
     assert cartao.valor == "R$ 541,00"
 
 
@@ -102,7 +104,7 @@ def test_pago_sai_de_atrasados_e_vai_para_pagos(qtbot, contexto, cliente_com_deb
     cartao = pagos.lista.secoes[0].cartoes[0]
     assert cartao.valor_rotulo == "Recebido"
     assert cartao.situacao.startswith("Pago com")          # pagou com atraso
-    assert [acao.texto for acao in cartao.acoes] == ["Histórico"]
+    assert [acao.texto for acao in cartao.acoes] == ["Histórico", "Agradecimento"]
 
 
 def test_filtro_de_faixa_de_atraso(qtbot, contexto, cliente_com_debito):
@@ -152,7 +154,9 @@ def test_a_vencer_mostra_so_o_que_esta_no_prazo(qtbot, contexto, cliente_com_deb
     assert all(item.atualizacao.dias_atraso == 0 for item in painel.lista.itens)
     cartao = painel.lista.secoes[0].cartoes[0]
     assert cartao.situacao == "Vence hoje"
-    assert [acao.texto for acao in cartao.acoes] == ["Histórico", "Lembrete"]
+    assert [acao.texto for acao in cartao.acoes] == [
+        "Histórico", "Editar", "Lembrete", "Confirmar pagamento",
+    ]
 
     # e nenhum deles aparece em atrasados
     atrasados = PainelAtrasados(contexto)
@@ -402,7 +406,9 @@ def test_ficha_reune_pendentes_pagos_e_linha_do_tempo(qtbot, contexto, cliente_c
 # -------------------------------------------------------------------- painel
 
 
-def test_painel_mostra_o_ano_em_graficos_sem_atraso(qtbot, contexto, cliente_com_debito):
+def test_painel_mostra_o_ano_em_graficos_sem_atraso(
+    qtbot, contexto, cliente_com_debito, monkeypatch, tmp_path
+):
     from honorarios.ui.paineis.painel import PainelResumo
 
     painel = PainelResumo(contexto)
@@ -419,6 +425,15 @@ def test_painel_mostra_o_ano_em_graficos_sem_atraso(qtbot, contexto, cliente_com
     textos = " ".join(cartao._rotulo.text() for cartao in painel.cartoes.values())
     assert "Juros" not in textos and "Inadimpl" not in textos
     assert "atraso" not in painel.leituras.text().lower()
+    # o PDF sai com os gráficos e o mesmo visual da análise de juros
+    from honorarios.ui.comum import widgets as widgets_comuns
+
+    abertos = []
+    monkeypatch.setattr(widgets_comuns, "abrir_url", lambda url: abertos.append(url))
+    painel._exportar(str(tmp_path / "painel.pdf"))
+    assert painel.pdf_gerado.read_bytes().count(b"/Subtype /Image") >= 4   # papel + gráficos
+    assert abertos == [f"file://{painel.pdf_gerado}"]
+
     # a mesma série em tabela, para conferir
     painel.alternar.click()
     assert painel.pilha_quitacao.currentWidget() is painel.tabela_mes
@@ -434,8 +449,12 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
     assert janela.telas.count() == 14
     assert len(janela.linhas_de_tela) == 14
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
+    assert "E-mail de cobranças" in titulos
     assert "Cobranças enviadas" in titulos and "Ranking dos atrasados" in titulos
     assert "Imposto de Renda" in titulos and "Grupos e tipos" in titulos
+    # recorrentes e avulsos viraram abas de uma tela só
+    assert "Honorários" in titulos
+    assert "Honorários recorrentes" not in titulos and "Honorários avulsos" not in titulos
     assert not any("Fila" in titulo for titulo in titulos)
     for linha in janela.linhas_de_tela:
         janela.navegacao.setCurrentRow(linha)
@@ -865,6 +884,14 @@ def test_aba_de_analise_de_juros(
     detalhe = aba.detalhe
     assert "Pagou 1 honorário no período" in detalhe.explicacao.text()
     assert detalhe.pagamentos.count() == 1
+    # os gráficos do cliente: ele × média (4 medidas) e o atraso de cada honorário
+    assert [m.rotulo for m in detalhe.comparacao.medidas] == [
+        "Pagos com atraso", "Atraso médio", "Cobranças por atraso", "Juros por cobrança",
+    ]
+    assert [item.honorario.id for item in detalhe.atrasos.itens] == [linha.honorario.id]
+    assert not detalhe.caixa_historico.isVisibleTo(detalhe)   # cartões só sob demanda
+    detalhe.mostrar_historico.setChecked(True)
+    assert detalhe.caixa_historico.isVisibleTo(detalhe)
     assert detalhe.equacao.original._valor.text() == formatar_moeda(linha.honorario.valor_original)
 
     # testar outro juros ao dia: o dobro da taxa dobra o juros do período
@@ -875,6 +902,14 @@ def test_aba_de_analise_de_juros(
     assert "+100%" in cenarios.tabela.item(ultima, 0).text()
     juros = formatar_moeda(detalhe.analise.juros_cobrados * 2)
     assert cenarios.tabela.item(ultima, 2).text() == juros
+
+    # o gráfico de cenários acompanha a tabela, e clicar nele escolhe na tabela
+    grafico = detalhe.grafico_cenarios
+    assert len(grafico.cenarios) == cenarios.tabela.rowCount()
+    ultima = cenarios.tabela.rowCount() - 1          # a linha "Testado"
+    cenarios.escolher(0)
+    grafico.escolhido.emit(ultima)
+    assert cenarios.tabela.currentRow() == ultima and grafico.selecionado == ultima
 
     # clicar num cenário mostra o efeito honorário por honorário
     por_honorario = detalhe.por_honorario
@@ -907,6 +942,8 @@ def test_aba_de_analise_de_juros(
     assert detalhe.pdf_gerado == arquivo_pdf
     assert arquivo_pdf.read_bytes().startswith(b"%PDF")
     assert detalhe.pdf_com_fundo                     # o modelo tem o grupo id="conteudo"
+    # o PDF leva os gráficos da tela (papel + comparação, atrasos, cenários e por honorário)
+    assert arquivo_pdf.read_bytes().count(b"/Subtype /Image") >= 5
     assert abertos_pdf == [f"file://{arquivo_pdf}"]
 
     # a busca filtra a lista; o botão leva à ficha
@@ -1104,14 +1141,16 @@ def test_imagem_desenha_fundo_lista_e_qr(qtbot, contexto, cliente_com_debito, tm
     )
     assert pretos > 200
 
-    # sem QR, o mesmo retângulo fica com o fundo do cartão
+    # sem QR não há QR: no lugar dele fica só o texto do Pix (bem menos tinta)
     dados.qrcode = None
     sem_qr = renderizar(imagem_cobranca.FUNDO_MODELO.read_text(encoding="utf-8"), dados)
-    assert all(
-        QColor(sem_qr.pixel(x, y)).lightness() > 200
-        for x in range(90, 358, 20)
-        for y in range(1010, 1278, 20)
+    tinta = sum(
+        1
+        for x in range(90, 358, 4)
+        for y in range(1010, 1278, 4)
+        if QColor(sem_qr.pixel(x, y)).lightness() < 60
     )
+    assert tinta < pretos / 4
 
 
 def test_cobrar_gera_imagem_dos_honorarios_marcados(
@@ -1150,6 +1189,21 @@ def test_cobrar_gera_imagem_dos_honorarios_marcados(
     botoes["Copiar chave Pix"].click()
     assert QGuiApplication.clipboard().text() == aberto.dados.campos["chave_pix"]
     assert "Copiar Pix copia e cola" not in botoes            # o QR é o PNG do banco
+    # "pagar até" muda só o prazo; "valores atualizados em" muda o valor
+    total_antes = aberto.dados.campos["total"]
+    from datetime import timedelta
+    base = aberto.atualizado_em.valor()
+    aberto.vencimento.definir(base + timedelta(days=10))
+    assert aberto.dados.campos["vencimento"] == formatar_data(base + timedelta(days=10))
+    assert aberto.dados.campos["total"] == total_antes
+    aberto.atualizado_em.definir(base + timedelta(days=5))
+    assert aberto.dados.campos["total"] != total_antes
+
+    # guardar como acordo: registrado quando a imagem é copiada
+    aberto.acordo.setChecked(True)
+    aberto.copiar()
+    assert "Acordo guardado" in aberto.aviso.text()
+    assert all(linha.honorario.acordos for linha in linhas_do(contexto.sessao, cliente_com_debito))
 
 
 def test_imagem_estica_quando_os_honorarios_nao_cabem(qtbot, contexto, tmp_path):
@@ -1167,9 +1221,9 @@ def test_imagem_estica_quando_os_honorarios_nao_cabem(qtbot, contexto, tmp_path)
 
     dados.linhas = [dados.linhas[i % 3] for i in range(12)]
     esticada = desenho.renderizar(fundo, dados)
-    # a lista do modelo tem 455 px; 12 linhas × 84 px pedem 553 px a mais
+    # a lista do modelo tem 450 px; 12 linhas × 84 px pedem 558 px a mais
     assert esticada.width() == 1080
-    assert esticada.height() == 1350 + 12 * desenho.ALTURA_ESTICADA - 455
+    assert esticada.height() == 1350 + 12 * desenho.ALTURA_ESTICADA - 450
 
     # o QR desceu junto com o resto do desenho
     deslocamento = esticada.height() - 1350
@@ -1184,7 +1238,7 @@ def test_imagem_estica_quando_os_honorarios_nao_cabem(qtbot, contexto, tmp_path)
     # acima do máximo, a imagem para de crescer e o resto vira "e mais N"
     dados.linhas = [dados.linhas[i % 3] for i in range(60)]
     maior = desenho.renderizar(fundo, dados)
-    assert maior.height() == 1350 + desenho.MAXIMO_LINHAS * desenho.ALTURA_ESTICADA - 455
+    assert maior.height() == 1350 + desenho.MAXIMO_LINHAS * desenho.ALTURA_ESTICADA - 450
 
 
 def test_fundo_vira_papel_a4_sem_deformar(qtbot):
@@ -1201,3 +1255,545 @@ def test_fundo_vira_papel_a4_sem_deformar(qtbot):
     # o topo (faixa azul do modelo) e o pé (fundo claro) ficam onde estavam
     assert QColor(papel.pixel(540, 100)).blue() > 150
     assert QColor(papel.pixel(540, 1520)).lightness() > 220
+
+
+# ---------------------------------------------------- avulsos e editar no cartão
+
+
+def test_avulsos_e_historico_sem_cobrar_nem_pagar(qtbot, contexto, cliente_com_debito):
+    from PySide6.QtWidgets import QPushButton
+
+    from honorarios.servicos import pagamentos
+    from honorarios.ui.paineis.avulsos import PainelAvulsos
+
+    avulso = fabricas.honorario(
+        contexto.sessao, cliente_com_debito, valor="300.00", vencimento=date(2026, 9, 10),
+        tipo=fabricas.tipo_avulso(contexto.sessao), competencia=Competencia(),
+        descricao="Alteração de endereço",
+    )
+    pago = fabricas.honorario(
+        contexto.sessao, cliente_com_debito, valor="200.00", vencimento=date(2026, 8, 10),
+        tipo=fabricas.tipo_avulso(contexto.sessao), competencia=Competencia(),
+        descricao="Ata de sócios",
+    )
+    previa = pagamentos.previa(pago, date(2026, 8, 10))
+    pagamentos.registrar(contexto.sessao, pago, pagamentos.DadosPagamento(
+        data=date(2026, 8, 10), valor_pago=previa.total_devido))
+    contexto.salvar()
+
+    painel = PainelAvulsos(contexto)
+    qtbot.addWidget(painel)
+    textos = [b.text() for b in painel.findChildren(QPushButton)]
+    assert "Lançar avulso" in textos and "Editar" in textos and "Cancelar…" in textos
+    assert "Cobrar" not in textos and "Registrar pagamento" not in textos
+
+    # pagos continuam no histórico, com a data do pagamento; mais recente primeiro
+    itens = painel.modelo.itens
+    assert [linha.honorario.id for linha in itens] == [avulso.id, pago.id]
+    coluna = next(c for c in painel.modelo.colunas if c.titulo == "Situação")
+    assert coluna.texto(itens[1]) == "Pago em 10/08/2026"
+    assert coluna.texto(itens[0]).startswith("Em atraso há")
+
+    painel.situacao.setCurrentIndex(2)          # só os pagos
+    assert [linha.honorario.id for linha in painel.modelo.itens] == [pago.id]
+
+
+def test_cartao_em_aberto_tem_editar(qtbot, contexto, cliente_com_debito, monkeypatch):
+    from honorarios.ui.dialogos import honorario as dialogo_honorario
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
+
+    abertos = []
+    monkeypatch.setattr(
+        dialogo_honorario.DialogoHonorario, "exec",
+        lambda self: abertos.append(self) or 0,
+    )
+    painel = PainelAtrasados(contexto)
+    qtbot.addWidget(painel)
+    linha = linhas_do(contexto.sessao, cliente_com_debito)[0]
+    acoes = {acao.texto: acao for acao in painel._acoes_do_cartao(linha)}
+    assert list(acoes) == ["Histórico", "Editar", "Cobrar", "Confirmar pagamento"]
+    acoes["Editar"].funcao(linha)
+    assert len(abertos) == 1
+
+
+def test_confirmar_pagamento_no_cartao(qtbot, contexto, cliente_com_debito, monkeypatch):
+    from PySide6.QtWidgets import QPushButton
+
+    from honorarios.ui.comum.cartoes import CartaoRegistro
+    from honorarios.ui.paineis import honorarios as paineis
+
+    abertos = []
+    monkeypatch.setattr(
+        paineis.DialogoPagamento, "exec", lambda self: abertos.append(self.honorario) or 0
+    )
+    painel = paineis.PainelAtrasados(contexto)
+    qtbot.addWidget(painel)
+    linha = linhas_do(contexto.sessao, cliente_com_debito)[0]
+    pagar = next(a for a in painel._acoes_do_cartao(linha) if a.texto == "Confirmar pagamento")
+    assert pagar.pagamento                                    # o botão verde
+
+    # o cartão desenha o botão no estilo de pagamento e o clique abre a baixa
+    cartao = CartaoRegistro(painel._cartao(linha))
+    qtbot.addWidget(cartao)
+    botao = next(b for b in cartao.findChildren(QPushButton) if b.text() == "Confirmar pagamento")
+    assert botao.objectName() == "cartaoPagamento"
+    botao.click()
+    assert abertos == [linha.honorario]
+
+
+def test_honorarios_tem_abas_recorrentes_e_avulsos(qtbot, contexto, cliente_com_debito):
+    from honorarios.ui.paineis.cadastro_honorarios import PainelHonorarios
+
+    painel = PainelHonorarios(contexto)
+    qtbot.addWidget(painel)
+    assert [painel.abas.tabText(i) for i in range(painel.abas.count())] == [
+        "Mês a mês", "Recorrentes", "Avulsos",
+    ]
+    assert painel.abas.currentWidget() is painel.mes_a_mes
+    painel.abas.setCurrentIndex(2)
+    assert painel.abas.currentWidget() is painel.avulsos
+    painel.recarregar()                     # recarrega a aba aberta
+
+
+def test_topo_da_cobranca_enxuto_com_chips(qtbot, contexto, cliente_com_debito):
+    from PySide6.QtWidgets import QPushButton
+
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
+
+    painel = PainelAtrasados(contexto)
+    qtbot.addWidget(painel)
+    painel.show()
+    # à mostra só a ação principal; o resto fica no menu Ações, com os atalhos
+    visiveis = [b.text() for b in painel.findChildren(QPushButton) if b.isVisible()]
+    assert "Cobrar selecionados" in visiveis
+    assert "Registrar pagamento" not in visiveis and "Exportar lista" not in visiveis
+    acoes = {acao.text(): acao.shortcut().toString() for acao in painel.menu_acoes.actions()
+             if acao.text()}
+    assert acoes["Registrar pagamento"] == "Ctrl+P"
+    assert acoes["Ficha da empresa"] == "Ctrl+F"
+    assert acoes["Atualizar"] == "F5"
+    assert "Renegociar selecionados" in acoes and "Exportar lista" in acoes
+
+    # filtro fora do padrão: o chip destaca e "Limpar filtros" aparece; limpar volta tudo
+    assert not painel.filtros.limpar.isVisible()
+    painel.faixa.setCurrentIndex(2)
+    painel.nunca_cobrado.setChecked(True)
+    assert painel.faixa.property("ativo") and painel.filtros.limpar.isVisible()
+    assert painel.faixa.text().startswith("Atraso: 31 a 60 dias")
+    painel.filtros.limpar.click()
+    assert painel.faixa.currentIndex() == 0 and not painel.nunca_cobrado.isChecked()
+    assert not painel.filtros.limpar.isVisible()
+
+
+def test_janela_tem_logo_e_progresso(qtbot, contexto):
+    from honorarios.ui.janela_principal import JanelaPrincipal
+
+    passos = []
+    janela = JanelaPrincipal(contexto, progresso=lambda pct, texto: passos.append((pct, texto)))
+    qtbot.addWidget(janela)
+    # a tela de abertura recebe o progresso de cada tela montada
+    assert len(passos) == janela.telas.count()
+    assert passos[0][1].startswith("Carregando ")
+    assert not janela.logo_menu.pixmap().isNull()          # a logo fica no menu
+    assert not hasattr(janela, "resumo_do_dia")            # sem cartão de resumo ao abrir
+
+
+def test_tela_de_abertura(qtbot):
+    from honorarios.ui.comum.logo import TelaAbertura
+
+    abertura = TelaAbertura()
+    qtbot.addWidget(abertura)
+    abertura.avancar(40, "Carregando Atrasados…")
+    assert abertura.barra.value() == 40
+    assert abertura.mensagem.text() == "Carregando Atrasados…"
+
+
+def test_mes_a_mes_navega_e_gera_a_competencia_do_mes(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from honorarios.ui.dialogos import competencia
+    from honorarios.ui.paineis.mes_a_mes import PainelMesAMes
+
+    fabricas.contrato(contexto.sessao, cliente_com_debito)
+    painel = PainelMesAMes(contexto)
+    qtbot.addWidget(painel)
+    painel.ir_para(2026, 8)
+    assert painel.botao_mes.text().startswith("Agosto de 2026")
+    # competência 08/2026 do cliente (vence em 19/09) está em agosto
+    assert [linha.honorario.competencia_mes for linha in painel.modelo.itens] == [8]
+
+    painel.anterior.click()
+    assert (painel.ano, painel.mes) == (2026, 7)
+    painel.proximo.click()
+    painel.proximo.click()
+    assert (painel.ano, painel.mes) == (2026, 9)
+
+    # o menu do mês leva direto a qualquer mês, por ano
+    anos = [acao.text() for acao in painel.botao_mes.menu().actions()]
+    assert "2026" in anos
+
+    # o contrato ainda não gerou setembro: aviso e botão com a contagem
+    assert painel.aviso_geracao.isVisibleTo(painel)
+    assert painel.gerar.text() == "Gerar competência (1)"
+    abertos = []
+    monkeypatch.setattr(competencia.DialogoGerarCompetencia, "exec",
+                        lambda self: abertos.append((self.ano.value(), self.mes.currentData())))
+    painel.gerar.click()
+    assert abertos == [(2026, 9)]                       # abre no mês da tela
+
+    # filtros: origem e situação
+    painel.origem.setCurrentIndex(2)                    # só avulsos
+    assert painel.modelo.itens == []
+
+
+def test_agradecimento_pelo_pagamento(qtbot, contexto, cliente_com_debito, monkeypatch):
+    from honorarios.servicos import imagem_cobranca
+    from honorarios.ui.comum.imagem_cobranca import renderizar_agradecimento
+    from honorarios.ui.dialogos import imagem_cobranca as dialogo_imagem
+    from honorarios.ui.dialogos.pagamento import DialogoPagamento
+
+    linha = linhas_do(contexto.sessao, cliente_com_debito)[0]
+    abertos = []
+    monkeypatch.setattr(dialogo_imagem.DialogoImagemCobranca, "exec",
+                        lambda self: abertos.append(self) or 0)
+
+    # na baixa: a caixa marcada abre a imagem de agradecimento e fica lembrada
+    dialogo = DialogoPagamento(contexto, linha.honorario)
+    qtbot.addWidget(dialogo)
+    dialogo.agradecer.setChecked(True)
+    dialogo._registrar()
+    [aberto] = abertos
+    assert aberto.agradecimento
+    assert aberto.dados.campos["cliente"] == cliente_com_debito.nome
+    assert aberto.dados.linhas[0].detalhe.startswith("Vencimento ")
+    from honorarios.servicos import configuracoes
+    assert configuracoes.obter_bool(contexto.sessao, "agradecimento_apos_baixa")
+
+    # o desenho: proporção da cobrança, em resolução maior
+    dados = imagem_cobranca.montar_agradecimento(contexto.sessao, [linha.honorario])
+    imagem = renderizar_agradecimento(
+        imagem_cobranca.FUNDO_MODELO.read_text(encoding="utf-8"), dados
+    )
+    assert (imagem.width(), imagem.height()) == (1620, 2025)
+
+
+def test_imagem_de_cobranca_usa_a_logo_nova():
+    from honorarios.servicos import imagem_cobranca
+
+    fundo = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
+        '<g id="logo-imagem"><rect width="1" height="1"/></g>'
+        '<g id="logo-pdf"><rect width="2" height="2"/></g>'
+        '<g id="conteudo"><text>{cliente}</text></g></svg>'
+    )
+    imagem = imagem_cobranca.para_imagem(fundo)
+    assert 'id="logo-pdf"' in imagem and 'id="logo-imagem"' not in imagem
+    papel = imagem_cobranca.base_do_fundo(fundo)
+    assert 'id="logo-pdf"' in papel and "conteudo" not in papel
+
+
+def test_notificacoes_na_janela(qtbot, contexto, cliente_com_debito, monkeypatch):
+    from PySide6.QtWidgets import QPushButton
+
+    from honorarios.ui import janela_principal
+    from honorarios.ui.janela_principal import JanelaPrincipal
+
+    monkeypatch.setattr(janela_principal, "hoje", lambda: date(2026, 9, 30))
+    avisos_do_sistema = []
+    janela = JanelaPrincipal(contexto)
+    qtbot.addWidget(janela)
+    monkeypatch.setattr(janela, "_notificar_sistema", avisos_do_sistema.append)
+
+    # ao abrir: cria e conta, sem aviso no canto (não atrapalha a abertura)
+    janela.iniciar_notificacoes()
+    assert janela.botao_notificacoes.quantidade == 1     # venceu em 19/09 sem pagamento
+    assert janela.verificacao.isActive()
+    assert not janela.aviso_novo.isVisible() and avisos_do_sistema == []
+
+    # com o sistema aberto, surge um vencimento de hoje: aviso no canto e do sistema
+    fabricas.honorario(contexto.sessao, cliente_com_debito, valor="200.00",
+                       vencimento=date(2026, 9, 30), competencia=Competencia(2026, 9))
+    janela.show()
+    assert len(janela.verificar_notificacoes()) == 1
+    assert janela.aviso_novo.isVisible()
+    assert avisos_do_sistema == ["1 cliente com vencimento hoje"]
+    assert janela.botao_notificacoes.quantidade == 2
+
+    # "Abrir" marca como lida e leva à tela já buscando o cliente
+    janela.abrir_notificacoes()
+    lista = janela.lista_notificacoes
+    item = lista.itens.itemAt(0).widget()
+    item.findChild(QPushButton, "cartaoAcao").click()
+    painel = janela.telas.currentWidget()
+    assert painel.titulo in ("A vencer", "Atrasados")
+    assert painel.busca.text() == cliente_com_debito.nome
+    assert janela.botao_notificacoes.quantidade == 1
+
+    lista.botao_todas.click()
+    assert janela.botao_notificacoes.quantidade == 0
+
+
+def test_configuracao_da_geracao_automatica(qtbot, contexto, monkeypatch):
+    from honorarios.servicos import geracao_automatica
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    monkeypatch.setattr(widgets, "informar", lambda *a, **k: None)
+    painel = PainelConfiguracoes(contexto)
+    qtbot.addWidget(painel)
+    painel.recarregar()
+    assert not painel.geracao_automatica.isChecked()      # desligada por padrão
+    assert not painel.geracao_dia.isEnabled()
+    painel.geracao_automatica.setChecked(True)
+    painel.geracao_dia.setValue(10)
+    painel._salvar()
+    assert geracao_automatica.ligada(contexto.sessao)
+    assert geracao_automatica.dia(contexto.sessao) == 10
+
+
+def test_aviso_do_canto_fica_por_cima_ao_trocar_de_tela(qtbot, contexto):
+    from PySide6.QtCore import QPoint
+
+    from honorarios.ui.janela_principal import JanelaPrincipal
+
+    janela = JanelaPrincipal(contexto)
+    qtbot.addWidget(janela)
+    janela.show()
+    aviso = janela.aviso_novo
+    aviso.mostrar("1 cliente com vencimento hoje")
+    janela._posicionar_aviso()
+
+    def por_cima() -> bool:
+        centro = aviso.mapTo(janela.central, QPoint(aviso.width() // 2, 12))
+        alvo = janela.central.childAt(centro)
+        return alvo is aviso or aviso.isAncestorOf(alvo)
+
+    for linha in list(janela.linhas_de_tela)[:4]:   # passa por várias telas e volta
+        janela.navegacao.setCurrentRow(linha)
+        assert aviso.isVisible() and por_cima()
+
+
+def _lista_do_financeiro(contexto, sem: str = "19/09/2026") -> bytes:
+    """O e-mail do financeiro: a lista do sistema sem o honorário de ``sem``."""
+    from email.message import EmailMessage
+
+    from honorarios.servicos import email_cobrancas
+
+    lista = email_cobrancas.texto(email_cobrancas.montar(contexto.sessao, date(2026, 9, 30)))
+    lista = "\n".join(linha for linha in lista.splitlines() if sem not in linha)
+    mensagem = EmailMessage()
+    mensagem["From"] = "Financeiro <financeiro@exemplo.com.br>"
+    mensagem["To"] = "cobranca@exemplo.com.br"
+    mensagem["Cc"] = "Gerencia <gerencia@exemplo.com.br>"
+    mensagem["Subject"] = "Clientes c/Honorários vencidos"
+    mensagem["Date"] = "Wed, 30 Sep 2026 09:00:00 -0300"
+    mensagem["Message-ID"] = "<lista@exemplo.com.br>"
+    mensagem.set_content(lista)
+    return bytes(mensagem)
+
+
+class CaixaDeMentira:
+    def __init__(self, brutos):
+        self.brutos, self.respostas = brutos, []
+
+    def baixar(self, ja_tenho, assunto):
+        from honorarios.servicos import caixa_email
+
+        return [m for m in (caixa_email.de_mime(b, ref_provedor="1") for b in self.brutos)
+                if m.message_id not in ja_tenho]
+
+    def responder(self, original, resposta):
+        from honorarios.servicos import caixa_email
+
+        self.respostas.append((original, resposta))
+        return caixa_email.MensagemBaixada(
+            message_id="<resposta@exemplo.com.br>", assunto=resposta.assunto,
+            de="cobranca@exemplo.com.br", para=resposta.para, cc=resposta.cc,
+            data=original.recebido_em, html=resposta.html, texto=resposta.texto,
+        )
+
+
+def test_caixa_de_email_verificar_conferir_e_responder(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from honorarios.servicos import caixa_email
+    from honorarios.ui.comum import segundo_plano, widgets
+    from honorarios.ui.paineis import email_cobrancas as tela
+
+    contexto.data_referencia = date(2026, 9, 30)
+    caixa_email.gravar_conta(contexto.sessao, caixa_email.ContaEmail(
+        provedor=caixa_email.GMAIL, endereco="cobranca@exemplo.com.br"))
+    caixa = CaixaDeMentira([_lista_do_financeiro(contexto)])
+    monkeypatch.setattr(caixa_email, "abrir_caixa", lambda sessao: caixa)
+    painel = tela.PainelEmailCobrancas(contexto)
+    painel.executor = segundo_plano.imediato
+    qtbot.addWidget(painel)
+    painel.recarregar()
+    assert painel.lista_vazia.isVisibleTo(painel)
+    assert "Gmail" in painel.situacao.text()
+
+    chegaram = []
+    painel.chegaram.connect(chegaram.append)
+    painel.verificar()
+    assert chegaram == [1] and painel.lista.count() == 1
+    assert "1 e-mail(s) novo(s)" in painel.situacao.text()
+    item = painel.lista.itemWidget(painel.lista.item(0))
+    assert item.quem.text() == "Financeiro"
+
+    # abrir: marca como lido, confere e já prepara a resposta
+    painel.lista.setCurrentRow(0)
+    assert painel.mensagem.lida
+    assert painel.abas.tabText(1) == "Conferência · 1 saíram"
+    assert "1 continuam · 1 saíram" in painel.conferencia_aba.resumo.text()
+    responder = painel.responder
+    assert responder.para.text() == "Financeiro <financeiro@exemplo.com.br>"
+    assert responder.cc.text() == "Gerencia <gerencia@exemplo.com.br>"
+    assert responder.assunto.text() == "RE: Clientes c/Honorários vencidos"
+    assert "19/09/2026" not in responder.editor.toPlainText()     # quem saiu não volta
+    assert responder.botao_enviar.isEnabled()
+
+    # enviar pede confirmação; recusando, nada sai
+    perguntas = []
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: perguntas.append(a) or False)
+    responder.botao_enviar.click()
+    assert perguntas and caixa.respostas == []
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    responder.editor.insertPlainText("Bom dia! ")                # dá para escrever antes
+    responder.botao_enviar.click()
+    [(original, resposta)] = caixa.respostas
+    assert original.message_id == "<lista@exemplo.com.br>"
+    assert "Bom dia!" in resposta.texto
+    assert painel.mensagem.message_id == original.message_id
+    assert painel.mensagem.respondida_em is not None
+    assert painel.lista.count() == 2                             # a enviada entra na lista
+    assert responder.aviso.text() == "✓ Resposta enviada."
+    enviada = next(r for r in range(2) if painel.lista.itemWidget(
+        painel.lista.item(r)).quem.text() == "Você")
+    painel.lista.setCurrentRow(enviada)                          # a resposta: só leitura
+    assert painel.mensagem.enviada and not painel.abas.isTabEnabled(2)
+    painel.lista.setCurrentRow(1 - enviada)                      # reabrindo o original
+    assert "Já respondido" in responder.aviso.text()
+
+    # de novo, nada repetido
+    painel.verificar()
+    assert painel.lista.count() == 2 and chegaram == [1]
+
+
+def test_caixa_de_email_sem_conta(qtbot, contexto, cliente_com_debito, tmp_path):
+    from honorarios.ui.comum import segundo_plano
+    from honorarios.ui.paineis import email_cobrancas as tela
+
+    contexto.data_referencia = date(2026, 9, 30)
+    painel = tela.PainelEmailCobrancas(contexto)
+    painel.executor = segundo_plano.imediato
+    qtbot.addWidget(painel)
+    painel.recarregar()
+    assert not painel.botao_verificar.isEnabled()
+    assert painel.vazio_configurar.isVisibleTo(painel)
+
+    arquivo = tmp_path / "lista.eml"
+    arquivo.write_bytes(_lista_do_financeiro(contexto))
+    painel.abrir_arquivo(str(arquivo))
+    assert painel.lista.count() == 1
+    assert painel.abas.currentWidget() is painel.conferencia_aba
+    assert not painel.responder.botao_enviar.isEnabled()       # veio de arquivo: copiar
+    destino = tmp_path / "resposta.eml"
+    from honorarios.servicos import email_cobrancas
+
+    email_cobrancas.gravar_remetente(contexto.sessao, email_cobrancas.Remetente(
+        email="cobranca@exemplo.com.br"))
+    painel.responder.salvar_rascunho(str(destino))
+    assert b"In-Reply-To: <lista@exemplo.com.br>" in destino.read_bytes()
+
+    painel.montar_pelo_sistema()
+    assert "Montada pelo sistema".lower() in painel.assunto.text().lower() or \
+        painel.assunto.text() == "Lista montada pelo sistema"
+    assert "19/09/2026" in painel.responder.editor.toPlainText()
+
+
+def test_dialogo_conta_de_email(qtbot, contexto, cofre, monkeypatch):
+    from honorarios.servicos import caixa_email
+    from honorarios.ui.comum import segundo_plano
+    from honorarios.ui.dialogos.conta_email import DialogoContaEmail
+
+    dialogo = DialogoContaEmail(contexto, executor=segundo_plano.imediato)
+    qtbot.addWidget(dialogo)
+    dialogo.provedor.setCurrentIndex(dialogo.provedor.findData(caixa_email.GMAIL))
+    dialogo.endereco.setText("cobranca@exemplo.com.br")
+    dialogo.senha_gmail.setText("abcd efgh ijkl mnop")          # o Gmail mostra com espaços
+    monkeypatch.setattr(caixa_email.CaixaImap, "testar", lambda self: "Conectado: 2 e-mail(s)")
+    dialogo.testar()
+    assert dialogo.resultado.text() == "✓ Conectado: 2 e-mail(s)"
+    dialogo._salvar()
+    conta = caixa_email.conta(contexto.sessao)
+    assert conta.provedor == caixa_email.GMAIL and conta.pasta == "Cobranças"
+    assert caixa_email.ler_segredo(caixa_email.chave_senha("cobranca@exemplo.com.br")) == \
+        "abcdefghijklmnop"                                       # no cofre, sem espaços
+    assert "abcdefgh" not in str(contexto.sessao.execute(
+        __import__("sqlalchemy").text("select group_concat(valor) from configuracao")
+    ).scalar())                                                  # nunca no banco
+
+
+def test_caixa_de_email_baixa_dos_que_sairam_e_retorno(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from honorarios.dominio.enums import StatusPagamento
+    from honorarios.servicos import caixa_email
+    from honorarios.ui.comum import segundo_plano, widgets
+    from honorarios.ui.dialogos import retorno
+    from honorarios.ui.paineis import email_cobrancas as tela
+
+    contexto.data_referencia = date(2026, 9, 30)
+    caixa_email.gravar_conta(contexto.sessao, caixa_email.ContaEmail(
+        provedor=caixa_email.GMAIL, endereco="cobranca@exemplo.com.br"))
+    caixa = CaixaDeMentira([_lista_do_financeiro(contexto)])
+    monkeypatch.setattr(caixa_email, "abrir_caixa", lambda sessao: caixa)
+    painel = tela.PainelEmailCobrancas(contexto)
+    painel.executor = segundo_plano.imediato
+    qtbot.addWidget(painel)
+    painel.recarregar()
+    painel.verificar()
+
+    # e-mail novo com gente que saiu: a baixa abre sozinha, ao lado
+    painel.lista.setCurrentRow(0)
+    janela = painel.janela_baixa
+    assert janela is not None and janela.isVisible() and not janela.isModal()
+    assert painel.abas.currentWidget() is painel.conferencia_aba
+    assert painel.conferencia_aba.faixa_saiu.isVisibleTo(painel)
+    [item] = janela.itens
+    assert item.honorario.vencimento == date(2026, 9, 19)
+    assert janela.data.valor() == date(2026, 9, 30)            # a data do e-mail
+    assert item.valor > item.saldo                             # com juros, por padrão
+    janela.sem_juros.setChecked(True)
+    [item] = janela.itens
+    assert item.valor == item.saldo and item.justificativa
+
+    perguntas = []
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: perguntas.append(a[1]) or True)
+    janela.botao_baixa.click()
+    assert "Dar baixa em 1 honorário(s)" in perguntas[0]
+    assert item.honorario.status is StatusPagamento.PAGO
+    assert painel.conferencia.sairam == []
+    assert not painel.conferencia_aba.faixa_saiu.isVisibleTo(painel)
+    assert "Baixa de 1" in painel.responder.aviso.text()
+
+    # anotar o retorno de quem continua: entra na resposta ao financeiro
+    arvore = painel.conferencia_aba.arvore
+    continuam = arvore.topLevelItem(0)
+    assert continuam.text(0).startswith("Continuam em aberto")
+    arvore.clearSelection()
+    continuam.child(0).setSelected(True)
+    assert painel.conferencia_aba.botao_retorno.isEnabled()
+
+    def responder_e_salvar(dialogo):
+        dialogo.resultado.definir(ResultadoCobranca.PROMETEU_PAGAR)
+        dialogo.promessa.definir(date(2026, 10, 5))
+        dialogo.observacao.setPlainText("vai pagar o de agosto dia 05")
+        dialogo._salvar()
+        return dialogo.result()
+
+    monkeypatch.setattr(retorno.DialogoRetorno, "exec", responder_e_salvar)
+    painel.conferencia_aba.botao_retorno.click()
+    texto = painel.responder.editor.toPlainText()
+    assert "prometeu pagar em 05/10 - vai pagar o de agosto dia 05" in texto
+    assert "A resposta já inclui o retorno" in painel.responder.aviso.text()

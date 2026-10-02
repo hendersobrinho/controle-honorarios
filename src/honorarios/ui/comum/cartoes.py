@@ -50,6 +50,7 @@ class Acao:
     funcao: Callable[[Any], None]
     dica: str = ""
     primaria: bool = False
+    pagamento: bool = False   # verde: a ação que resolve o honorário
 
 
 @dataclass
@@ -234,7 +235,10 @@ class CartaoRegistro(QFrame):
             botoes.addStretch(1)
             for acao in self.dados.acoes:
                 botao = QPushButton(acao.texto)
-                botao.setObjectName("cartaoAcao" if not acao.primaria else "primario")
+                if acao.pagamento:
+                    botao.setObjectName("cartaoPagamento")
+                else:
+                    botao.setObjectName("cartaoAcao" if not acao.primaria else "primario")
                 botao.setCursor(Qt.CursorShape.PointingHandCursor)
                 if acao.dica:
                     botao.setToolTip(acao.dica)

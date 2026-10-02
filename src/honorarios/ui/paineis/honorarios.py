@@ -11,13 +11,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date
 
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QHBoxLayout,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtWidgets import QMenu, QToolButton, QVBoxLayout, QWidget
 
 from ...dominio.enums import StatusPagamento, TipoPessoa
 from ...dominio.valores import ZERO, formatar_data, formatar_moeda, hoje, somar_meses
@@ -26,8 +22,9 @@ from ...servicos import honorarios as servico
 from ...servicos import tipos as servico_tipos
 from ...servicos.honorarios import Filtro, LinhaHonorario
 from ..comum import cores, tema, widgets
-from ..comum.campos import CampoBusca, CampoData, ComboEnum, ComboRegistros
+from ..comum.campos import CampoBusca
 from ..comum.cartoes import Acao, DadosCartao, DataCartao, PainelDeCartoes, SecaoCartoes
+from ..comum.filtros import BarraDeFiltros, FiltroData, FiltroLiga, FiltroOpcoes
 from ..contexto import Contexto
 from ..dialogos.cobrar import DialogoCobrar
 from ..dialogos.ficha import DialogoFicha
@@ -100,6 +97,14 @@ def datas_do_honorario(
     if linha.promessa:
         cor = tema.cor("atrasado" if linha.promessa_vencida else "roxo", cores.tema_atual())
         datas.append(DataCartao("Promessa", formatar_data(linha.promessa), cor))
+    from ...servicos import acordos
+
+    acordo = acordos.vigente(honorario, referencia)
+    if acordo is not None:
+        datas.append(DataCartao(
+            "Acordo até", f"{formatar_data(acordo.valido_ate)} · {formatar_moeda(acordo.total)}",
+            tema.cor("roxo", cores.tema_atual()),
+        ))
     return datas
 
 
@@ -179,6 +184,12 @@ def cartao_de_pago(linha: LinhaHonorario, acoes: list[Acao]) -> DadosCartao:
     )
 
 
+def _agradecer(painel, linha: LinhaHonorario) -> None:
+    from ..dialogos.pagamento import abrir_agradecimento
+
+    abrir_agradecimento(painel, painel.contexto, [linha.honorario])
+
+
 # ----------------------------------------------------------------------- base
 
 
@@ -206,8 +217,8 @@ class _PainelDeHonorarios(QWidget):
     def _botoes_do_rodape(self) -> list[tuple[str, Callable[[], None]]]:
         return [("Exportar lista", self._exportar)]
 
-    def _montar_filtros(self, linha: QHBoxLayout) -> None:
-        """Filtros próprios da tela, entre os comuns e a busca."""
+    def _montar_filtros(self, filtros: BarraDeFiltros) -> None:
+        """Filtros próprios da tela, depois de pessoa e grupo."""
 
     def _consultar(self) -> list[LinhaHonorario]:
         raise NotImplementedError
@@ -221,7 +232,21 @@ class _PainelDeHonorarios(QWidget):
         )
 
     def _acoes_do_cartao(self, linha: LinhaHonorario) -> list[Acao]:
-        return [Acao("Histórico", self._abrir_historico, "Datas, cobranças e pagamentos")]
+        acoes = [Acao("Histórico", self._abrir_historico, "Datas, cobranças e pagamentos")]
+        if linha.honorario.status is StatusPagamento.EM_ABERTO:
+            # corrigir valor, vencimento ou descrição sem sair da tela de cobrança
+            acoes.append(Acao("Editar", self._editar_um, "Corrigir valor, vencimento ou descrição"))
+        return acoes
+
+    def _acao_de_pagamento(self, linha: LinhaHonorario) -> list[Acao]:
+        """O botão verde, por último: é o que tira o honorário da cobrança."""
+        if linha.honorario.status is not StatusPagamento.EM_ABERTO:
+            return []
+        return [Acao(
+            "Confirmar pagamento", self._pagar_um,
+            "Dar baixa: mostra o valor com juros de hoje, aceita parcial e abono",
+            pagamento=True,
+        )]
 
     def _rotulo_total(self) -> str:
         return "total"
@@ -233,63 +258,76 @@ class _PainelDeHonorarios(QWidget):
 
         self.cabecalho = widgets.Cabecalho(self.titulo, self.subtitulo)
         self.botoes: dict[str, QWidget] = {}
+        self.busca = CampoBusca("Buscar empresa…")
+        self.busca.setMinimumWidth(240)
+        self.busca.buscou.connect(lambda *_: self.recarregar())
+        self.cabecalho.acoes.addWidget(self.busca)
+
+        # a ação principal fica à mostra; o resto vai no menu "Ações", com os atalhos
+        self.menu_acoes = QMenu(self)
         for texto, funcao, primario, atalho in self._botoes_do_cabecalho():
-            self.botoes[texto] = self.cabecalho.adicionar_botao(
-                texto, funcao, primario=primario, atalho=atalho
-            )
-        self.cabecalho.adicionar_botao("Atualizar", self.recarregar, atalho="F5")
+            if primario:
+                self.botoes[texto] = self.cabecalho.adicionar_botao(
+                    texto, funcao, primario=True, atalho=atalho
+                )
+            else:
+                self.botoes[texto] = self._acao_no_menu(texto, funcao, atalho)
+        self.menu_acoes.addSeparator()
+        for texto, funcao in self._botoes_do_rodape():
+            self.botoes[texto] = self._acao_no_menu(texto, funcao)
+        self.menu_acoes.addSeparator()
+        self._acao_no_menu("Atualizar", self.recarregar, "F5")
+        botao_acoes = QToolButton()
+        botao_acoes.setObjectName("menuAcoes")
+        botao_acoes.setText("Ações  ▾")
+        botao_acoes.setToolTip("Pagamento, ficha, cobrança em lote, renegociar, exportar…")
+        botao_acoes.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        botao_acoes.setMenu(self.menu_acoes)
+        self.cabecalho.acoes.addWidget(botao_acoes)
         layout.addWidget(self.cabecalho)
 
-        filtros = QHBoxLayout()
-        self.tipo_pessoa = ComboEnum(TipoPessoa)
-        self.tipo_pessoa.insertItem(0, "PF e PJ", None)
-        self.tipo_pessoa.setCurrentIndex(0)
+        self.filtros = BarraDeFiltros()
+        self.tipo_pessoa = self.filtros.adicionar(FiltroOpcoes("Pessoa", [
+            ("PF e PJ", None), ("Pessoa física", TipoPessoa.PF), ("Pessoa jurídica", TipoPessoa.PJ),
+        ]))
         self.tipo_pessoa.currentIndexChanged.connect(lambda *_: self.recarregar())
-        filtros.addWidget(self.tipo_pessoa)
-        self.grupo = ComboRegistros(
-            servico_tipos.listar_grupos(self.contexto.sessao),
-            rotulo=lambda g: g.nome,
-            vazio="Todos os grupos",
-        )
+        self.grupo = self.filtros.adicionar(FiltroOpcoes("Grupo", [("todos", None)] + [
+            (grupo.nome, grupo.id) for grupo in servico_tipos.listar_grupos(self.contexto.sessao)
+        ]))
         self.grupo.currentIndexChanged.connect(lambda *_: self.recarregar())
         self.grupo.setVisible(self.mostrar_filtro_grupo)
-        filtros.addWidget(self.grupo)
-        self._montar_filtros(filtros)
-        filtros.addStretch(1)
-        self.busca = CampoBusca("Buscar empresa…")
-        self.busca.setMinimumWidth(220)
-        self.busca.buscou.connect(lambda *_: self.recarregar())
-        filtros.addWidget(self.busca)
-        layout.addLayout(filtros)
+        self._montar_filtros(self.filtros)
+        layout.addWidget(self.filtros)
 
         self.lista = PainelDeCartoes(self.vazio)
         self.lista.selecao_mudou.connect(self._atualizar_resumo)
         self.lista.item_ativado.connect(self._abrir_historico)
         layout.addWidget(self.lista, 1)
 
-        rodape = QHBoxLayout()
         self.resumo = widgets.rotulo_fraco("")
-        rodape.addWidget(self.resumo, 1)
-        for texto, funcao in self._botoes_do_rodape():
-            botao = widgets.QPushButton(texto)
-            botao.clicked.connect(funcao)
-            rodape.addWidget(botao)
-            self.botoes[texto] = botao
-        layout.addLayout(rodape)
+        layout.addWidget(self.resumo)
 
-    def _agrupamento(self, opcoes: list[tuple[str, str]]) -> QComboBox:
-        combo = QComboBox()
-        for rotulo, chave in opcoes:
-            combo.addItem(rotulo, chave)
-        combo.currentIndexChanged.connect(lambda *_: self.recarregar())
-        return combo
+    def _acao_no_menu(self, texto: str, funcao, atalho: str = "") -> QAction:
+        acao = QAction(texto, self)
+        if atalho:
+            acao.setShortcut(QKeySequence(atalho))
+            acao.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        acao.triggered.connect(lambda _=False: funcao())
+        self.menu_acoes.addAction(acao)
+        self.addAction(acao)   # o atalho vale com o menu fechado
+        return acao
+
+    def _agrupamento(self, opcoes: list[tuple[str, str]]) -> FiltroOpcoes:
+        chip = self.filtros.adicionar(FiltroOpcoes("Agrupar", opcoes))
+        chip.currentIndexChanged.connect(lambda *_: self.recarregar())
+        return chip
 
     # ------------------------------------------------------------------ dados
     def _filtro_base(self, **extras) -> Filtro:
         return Filtro(
             termo=self.busca.text(),
             tipo_pessoa=self.tipo_pessoa.currentData(),
-            grupo_id=self.grupo.valor() if self.mostrar_filtro_grupo else None,
+            grupo_id=self.grupo.currentData() if self.mostrar_filtro_grupo else None,
             data_referencia=self.contexto.data_referencia,
             clientes_so_ir=self.clientes_so_ir,
             **extras,
@@ -341,6 +379,23 @@ class _PainelDeHonorarios(QWidget):
     def _abrir_historico(self, linha: LinhaHonorario) -> None:
         DialogoHistorico(self.contexto, linha.honorario, self).exec()
         self.recarregar()
+
+    def _editar_um(self, linha: LinhaHonorario) -> None:
+        from ..dialogos.honorario import DialogoHonorario
+
+        if DialogoHonorario(self.contexto, honorario=linha.honorario, parent=self).exec():
+            self.recarregar()
+
+    def _acao_agradecer(self, linha: LinhaHonorario) -> list[Acao]:
+        """Nos pagos: a imagem "Pagamento recebido", para mandar a confirmação."""
+        if not any(p.ativo for p in linha.honorario.pagamentos):
+            return []   # importado da planilha sem pagamento registrado
+        return [Acao("Agradecimento", lambda item: _agradecer(self, item),
+                     "Imagem de agradecimento pelo pagamento, para mandar ao cliente")]
+
+    def _pagar_um(self, linha: LinhaHonorario) -> None:
+        if DialogoPagamento(self.contexto, linha.honorario, self).exec():
+            self.recarregar()
 
     def _cobrar_um(self, linha: LinhaHonorario) -> None:
         self._abrir_cobranca([linha])
@@ -497,30 +552,25 @@ class PainelAtrasados(_PainelDeHonorarios):
             ("Exportar lista", self._exportar),
         ]
 
-    def _montar_filtros(self, linha: QHBoxLayout) -> None:
-        self.faixa = QComboBox()
-        for rotulo, minimo, maximo in FAIXAS_ATRASO:
-            self.faixa.addItem(rotulo, (minimo, maximo))
+    def _montar_filtros(self, filtros: BarraDeFiltros) -> None:
+        self.faixa = filtros.adicionar(FiltroOpcoes("Atraso", [
+            ("qualquer" if rotulo == "Qualquer atraso" else rotulo, (minimo, maximo))
+            for rotulo, minimo, maximo in FAIXAS_ATRASO
+        ]))
         self.faixa.currentIndexChanged.connect(lambda *_: self.recarregar())
-        linha.addWidget(self.faixa)
 
-        self.nunca_cobrado = QCheckBox("Nunca cobrado")
+        self.nunca_cobrado = filtros.adicionar(FiltroLiga("Nunca cobrado"))
         self.nunca_cobrado.toggled.connect(lambda *_: self.recarregar())
-        linha.addWidget(self.nunca_cobrado)
 
-        linha.addSpacing(12)
-        linha.addWidget(widgets.rotulo_fraco("Agrupar por:"))
         self.agrupamento = self._agrupamento(
             [("Faixa de atraso", "faixa"), ("Grupo", "grupo"), ("Empresa", "empresa")]
         )
-        linha.addWidget(self.agrupamento)
 
-        linha.addSpacing(12)
-        linha.addWidget(widgets.rotulo_fraco("Simular para:"))
-        self.data_referencia = CampoData(self.contexto.data_referencia)
-        self.data_referencia.setToolTip("Calcula os juros como se hoje fosse esta data")
+        self.data_referencia = filtros.adicionar(
+            FiltroData("Juros até", self.contexto.data_referencia)
+        )
+        self.data_referencia.setToolTip("Calcula os juros como se hoje fosse outra data")
         self.data_referencia.dateChanged.connect(self._mudar_referencia)
-        linha.addWidget(self.data_referencia)
 
     def _mudar_referencia(self) -> None:
         self.contexto.data_referencia = self.data_referencia.valor()
@@ -550,7 +600,7 @@ class PainelAtrasados(_PainelDeHonorarios):
         acoes = super()._acoes_do_cartao(linha)
         if linha.honorario.status.cobravel:
             acoes.append(Acao("Cobrar", self._cobrar_um, "Gerar a mensagem só deste honorário"))
-        return acoes
+        return acoes + self._acao_de_pagamento(linha)
 
     def _rotulo_total(self) -> str:
         return "total atualizado"
@@ -619,13 +669,10 @@ class PainelAVencer(_PainelDeHonorarios):
             ("Exportar lista", self._exportar),
         ]
 
-    def _montar_filtros(self, linha: QHBoxLayout) -> None:
-        linha.addSpacing(12)
-        linha.addWidget(widgets.rotulo_fraco("Agrupar por:"))
+    def _montar_filtros(self, filtros: BarraDeFiltros) -> None:
         self.agrupamento = self._agrupamento(
             [("Vencimento", "vencimento"), ("Empresa", "empresa")]
         )
-        linha.addWidget(self.agrupamento)
 
     def _consultar(self) -> list[LinhaHonorario]:
         return servico.consultar(
@@ -648,7 +695,7 @@ class PainelAVencer(_PainelDeHonorarios):
             acoes.append(
                 Acao("Lembrete", self._cobrar_um, "Mensagem de lembrete antes do vencimento")
             )
-        return acoes
+        return acoes + self._acao_de_pagamento(linha)
 
 
 # ---------------------------------------------------------------------- pagos
@@ -679,21 +726,13 @@ class PainelPagos(_PainelDeHonorarios):
             ("Exportar lista", self._exportar),
         ]
 
-    def _montar_filtros(self, linha: QHBoxLayout) -> None:
-        linha.addSpacing(12)
-        linha.addWidget(widgets.rotulo_fraco("Período:"))
-        self.periodo = QComboBox()
-        for rotulo, meses in PERIODOS_PAGOS:
-            self.periodo.addItem(rotulo, meses)
+    def _montar_filtros(self, filtros: BarraDeFiltros) -> None:
+        self.periodo = filtros.adicionar(FiltroOpcoes("Período", list(PERIODOS_PAGOS), padrao=1))
         self.periodo.setCurrentIndex(1)
         self.periodo.currentIndexChanged.connect(lambda *_: self.recarregar())
-        linha.addWidget(self.periodo)
-
-        linha.addWidget(widgets.rotulo_fraco("Agrupar por:"))
         self.agrupamento = self._agrupamento(
             [("Mês do pagamento", "mes"), ("Empresa", "empresa")]
         )
-        linha.addWidget(self.agrupamento)
 
     def _desde(self) -> date | None:
         meses = self.periodo.currentData()
@@ -718,7 +757,7 @@ class PainelPagos(_PainelDeHonorarios):
         return servico.agrupar_por_mes_pagamento(linhas)
 
     def _cartao(self, linha: LinhaHonorario) -> DadosCartao:
-        return cartao_de_pago(linha, self._acoes_do_cartao(linha))
+        return cartao_de_pago(linha, self._acoes_do_cartao(linha) + self._acao_agradecer(linha))
 
     def _rotulo_total(self) -> str:
         return "recebido"
@@ -754,22 +793,16 @@ class PainelImpostoRenda(_PainelDeHonorarios):
             ("Exportar lista", self._exportar),
         ]
 
-    def _montar_filtros(self, linha: QHBoxLayout) -> None:
-        linha.addSpacing(12)
-        self.situacao = QComboBox()
-        self.situacao.addItem("Em aberto", StatusPagamento.EM_ABERTO.value)
-        self.situacao.addItem("Pagos", StatusPagamento.PAGO.value)
+    def _montar_filtros(self, filtros: BarraDeFiltros) -> None:
+        self.situacao = filtros.adicionar(FiltroOpcoes("Mostrar", [
+            ("Em aberto", StatusPagamento.EM_ABERTO.value), ("Pagos", StatusPagamento.PAGO.value),
+        ]))
         self.situacao.currentIndexChanged.connect(lambda *_: self.recarregar())
-        linha.addWidget(self.situacao)
-
-        linha.addWidget(widgets.rotulo_fraco("Ano do IR:"))
-        self.ano = QComboBox()
-        self.ano.addItem("Todos", None)
         ano_atual = self.contexto.data_referencia.year
-        for ano in range(ano_atual, ano_atual - 6, -1):
-            self.ano.addItem(str(ano), ano)
+        self.ano = filtros.adicionar(FiltroOpcoes("Ano do IR", [("todos", None)] + [
+            (str(ano), ano) for ano in range(ano_atual, ano_atual - 6, -1)
+        ]))
         self.ano.currentIndexChanged.connect(lambda *_: self.recarregar())
-        linha.addWidget(self.ano)
 
     @property
     def mostrando_pagos(self) -> bool:
@@ -816,7 +849,8 @@ class PainelImpostoRenda(_PainelDeHonorarios):
 
     def _cartao(self, linha: LinhaHonorario) -> DadosCartao:
         if self.mostrando_pagos:
-            return cartao_de_pago(linha, self._acoes_do_cartao(linha))
+            acoes = self._acoes_do_cartao(linha) + self._acao_agradecer(linha)
+            return cartao_de_pago(linha, acoes)
         return super()._cartao(linha)
 
     def _acoes_do_cartao(self, linha):
@@ -824,7 +858,7 @@ class PainelImpostoRenda(_PainelDeHonorarios):
         if linha.honorario.status.cobravel:
             rotulo = "Cobrar" if linha.atualizacao.dias_atraso else "Lembrete"
             acoes.append(Acao(rotulo, self._cobrar_um))
-        return acoes
+        return acoes + self._acao_de_pagamento(linha)
 
     def _rotulo_total(self) -> str:
         return "recebido" if self.mostrando_pagos else "total atualizado"

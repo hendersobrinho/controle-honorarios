@@ -58,24 +58,27 @@ Os testes de interface usam `pytest-qt` e rodam sem servidor gráfico
 
 | Tela | Para que serve |
 |---|---|
-| **Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, agrupados por faixa de atraso (a dívida mais antiga primeiro), com cobrar, cobrança em lote e renegociação |
+| **Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, agrupados por faixa de atraso (a dívida mais antiga primeiro), com cobrar, editar (valor, vencimento, descrição), **Confirmar pagamento** (botão verde em cada cartão em aberto, também em A vencer e Imposto de Renda), cobrança em lote e renegociação |
 | **A vencer** | Em aberto e dentro do prazo: vence hoje, nos próximos dias e mais adiante. Daqui sai o lembrete antes do vencimento |
-| **Pagos** | Registro dos quitados, por mês do pagamento, com seletor de período (padrão: últimos 3 meses). Mostra se pagou em dia ou com atraso, os juros cobrados e o abono |
 | **Imposto de Renda** | Cobrança própria dos clientes que só fazem IR com o escritório: em aberto (atrasados e a vencer) ou pagos, com filtro por ano do IR. Esses clientes não aparecem em Atrasados, A vencer e Pagos |
+| **Pagos** | Registro dos quitados, por mês do pagamento, com seletor de período (padrão: últimos 3 meses). Mostra se pagou em dia ou com atraso, os juros cobrados e o abono |
 | **Cobranças enviadas** | Cada mensagem enviada e o que o cliente respondeu, com período e agrupamento à escolha. É aqui que a resposta é anotada |
 | **Clientes** | Abas **Ativos**, **Imposto de Renda** (quem só tem honorário de IR) e **Inativos**; PF \| PJ \| Todos e busca sem acento/pontuação; ficha completa da empresa. Dívida e atraso não aparecem aqui (têm telas próprias). Aqui também se suspende e retoma a cobrança de um cliente |
-| **Honorários recorrentes** | Contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia |
-| **Honorários avulsos** | IRPF, alteração contratual, atas e afins |
-| **Painel** | O ano em números e gráficos: emitido × quitado por mês de competência (com a opção de ver em tabela), o que entrou no caixa por mês, de onde vem o faturamento (grupo e PF/PJ) e frases com o que os números dizem, comparando com o ano anterior quando há base. Atraso e devedores ficam no Ranking dos atrasados |
-| **Ranking dos atrasados** | Pódio de quem mais deve em dinheiro, quem deve há mais tempo, quem junta mais boletos e quem mais foi cobrado — dois gráficos por aba; clicar num nome abre a ficha. A aba **Análise de juros** lista os clientes que pagaram e mostra, para cada um, original + juros = pago, o trabalho que deu para receber (atrasos, dias em atraso, cobranças feitas, juros por cobrança, comparados com a média), honorário por honorário, uma explicação em frases e cenários de taxa (+10% a dobrar, sem abono, valor testado) com o efeito de cada cenário honorário por honorário; **Exportar PDF…** gera o relatório da análise do cliente (documento interno) para compartilhar; o primeiro item é a visão geral de todos |
+| **Honorários** | Três abas. **Mês a mês**: tudo o que foi emitido no mês (recorrente ou avulso), com ◀ ▶ e um menu para ir direto a qualquer mês, os totais (emitido, pago, em aberto, cancelados), filtros de origem e situação, e o aviso de contratos que ainda não geraram a competência — "Gerar competência" já abre no mês da tela. **Recorrentes**: contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia. **Avulsos**: lançar, corrigir e cancelar serviços que não vêm de contrato (IRPF, alteração contratual, atas…) e consultar o histórico por período, pagos ou não, com a situação de cada um. A cobrança desses honorários fica em Atrasados e A vencer |
+| **Painel** | O ano em números e gráficos: emitido × quitado por mês de competência (com a opção de ver em tabela), o que entrou no caixa por mês, de onde vem o faturamento (grupo e PF/PJ) e frases com o que os números dizem, comparando com o ano anterior quando há base. **Exportar PDF…** gera o relatório no mesmo visual da análise de juros (fundo da cobrança, gráficos e tabela mês a mês). Atraso e devedores ficam no Ranking dos atrasados |
+| **Ranking dos atrasados** | Pódio de quem mais deve em dinheiro, quem deve há mais tempo, quem junta mais boletos e quem mais foi cobrado — dois gráficos por aba; clicar num nome abre a ficha. A aba **Análise de juros** lista os clientes que pagaram e mostra, para cada um, original + juros = pago, o trabalho que deu para receber em gráfico (ele × a média dos clientes: atrasos, dias em atraso, cobranças, juros por cobrança), a linha do tempo do atraso de cada honorário com as cobranças feitas, um gráfico dos cenários, honorário por honorário, uma explicação em frases e cenários de taxa (+10% a dobrar, sem abono, valor testado) com o efeito de cada cenário honorário por honorário; **Exportar PDF…** gera o relatório da análise do cliente (documento interno) para compartilhar; o primeiro item é a visão geral de todos |
 | **Relatórios e exportação** | Planilha Excel da lista filtrada e extrato de débitos em PDF |
 | **Importar planilha** | Lê a planilha antiga, mostra prévia e relatório de erros, e só grava depois da confirmação |
 | **Grupos e tipos** | Grupos à esquerda (a ordem é a das seções nas telas), tipos do grupo à direita, cada um mostrando a frase como sai na cobrança e quanto é usado. O cadastro do tipo mostra a prévia da mensagem enquanto se digita |
 | **Configurações** | PIX, modelos de mensagem, formas de envio e backup |
 
-A navegação é agrupada por momento do trabalho: **Honorários** (Atrasados, A
-vencer e Pagos, cada um com a sua tela e o contador ao lado), **Cobrança**,
-**Cadastros** e **Gestão**.
+A navegação é agrupada por momento do trabalho:
+
+- **Cobrança**: primeiro as telas com contador ao lado (Atrasados, A vencer e
+  Imposto de Renda), depois Pagos, Cobranças enviadas e E-mail de cobranças.
+  Este último também tem contador, com os e-mails não lidos.
+- **Cadastros**.
+- **Gestão**.
 
 Atalhos: `F5` atualiza, `Ctrl+1..9` troca de tela, `Ctrl+B` cobra, `Ctrl+P`
 registra pagamento, `Ctrl+R` registra a resposta, `Ctrl+F` abre a ficha, `Ctrl+C`
@@ -113,7 +116,143 @@ entram na mesma mensagem, e cada linha diz de quem é —
 O vínculo tem um nível só (pessoa física → pessoa jurídica) e não muda a quem o
 honorário pertence: ele continua na ficha da pessoa.
 
+### Agradecimento pelo pagamento
+
+Ao confirmar um pagamento, a caixa **"Abrir a imagem de agradecimento"** gera a
+imagem "Pagamento confirmado" para copiar e mandar ao cliente. Ela é um
+comprovante, de propósito diferente da cobrança: cartão branco com a logo nas
+cores originais, o selo de confirmação e o total pago num painel verde-água
+claro, e embaixo um canhoto com o cliente, o CNPJ e o que foi pago. Sai em
+1620 px de largura, mais nítida que a cobrança. A escolha da
+caixa fica lembrada. Nos cartões de **Pagos** o botão **Agradecimento** gera a
+mesma imagem depois.
+
+### Ao abrir
+
+O sistema abre com a logo (Métodos Financeiro) e uma barra de carregamento; a
+logo fica depois no pé do menu lateral. Não aparece nenhum cartão de resumo ao
+abrir: o que pede atenção fica no contador de **Notificações** e nos números ao
+lado de cada tela do menu.
+
+### Geração automática dos honorários mensais
+
+Em **Configurações → Honorários mensais** dá para ligar **"Gerar a competência do
+mês automaticamente"** e escolher a partir de qual dia (1 a 28). Ela vem
+desligada. Ligada, a partir desse dia o sistema gera a competência do mês ao
+abrir, ou com ele aberto, e avisa nas notificações. Valem as mesmas regras da
+geração manual: contrato suspenso, fora da vigência ou já lançado fica de fora.
+Ela roda uma vez por competência, então o que você cancelar depois no Mês a mês
+não volta. Um contrato criado no meio do mês entra pela geração manual, e a
+tela Mês a mês avisa o que falta.
+
+### E-mail de cobranças
+
+O financeiro manda o e-mail **"Clientes c/Honorários vencidos"** com a lista de
+quem está em aberto, e quem cobra responde com o andamento. A tela **E-mail de
+cobranças** é uma caixa de e-mail só dessa conversa.
+
+**A tela**
+- À esquerda ficam os e-mails da pasta e as respostas enviadas daqui. As
+  etiquetas mostram a situação: *Nova*, *Respondida*, *Enviada daqui*.
+- **Verificar caixa** busca os e-mails novos. O sistema também verifica sozinho
+  ao abrir e a cada 30 minutos. E-mail novo vira notificação, e o menu mostra
+  quantos não foram lidos.
+- À direita fica o e-mail aberto, com três abas:
+  - **Mensagem**: o e-mail como chegou.
+  - **Conferência**: quem continua, quem **saiu da lista** (provável
+    pagamento), o que já foi pago no sistema e o que não bate com nada.
+    - Ao abrir um e-mail novo com gente que saiu, a janela **Baixa dos que
+      saíram da lista** abre sozinha, ao lado, sem travar o sistema, para
+      conferir no próprio e-mail. Nela vêm a data do pagamento (padrão: a data
+      do e-mail), o valor (com juros até a data, ou só o valor original com
+      abono justificado), a forma de pagamento e um ✓ por honorário.
+    - **Dar baixa** sempre pede confirmação. Nada é baixado sozinho.
+    - **Anotar retorno…**: selecione honorários de um cliente que continua e
+      registre o que ele disse (não respondeu, prometeu pagar em…, pediu
+      renegociação…). Se há uma cobrança esperando resposta, o retorno vai
+      nela; senão, vira um contato de hoje.
+  - **Responder**: a resposta pronta. Ela mantém a lista do financeiro, sem
+    quem saiu, com as anotações das cobranças. Para, Cc e assunto vêm
+    preenchidos ("Responder a todos"). Dá para escrever no texto antes de
+    enviar. **Enviar resposta** pede confirmação e envia pela sua conta, na
+    mesma conversa, com o e-mail do financeiro citado embaixo. Também há
+    **Copiar** e **Salvar rascunho**.
+- Sem conta configurada, o menu **Ações** abre um e-mail de arquivo (.eml, PDF
+  impresso do Outlook, .txt), aceita o texto colado ou monta a lista pelo
+  sistema.
+
+**O dia a dia**
+1. Chega a lista do financeiro: notificação e etiqueta *Nova*.
+2. Ao abrir o e-mail, a baixa dos que saíram já aparece. Confira e dê baixa.
+3. Cobre os que continuam (pela tela Atrasados, como sempre). Quando o cliente
+   responder, anote em **Anotar retorno…** ou em Cobranças enviadas.
+4. Na aba **Responder**, a resposta já está montada com o que sobrou em aberto
+   e os retornos de cada cliente. Uma anotação que vale só para parte dos
+   honorários diz de quais: "(07/2026)". O que foi pago depois do e-mail fica
+   de fora. Revise e envie.
+
+**Só esses e-mails.** Uma regra no Outlook (ou um filtro no Gmail) leva os
+e-mails do financeiro para uma pasta própria, "Cobranças" por padrão. O sistema
+abre só essa pasta e só guarda o que tem o assunto da conversa. Ele lê sem
+marcar como lido na caixa.
+
+**Configurar** (Configurações → E-mail de cobranças → **Conta de e-mail…**)
+
+*Outlook / Microsoft 365, uma vez, por quem administra o e-mail:*
+1. No portal Microsoft Entra, em **Registros de aplicativo → Novo registro**,
+   escolha contas só desta organização.
+2. Em **Autenticação**, marque **Permitir fluxos de cliente público** = Sim.
+3. Em **Permissões de API**, adicione as permissões delegadas do Microsoft
+   Graph **Mail.Read** e **Mail.Send**. Se for pedido, conceda o consentimento
+   do administrador.
+4. Copie o **ID do aplicativo** e o **ID do diretório (locatário)** para a tela
+   Conta de e-mail.
+5. No Outlook, crie a pasta **Cobranças** e uma **regra**: de [e-mail do
+   financeiro], com o assunto da conversa → mover para a pasta.
+6. Em **Entrar na conta Microsoft…**, o sistema mostra um código. Digite esse
+   código em microsoft.com/devicelogin e entre com a conta. Isso é feito uma
+   vez só.
+
+*Gmail (para testar):*
+1. Ative a verificação em duas etapas e crie uma **senha de app** em
+   myaccount.google.com/apppasswords.
+2. Crie o marcador **Cobranças** e um **filtro**: remetente e assunto → aplicar
+   o marcador.
+3. Em Conta de e-mail, escolha Gmail, informe o e-mail e a senha de app e
+   clique em **Testar conexão**.
+
+*Outro provedor:* informe os servidores IMAP (leitura) e SMTP (envio) e a senha.
+
+A senha de app e a autorização da Microsoft ficam no **cofre de senhas do
+sistema** (Gerenciador de Credenciais no Windows), nunca no banco. Os e-mails
+baixados ficam no banco local, que não vai para o Git.
+
+### Notificações
+
+No pé do menu, acima da logo, o botão **Notificações** mostra quantas há sem
+ler. Elas avisam, por cliente:
+
+- o que **vence hoje**;
+- o que **não foi pago na data** (venceu nos últimos 30 dias sem pagamento);
+- **promessa** de pagamento que passou;
+- **acordo** de valor que vence hoje;
+- a **competência gerada automaticamente**, quando a geração automática está ligada.
+
+O sistema verifica ao abrir e a cada 30 minutos enquanto está aberto, sempre com
+a data de hoje. Cada fato avisa uma vez só. O que surge com o sistema aberto
+aparece num aviso no canto e, se o Linux tiver bandeja de notificações, também
+como notificação do sistema. Na lista, **Abrir** marca como lida e leva à tela
+(Atrasados ou A vencer) já buscando o cliente. **Marcar todas como lidas** limpa
+o contador. Cliente com cobrança suspensa não gera aviso, e as lidas há mais de
+60 dias saem da lista. Nada é enviado ao cliente.
+
 ### Como a cobrança anda
+
+As telas de cobrança têm o topo enxuto: busca, a ação principal (Cobrar
+selecionados / Enviar lembrete) e o menu **Ações** (registrar pagamento, ficha,
+cobrança em lote, renegociar, cancelar, exportar — com os atalhos de sempre).
+Os filtros são chips ("Atraso: qualquer ▾", "Juros até: hoje ▾"…); o que sai do
+padrão fica destacado e aparece **Limpar filtros**.
 
 1. **Atrasados**: escolhe os honorários e clica em Cobrar. Selecionando
    honorários de várias empresas, a cobrança passa uma empresa por vez, com a
@@ -132,23 +271,37 @@ honorário pertence: ele continua na ficha da pessoa.
 
 No diálogo Cobrar, **Imagem da cobrança…** (Ctrl+I) gera uma imagem com os
 honorários marcados — um ou vários — sobre o fundo SVG do escritório, com o
-QR code do Pix. **Copiar imagem** põe no clipboard para colar no WhatsApp;
+QR code do Pix e o CNPJ/CPF do cliente. Na prévia há duas datas: **Valores
+atualizados em** (até quando o juros é calculado) e **Pagar até** (até quando
+esse valor vale). Marcando **Guardar como acordo**, a oferta é registrada ao
+copiar/salvar a imagem: pagando dentro do prazo, a baixa já sugere o valor
+combinado (a diferença de juros entra como abono justificado); passado o prazo,
+o acordo deixa de valer e o juros volta a correr desde o vencimento original.
+O cartão do honorário mostra "Acordo até dd/mm" enquanto ele vale. **Copiar imagem** põe no clipboard para colar no WhatsApp;
 **Copiar chave Pix** copia a chave para mandar como texto logo depois;
 **Salvar PNG…** guarda o arquivo. Copiar não registra a cobrança.
 
 O fundo é escolhido em **Configurações → Imagem da cobrança** (sem ele, vale o
 modelo do sistema, que também pode ser salvo como ponto de partida). No SVG:
 
-- textos com `{cliente}`, `{codigo}`, `{data}`, `{total}`, `{total_original}`,
+- textos com `{cliente}`, `{codigo}`, `{documento}`, `{tipo_documento}`,
+  `{vencimento}`, `{data}`, `{total}`, `{total_original}`,
   `{total_juros}`, `{quantidade}`, `{recebedor}`, `{chave_pix}` viram os valores;
-- um retângulo transparente com `id="lista"` recebe os honorários, um por linha.
+- um retângulo transparente com `id="lista"` recebe os honorários, um por linha,
+  com o valor final cheio (o juros não aparece separado).
   Se não couberem, a imagem **estica**: a faixa logo acima do fim da lista é
   repetida e tudo o que está abaixo desce inteiro (até 30 linhas; dali em diante,
   "e mais N honorários"); `data-fonte`, `data-cor`,
   `data-cor-fraca` e `data-cor-linha` nesse retângulo mudam fonte e cores;
 - um retângulo transparente com `id="qrcode"` recebe o PNG do QR code (270 px de lado
-  ou mais, num fundo de 1080 de largura).
+  ou mais, num fundo de 1080 de largura);
+- **sem QR code anexado**, o grupo `id="mensagem-qrcode"` (o "aponte a câmera…")
+  não aparece, e o que tiver `data-sem-qrcode="translate(x y)"` se move. No fundo
+  da Métodos, o bloco "Pague com Pix" + chave vai para o lugar do QR, em vez de
+  deixar um quadrado vazio. Com o QR anexado, tudo volta como desenhado.
 
+- se o fundo tiver um logo só para a imagem (`id="logo-imagem"`) e outro só
+  para os PDFs (`id="logo-pdf"`), cada saída usa o seu;
 - a camada da cobrança (textos, lista, QR) fica num grupo `<g id="conteudo">`:
   o **PDF da análise de juros** usa o fundo sem esse grupo como papel das
   páginas (esticado para A4 no meio, sem deformar os logos).

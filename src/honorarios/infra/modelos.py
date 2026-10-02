@@ -431,6 +431,12 @@ class Honorario(Base):
         order_by="Cobranca.data_hora",
         lazy="selectin",
     )
+    acordos: Mapped[list[AcordoValor]] = relationship(
+        back_populates="honorario",
+        cascade="all, delete-orphan",
+        order_by="AcordoValor.criado_em",
+        lazy="selectin",
+    )
 
     @property
     def competencia_rotulo(self) -> str:
@@ -439,6 +445,95 @@ class Honorario(Base):
         if self.competencia_ano:
             return f"{self.descricao or self.tipo.nome} {self.competencia_ano}".strip()
         return self.descricao
+
+
+class Notificacao(Base):
+    """Aviso do sistema (vence hoje, não foi pago na data…), lido ou não.
+
+    ``chave`` identifica o fato (ex.: ``vence:12:2026-10-02``): o mesmo fato nunca
+    vira duas notificações.
+    """
+
+    __tablename__ = "notificacao"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chave: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    tipo: Mapped[str] = mapped_column(String(30), nullable=False)
+    titulo: Mapped[str] = mapped_column(String(200), nullable=False)
+    texto: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    tela: Mapped[str] = mapped_column(String(60), default="", nullable=False)
+    cliente_id: Mapped[int | None] = mapped_column(ForeignKey("cliente.id"), index=True)
+    criada_em: Mapped[datetime] = _criado_em()
+    lida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    cliente: Mapped[Cliente | None] = relationship()
+
+    @property
+    def lida(self) -> bool:
+        return self.lida_em is not None
+
+
+class EmailMensagem(Base):
+    """E-mail da conversa "Clientes c/Honorários vencidos", guardado no sistema.
+
+    Só entram os e-mails da pasta configurada (a regra do Outlook/Gmail põe lá
+    apenas os do financeiro) com o assunto da conversa, e as respostas enviadas
+    daqui (``enviada``). ``conta`` diz de onde veio (``gmail``, ``microsoft``,
+    ``imap`` ou ``arquivo``); ``message_id`` é o identificador do e-mail e não se
+    repete na mesma conta. ``ref_provedor`` é o id do e-mail no provedor (o que a
+    Microsoft pede para responder).
+    """
+
+    __tablename__ = "email_mensagem"
+    __table_args__ = (
+        UniqueConstraint("conta", "message_id", name="uq_email_mensagem_conta_message_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conta: Mapped[str] = mapped_column(String(20), nullable=False)
+    message_id: Mapped[str] = mapped_column(String(400), nullable=False)
+    ref_provedor: Mapped[str] = mapped_column(String(400), default="", nullable=False)
+    conversa: Mapped[str] = mapped_column(String(400), default="", nullable=False)
+    assunto: Mapped[str] = mapped_column(String(400), default="", nullable=False)
+    de: Mapped[str] = mapped_column(String(400), default="", nullable=False)
+    para: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    cc: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    recebido_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                  index=True)
+    corpo_html: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    corpo_texto: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    in_reply_to: Mapped[str] = mapped_column(String(400), default="", nullable=False)
+    referencias: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    enviada: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    lida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    respondida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    criada_em: Mapped[datetime] = _criado_em()
+
+    @property
+    def lida(self) -> bool:
+        return self.enviada or self.lida_em is not None
+
+
+class AcordoValor(Base):
+    """Valor oferecido ao cliente, congelado numa data e válido até um vencimento.
+
+    Pagando até ``valido_ate``, vale o juros calculado em ``data_base``. Passado o
+    prazo sem pagamento, o acordo simplesmente deixa de valer: o juros volta a
+    correr desde o vencimento original, como se a oferta não tivesse existido.
+    """
+
+    __tablename__ = "acordo_valor"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    honorario_id: Mapped[int] = mapped_column(ForeignKey("honorario.id"), index=True)
+    data_base: Mapped[date] = mapped_column(Date, nullable=False)
+    valido_ate: Mapped[date] = mapped_column(Date, nullable=False)
+    saldo: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    juros: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    total: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    criado_em: Mapped[datetime] = _criado_em()
+
+    honorario: Mapped[Honorario] = relationship(back_populates="acordos")
 
 
 class Pagamento(Base):

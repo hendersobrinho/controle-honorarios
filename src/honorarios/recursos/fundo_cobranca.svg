@@ -2,10 +2,11 @@
 <!--
   Fundo modelo da imagem de cobrança. Para fazer o seu:
   - textos com {campo} são trocados pelos valores da cobrança
-    ({cliente} {codigo} {data} {total} {total_original} {total_juros}
-     {quantidade} {recebedor} {chave_pix});
+    ({cliente} {codigo} {documento} {tipo_documento} {vencimento} {data}
+     {total} {total_original} {total_juros} {quantidade} {recebedor} {chave_pix});
   - o retângulo id="lista" é onde entram os honorários, um por linha;
-  - o retângulo id="qrcode" é onde entra o QR code;
+  - o retângulo id="qrcode" é onde entra o QR code; sem QR anexado, sai o grupo
+    id="mensagem-qrcode" e quem tem data-sem-qrcode="translate(x y)" se move;
   - deixe esses dois retângulos transparentes (fill="none");
   - agrupe o conteúdo da cobrança em <g id="conteudo">: o PDF usa o fundo sem ele;
   - o QR fica legível com 270 px de lado ou mais (num fundo de 1080 de largura).
@@ -40,27 +41,38 @@
   <text x="980" y="300" text-anchor="end" font-family="Inter, Segoe UI, Arial, sans-serif"
         font-size="26" fill="#6b7684">Valores atualizados em {data}</text>
 
-  <line x1="100" y1="385" x2="980" y2="385" stroke="#e2e6ec" stroke-width="2"/>
+  <text x="100" y="378" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22"
+        fill="#6b7684">{tipo_documento} {documento}</text>
+  <line x1="100" y1="395" x2="980" y2="395" stroke="#e2e6ec" stroke-width="2"/>
 
   <!-- os honorários entram aqui -->
-  <rect id="lista" x="100" y="405" width="880" height="455" fill="none"/>
+  <rect id="lista" x="100" y="410" width="880" height="450" fill="none"/>
 
   <rect x="100" y="880" width="880" height="110" rx="18" fill="#eef4ff"/>
-  <text x="140" y="945" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30"
+  <text x="140" y="928" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30"
         fill="#174ea6">Total a pagar</text>
+  <text x="140" y="964" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22"
+        fill="#4b6aa8">até {vencimento}</text>
   <text x="940" y="952" text-anchor="end" font-family="Inter, Segoe UI, Arial, sans-serif"
         font-size="48" font-weight="700" fill="#174ea6">{total}</text>
 
   <!-- o QR code entra aqui -->
   <rect id="qrcode" x="88" y="1008" width="272" height="272" fill="none"/>
 
+  <!-- sem QR code anexado: a mensagem sai e o bloco do Pix vai para o lugar do QR -->
+  <g id="bloco-pix" data-sem-qrcode="translate(-307 30)">
   <text x="395" y="1085" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="32"
         font-weight="700" fill="#1d2330">Pague com Pix</text>
+  <g id="mensagem-qrcode">
   <text x="395" y="1130" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24"
         fill="#6b7684">Aponte a câmera do app do banco para o código</text>
+  </g>
+  <g data-sem-qrcode="translate(0 -50)">
   <text x="395" y="1190" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24"
         fill="#6b7684">Chave Pix</text>
   <text x="395" y="1225" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28"
         font-weight="600" fill="#1d2330">{chave_pix}</text>
+  </g>
+  </g>
   </g>
 </svg>

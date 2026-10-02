@@ -303,8 +303,26 @@ class DialogoCobrar(QDialog):
             return
         nome = f"cobranca_{self.cliente.codigo}_{selecao.data_referencia:%Y-%m-%d}"
         DialogoImagemCobranca(
-            self.contexto, dados, nome, f"Imagem da cobrança – {self.cliente.nome}", self
+            self.contexto, dados, nome, f"Imagem da cobrança – {self.cliente.nome}", self,
+            gerar=lambda vencimento, atualizado_em: imagem_cobranca.montar(
+                self.contexto.sessao, selecao, vencimento, atualizado_em
+            ),
+            vencimento=selecao.data_referencia,
+            registrar_acordo=lambda base, ate: self._registrar_acordo(selecao, base, ate),
         ).exec()
+
+    def _registrar_acordo(self, selecao, data_base, valido_ate) -> None:
+        from ...servicos import acordos
+
+        try:
+            acordos.registrar(
+                self.contexto.sessao, [linha.honorario for linha in selecao.linhas],
+                data_base, valido_ate,
+            )
+            self.contexto.salvar()
+        except Exception:
+            self.contexto.desfazer()
+            raise
 
     def _abrir_whatsapp(self) -> None:
         texto = self.texto.toPlainText().strip()

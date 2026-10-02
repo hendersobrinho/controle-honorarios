@@ -39,18 +39,30 @@ class Previa:
     juros_devidos: Decimal
     total_devido: Decimal
     sugestao_valor: Decimal
+    # acordo vigente na data do pagamento: o juros combinado e o texto do abono
+    juros_acordo: Decimal | None = None
+    justificativa_acordo: str = ""
 
 
 def previa(honorario: Honorario, data_pagamento: date | None = None) -> Previa:
+    from . import acordos
+
     referencia = data_pagamento or hoje()
     atualizacao = calculo.atualizar(honorario, referencia)
-    return Previa(
+    resultado = Previa(
         dias_atraso=atualizacao.dias_atraso,
         saldo=atualizacao.saldo,
         juros_devidos=atualizacao.juros,
         total_devido=atualizacao.total,
         sugestao_valor=atualizacao.total,
     )
+    acordo = acordos.vigente(honorario, referencia)
+    if acordo is not None:
+        # dentro do prazo vale o juros congelado; a diferença vira abono justificado
+        resultado.juros_acordo = min(dinheiro(acordo.juros), atualizacao.juros)
+        resultado.sugestao_valor = atualizacao.saldo + resultado.juros_acordo
+        resultado.justificativa_acordo = acordos.descricao(acordo)
+    return resultado
 
 
 def registrar(sessao: Session, honorario: Honorario, dados: DadosPagamento) -> Pagamento:

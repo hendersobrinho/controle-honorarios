@@ -136,22 +136,6 @@ class Indicadores:
             frases.append("Ainda não há honorários emitidos para este ano.")
         return frases
 
-    @property
-    def como_dicionario(self) -> dict[str, str]:
-        from ..dominio.valores import formatar_moeda
-
-        return {
-            "Ano": str(self.ano),
-            "Emitido (por competência)": formatar_moeda(self.emitido),
-            "Quitado (valor original)": f"{formatar_moeda(self.quitado)} "
-                                        f"({_pct(self.percentual_quitado)})",
-            "Em aberto (valor original)": formatar_moeda(self.em_aberto),
-            "Recebido no caixa (baixas do ano)": formatar_moeda(self.recebido_no_caixa),
-            "Honorários emitidos": str(self.quantidade_emitida),
-            "Clientes faturados": str(self.clientes_faturados),
-            "Valor médio por honorário": formatar_moeda(self.ticket_medio),
-        }
-
 
 def _pct(valor: Decimal) -> str:
     return f"{valor:.0f}%"

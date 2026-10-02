@@ -15,8 +15,12 @@ CORES = {
         "atrasado": "#c0392b",
         "atencao": "#b7791f",
         "pago": "#1f7a45",
+        "pago_forte": "#17603a",
+        "texto_sobre_pago": "#ffffff",
         "faixa": "#f0f2f5",
         "roxo": "#7c5cff",
+        "marca": "#F9B259",            # laranja da logo: contadores do menu
+        "texto_sobre_marca": "#203461",  # azul da logo, legível sobre o laranja
     },
     "escuro": {
         "fundo": "#161a1f",
@@ -28,8 +32,12 @@ CORES = {
         "atrasado": "#ff7a6b",
         "atencao": "#e9b949",
         "pago": "#5fd08a",
+        "pago_forte": "#7ddca0",
+        "texto_sobre_pago": "#0f1f16",
         "faixa": "#222a31",
         "roxo": "#a48bff",
+        "marca": "#F9B259",
+        "texto_sobre_marca": "#203461",
     },
 }
 
@@ -128,6 +136,9 @@ def folha_de_estilo(tema: str = "claro") -> str:
         font-weight: 600;
     }}
     QPushButton#primario:hover {{ background: {c["texto"]}; border-color: {c["texto"]}; }}
+    QPushButton#primario:disabled {{
+        background: {c["faixa"]}; border-color: {c["borda"]}; color: {c["texto_fraco"]};
+    }}
 
     QLineEdit, QComboBox, QDateEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit {{
         background: {c["superficie"]};
@@ -193,13 +204,151 @@ def folha_de_estilo(tema: str = "claro") -> str:
         background: transparent;
     }}
     QPushButton#cartaoAcao:hover {{ border-color: {c["destaque"]}; background: {c["faixa"]}; }}
+    QToolButton#chipFiltro {{
+        background: {c["superficie"]};
+        border: 1px solid {c["borda"]};
+        border-radius: 11px;   /* acima de meia altura o Qt ignora o arredondado */
+        padding: 4px 12px;
+        font-size: 12px;
+        color: {c["texto"]};
+    }}
+    QToolButton#chipFiltro:hover {{ border-color: {c["destaque"]}; }}
+    QToolButton#chipFiltro[ativo="true"] {{
+        border-color: {c["destaque"]};
+        color: {c["destaque"]};
+        background: {c["faixa"]};
+        font-weight: 600;
+    }}
+    QToolButton#chipFiltro::menu-indicator {{ image: none; width: 0px; }}
+    QPushButton#linkFiltro {{
+        border: none;
+        background: transparent;
+        color: {c["destaque"]};
+        padding: 4px 6px;
+        font-size: 12px;
+    }}
+    QPushButton#linkFiltro:hover {{ text-decoration: underline; }}
+    QPushButton#navegaMes {{ padding: 5px 11px; font-size: 13px; }}
+    QToolButton#botaoMes {{
+        background: transparent;
+        border: none;
+        padding: 4px 8px;
+        font-size: 18px;
+        font-weight: 700;
+        color: {c["texto"]};
+    }}
+    QToolButton#botaoMes:hover {{ color: {c["destaque"]}; }}
+    QToolButton#botaoMes::menu-indicator {{ image: none; width: 0px; }}
+    QToolButton#menuAcoes {{
+        background: {c["superficie"]};
+        border: 1px solid {c["borda"]};
+        border-radius: 6px;
+        padding: 6px 12px;
+        color: {c["texto"]};
+    }}
+    QToolButton#menuAcoes:hover {{ border-color: {c["destaque"]}; }}
+    QToolButton#menuAcoes::menu-indicator {{ image: none; width: 0px; }}
+    QPushButton#cartaoPagamento {{
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        color: {c["texto_sobre_pago"]};
+        background: {c["pago"]};
+        border: 1px solid {c["pago"]};
+    }}
+    QPushButton#cartaoPagamento:hover {{
+        background: {c["pago_forte"]};
+        border-color: {c["pago_forte"]};
+    }}
+    QPushButton#cartaoPagamento:disabled {{
+        color: {c["texto_fraco"]};
+        background: {c["faixa"]};
+        border-color: {c["borda"]};
+    }}
 
+    QWidget#colunaNavegacao {{
+        background: {c["superficie"]};
+        border-right: 1px solid {c["borda"]};
+    }}
     QListWidget#navegacao {{
         background: {c["superficie"]};
         border: none;
-        border-right: 1px solid {c["borda"]};
         padding: 8px 6px;
         font-size: 14px;
+    }}
+    QFrame#resumoDia {{
+        background: {c["superficie"]};
+        border: 1px solid {c["borda"]};
+        border-radius: 12px;
+    }}
+    QLabel#resumoTitulo {{ font-size: 14px; font-weight: 700; }}
+    /* e-mail de cobranças: lista à esquerda, leitor à direita */
+    QListWidget#listaEmails {{
+        background: {c["superficie"]}; border: 1px solid {c["borda"]}; border-radius: 10px;
+        padding: 4px;
+    }}
+    QListWidget#listaEmails::item {{ border-radius: 8px; }}
+    QListWidget#listaEmails::item:selected {{ background: {c["faixa"]}; }}
+    QListWidget#listaEmails::item:hover {{ background: {c["faixa"]}; }}
+    QFrame#itemEmail {{ background: transparent; border: none;
+        border-left: 3px solid transparent; }}
+    QFrame#itemEmail[naoLido="true"] {{ border-left-color: {c["destaque"]}; }}
+    QLabel#remetenteEmail {{ font-size: 13px; background: transparent; }}
+    QFrame#itemEmail[naoLido="true"] QLabel#remetenteEmail {{ font-weight: 700; }}
+    QLabel#dataEmail {{ color: {c["texto_fraco"]}; font-size: 11px; background: transparent; }}
+    QLabel#assuntoItemEmail {{ color: {c["texto_fraco"]}; font-size: 12px;
+        background: transparent; }}
+    QLabel#etiquetaEmail {{ font-size: 10px; font-weight: 600; padding: 1px 7px;
+        border-radius: 8px; background: {c["faixa"]}; color: {c["texto_fraco"]}; }}
+    QLabel#etiquetaEmail[tipo="nova"] {{ background: {c["destaque"]}; color: #ffffff; }}
+    QLabel#etiquetaEmail[tipo="respondida"] {{ background: {c["pago"]};
+        color: {c["texto_sobre_pago"]}; }}
+    QLabel#etiquetaEmail[tipo="enviada"] {{ background: {c["marca"]};
+        color: {c["texto_sobre_marca"]}; }}
+    QLabel#vazioEmail {{ color: {c["texto_fraco"]}; padding: 24px;
+        background: {c["superficie"]}; border: 1px dashed {c["borda"]};
+        border-radius: 10px; }}
+    QLabel#vazioTitulo {{ font-size: 16px; font-weight: 600; color: {c["texto_fraco"]}; }}
+    QFrame#cabecalhoEmail {{ background: {c["superficie"]}; border: 1px solid {c["borda"]};
+        border-radius: 10px; }}
+    QLabel#assuntoEmail {{ font-size: 17px; font-weight: 700; background: transparent; }}
+    QLabel#deEmail {{ background: transparent; }}
+    QLabel#codigoEntrada {{ font-size: 30px; font-weight: 700; letter-spacing: 4px;
+        padding: 12px; border: 1px dashed {c["borda"]}; border-radius: 10px; }}
+    QLabel#ajudaConta {{ color: {c["texto_fraco"]}; background: {c["faixa"]};
+        border-radius: 8px; padding: 10px; }}
+    QLabel#resultadoConexao[ok="true"] {{ color: {c["pago"]}; font-weight: 600; }}
+    QLabel#resultadoConexao[ok="false"] {{ color: {c["atrasado"]}; }}
+    QFrame#faixaSaiu {{ background: {c["faixa"]}; border: 1px solid {c["borda"]};
+        border-left: 4px solid {c["pago"]}; border-radius: 8px; }}
+    QLabel#textoSaiu {{ background: transparent; }}
+    QLabel#totalBaixa {{ font-weight: 600; }}
+    QPushButton#botaoNotificacoes {{
+        background: {c["faixa"]}; border: 1px solid {c["borda"]}; border-radius: 8px;
+        text-align: left; padding: 0px;
+    }}
+    QPushButton#botaoNotificacoes:hover {{ border-color: {c["destaque"]}; }}
+    QLabel#contadorNotificacoes {{
+        background: {c["atrasado"]}; color: #ffffff; border-radius: 10px;
+        min-width: 20px; min-height: 20px; max-height: 20px; padding: 0px 6px;
+        font-size: 11px; font-weight: 700;
+    }}
+    QFrame#listaNotificacoes {{
+        background: {c["superficie"]}; border: 1px solid {c["borda"]}; border-radius: 10px;
+    }}
+    QFrame#itemNotificacao {{
+        background: {c["faixa"]}; border: none; border-left: 3px solid {c["atrasado"]};
+        border-radius: 6px;
+    }}
+    QFrame#itemNotificacao[lida="true"] {{
+        background: transparent; border-left-color: {c["borda"]};
+    }}
+    QLabel#tituloNotificacao {{ font-weight: 700; background: transparent; }}
+    QFrame#itemNotificacao[lida="true"] QLabel#tituloNotificacao {{
+        font-weight: 400; color: {c["texto_fraco"]};
+    }}
+    QLabel#detalheNotificacao {{
+        color: {c["texto_fraco"]}; font-size: 12px; background: transparent;
     }}
     QListWidget#navegacao::item {{ padding: 9px 12px; border-radius: 6px; }}
     QListWidget#navegacao::item:selected {{ background: {c["destaque"]}; color: #ffffff; }}

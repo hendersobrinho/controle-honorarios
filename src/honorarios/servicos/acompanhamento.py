@@ -260,6 +260,56 @@ def registrar_resposta(
     sessao.flush()
 
 
+def cobranca_aguardando(sessao: Session, honorarios) -> CobrancaLote | None:
+    """A mensagem mais recente desses honorários que ainda espera resposta."""
+    lotes = {
+        cobranca.lote for honorario in honorarios for cobranca in honorario.cobrancas
+        if cobranca.ativa and cobranca.lote is not None
+        and cobranca.resultado is ResultadoCobranca.AGUARDANDO
+    }
+    return max(lotes, key=lambda lote: lote.data_hora, default=None)
+
+
+def anotar_retorno(
+    sessao: Session,
+    cliente: Cliente,
+    honorarios,
+    resultado: ResultadoCobranca,
+    promessa_data: date | None = None,
+    observacao: str = "",
+    canal: Canal = Canal.WHATSAPP,
+    data_referencia: date | None = None,
+) -> str:
+    """O que o cliente disse sobre estes honorários.
+
+    Se há uma cobrança deles esperando resposta, o retorno vai nela; senão, vira
+    um contato novo (cobrança registrada já com o retorno). Devolve o que fez.
+    """
+    from . import cobrancas
+
+    if not honorarios:
+        raise ErroDeValidacao("Escolha os honorários do cliente.")
+    if resultado is ResultadoCobranca.AGUARDANDO:
+        raise ErroDeValidacao("Escolha o que o cliente respondeu.", "resultado")
+    referencia = data_referencia or hoje()
+    lote = cobranca_aguardando(sessao, honorarios)
+    if lote is not None:
+        registrar_resposta(sessao, linha_do_lote(sessao, lote, referencia), resultado,
+                           promessa_data, observacao)
+        return f"Retorno anotado na cobrança de {lote.data_hora:%d/%m}."
+    ids = {honorario.id for honorario in honorarios}
+    linhas = [
+        linha for linha in cobrancas.linhas_em_aberto_do_cliente(sessao, cliente.id, referencia)
+        if linha.honorario.id in ids
+    ]
+    cobrancas.registrar(
+        sessao, cobrancas.Selecao(cliente=cliente, linhas=linhas, data_referencia=referencia),
+        texto="", canal=canal, resultado=resultado, promessa_data=promessa_data,
+        observacao=observacao,
+    )
+    return "Contato registrado com o retorno."
+
+
 def linha_do_lote(
     sessao: Session, lote: CobrancaLote, data_referencia: date | None = None
 ) -> LinhaAcompanhamento:

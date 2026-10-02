@@ -53,6 +53,7 @@ class PainelResumo(QWidget):
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
         self.contexto = contexto
+        self.pdf_gerado = None
         self._montar()
         self.recarregar(animar=False)
 
@@ -68,7 +69,7 @@ class PainelResumo(QWidget):
         self.ano.currentIndexChanged.connect(lambda *_: self.recarregar())
         self.cabecalho.acoes.addWidget(QLabel("Ano (competência):"))
         self.cabecalho.acoes.addWidget(self.ano)
-        self.cabecalho.adicionar_botao("Exportar PDF", self._exportar)
+        self.cabecalho.adicionar_botao("Exportar PDF…", lambda: self._exportar())
         self.cabecalho.adicionar_botao("Atualizar", self.recarregar, atalho="F5")
         externo.addWidget(self.cabecalho)
 
@@ -210,22 +211,88 @@ class PainelResumo(QWidget):
         )
         self.leituras.setText("\n\n".join(f"•  {frase}" for frase in dados.leituras()))
 
-    def _exportar(self) -> None:
+    def _imagens_dos_graficos(self, pasta) -> dict:
+        """Os gráficos da tela como imagem, para o PDF: sempre no tema claro (o PDF é
+        branco) e em dobro de resolução, para não serrilhar na impressão."""
+        from pathlib import Path
+
+        from PySide6.QtCore import QPoint
+        from PySide6.QtGui import QColor, QImage, QRegion
+
+        from ..comum import cores
+
+        dados = self.indicadores
+        quitacao = GraficoQuitacao()
+        quitacao.definir(dados.meses, animar=False)
+        caixa = GraficoColunas()
+        caixa.definir([mes.rotulo for mes in dados.meses],
+                      [mes.recebido for mes in dados.meses], "Entrou no caixa", animar=False)
+        origem = GraficoBarrasHorizontais()
+        origem.definir([("Por grupo", dados.por_grupo),
+                        ("Por tipo de cliente", dados.por_tipo_pessoa)], animar=False)
+
+        tema_antes = cores.tema_atual()
+        cores.definir_tema("claro")
+        saida = {}
+        try:
+            for chave, grafico, altura in (
+                ("quitacao", quitacao, 300),
+                ("caixa", caixa, 260),
+                ("origem", origem, max(220, origem.minimumHeight())),
+            ):
+                largura = 900
+                grafico.resize(largura, altura)
+                imagem = QImage(largura * 2, altura * 2, QImage.Format.Format_ARGB32)
+                imagem.setDevicePixelRatio(2)
+                imagem.fill(QColor("#ffffff"))
+                # sem o fundo da janela: no tema escuro ele viria escuro, e o PDF é branco
+                grafico.render(imagem, QPoint(), QRegion(), QWidget.RenderFlag.DrawChildren)
+                caminho = Path(pasta) / f"{chave}.png"
+                imagem.save(str(caminho), "PNG")
+                saida[chave] = caminho
+        finally:
+            cores.definir_tema(tema_antes)
+        return saida
+
+    def _exportar(self, destino: str | None = None) -> None:
+        import tempfile
         from pathlib import Path
 
         from PySide6.QtWidgets import QFileDialog
 
         from ...config.caminhos import pasta_exportacoes
-        from ...servicos import exportacao
+        from ...servicos import configuracoes, imagem_cobranca, relatorio_painel
+        from ..comum.imagem_cobranca import renderizar_pagina
 
-        sugestao = str(pasta_exportacoes() / f"painel-{self.indicadores.ano}.pdf")
-        caminho, _ = QFileDialog.getSaveFileName(self, "Exportar painel", sugestao, "PDF (*.pdf)")
-        if not caminho:
-            return
+        if destino is None:
+            sugestao = str(pasta_exportacoes() / f"painel-{self.indicadores.ano}.pdf")
+            destino, _ = QFileDialog.getSaveFileName(
+                self, "Exportar painel", sugestao, "PDF (*.pdf)"
+            )
+            if not destino:
+                return
+        if not destino.lower().endswith(".pdf"):
+            destino += ".pdf"
 
         def acao():
-            return exportacao.painel_pdf(self.indicadores.como_dicionario, Path(caminho))
+            sessao = self.contexto.sessao
+            svg = imagem_cobranca.caminho_fundo(sessao).read_text(encoding="utf-8")
+            base = imagem_cobranca.base_do_fundo(svg)
+            with tempfile.TemporaryDirectory() as pasta:
+                papel = None
+                if base is not None:
+                    papel = Path(pasta) / "papel.png"
+                    renderizar_pagina(base, 1654, 2339).save(str(papel), "PNG")
+                return relatorio_painel.painel_pdf(
+                    self.indicadores,
+                    configuracoes.recebedor(sessao),
+                    Path(destino),
+                    graficos=self._imagens_dos_graficos(pasta),
+                    fundo=papel,
+                    gerado_em=self.contexto.data_referencia,
+                )
 
         deu_certo, arquivo = widgets.executar(self, acao)
         if deu_certo:
-            widgets.informar(self, f"Painel salvo em:\n{arquivo}", "Exportado")
+            self.pdf_gerado = arquivo
+            widgets.abrir_url(f"file://{arquivo}")

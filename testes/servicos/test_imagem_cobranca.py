@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -62,7 +63,8 @@ def test_a_imagem_segue_a_selecao(sessao, empresa):
     linha = um.linhas[0]
     assert linha.titulo == "Honorário mensal · 08/2026"
     assert linha.detalhe == "Vencimento 10/09/2026 · 20 dias de atraso"
-    assert (linha.valor, linha.valor_detalhe) == ("R$ 1.020,00", "R$ 1.000,00 + R$ 20,00 de juros")
+    # só o valor final cheio, sem o juros separado
+    assert (linha.valor, linha.valor_detalhe) == ("R$ 1.020,00", "")
 
     with pytest.raises(ErroDeValidacao, match="Marque ao menos um"):
         servico.montar(sessao, _selecao(sessao, empresa, []))
@@ -168,3 +170,108 @@ def test_base_do_fundo_tira_so_o_grupo_conteudo():
     assert servico.base_do_fundo('<svg xmlns="http://www.w3.org/2000/svg"/>') is None
     # o modelo do sistema já vem com o grupo
     assert servico.base_do_fundo(servico.FUNDO_MODELO.read_text(encoding="utf-8"))
+
+
+def test_imagem_traz_o_documento_e_o_vencimento_editavel(sessao, empresa):
+    selecao = _selecao(sessao, empresa, [0])
+    hoje_ = servico.montar(sessao, selecao)
+    assert hoje_.campos["tipo_documento"] == "CNPJ"
+    assert hoje_.campos["documento"] == "11.222.333/0001-81"
+    assert hoje_.campos["vencimento"] == "30/09/2026"
+    assert hoje_.campos["total"] == "R$ 1.020,00"
+
+    # "pagar até" é só o prazo: o valor continua o da data de atualização
+    oferta = servico.montar(sessao, selecao, vencimento=date(2026, 10, 10))
+    assert oferta.campos["vencimento"] == "10/10/2026"
+    assert oferta.campos["data"] == "30/09/2026"
+    assert oferta.campos["total"] == "R$ 1.020,00"
+
+    # atualizar os valores para outra data muda o juros (10 dias a mais)
+    adiante = servico.montar(sessao, selecao, date(2026, 10, 10), date(2026, 10, 10))
+    assert adiante.campos["total"] == "R$ 1.030,00"
+    assert adiante.linhas[0].detalhe.endswith("30 dias de atraso")
+
+    with pytest.raises(ErroDeValidacao, match="não pode ser antes"):
+        servico.montar(sessao, selecao, date(2026, 9, 25), date(2026, 9, 30))
+
+
+def test_acordo_vale_ate_a_data_e_depois_o_juros_volta(sessao, empresa):
+    from honorarios.servicos import acordos, pagamentos
+
+    honorario = _selecao(sessao, empresa, [0]).linhas[0].honorario
+    # vencido em 10/09 a R$ 1,00/dia: valores de 20/09 (10 dias), válidos até 25/09
+    [acordo] = acordos.registrar(sessao, [honorario], date(2026, 9, 20), date(2026, 9, 25))
+    sessao.commit()
+    assert (acordo.juros, acordo.total) == (Decimal("10.00"), Decimal("1010.00"))
+
+    # pagando dentro do prazo, a baixa sugere o valor do acordo
+    dentro = pagamentos.previa(honorario, date(2026, 9, 24))
+    assert dentro.juros_devidos == Decimal("14.00")      # o juros real continua correndo
+    assert dentro.juros_acordo == Decimal("10.00")
+    assert dentro.sugestao_valor == Decimal("1010.00")
+    assert "acordo" in dentro.justificativa_acordo
+
+    # passou do prazo: o acordo não vale, e o juros é o desde o vencimento original
+    fora = pagamentos.previa(honorario, date(2026, 9, 26))
+    assert fora.juros_acordo is None
+    assert fora.sugestao_valor == Decimal("1016.00")
+    assert acordos.vigente(honorario, date(2026, 9, 26)) is None
+
+    # a baixa dentro do prazo, com o abono justificado pelo acordo
+    pagamentos.registrar(sessao, honorario, pagamentos.DadosPagamento(
+        data=date(2026, 9, 24), valor_pago=dentro.sugestao_valor,
+        juros_cobrados=dentro.juros_acordo, justificativa_desconto=dentro.justificativa_acordo,
+    ))
+    sessao.commit()
+    assert honorario.status.value == "PAGO"
+
+
+def test_acordo_nao_vence_antes_dos_valores(sessao, empresa):
+    from honorarios.servicos import acordos
+
+    honorario = _selecao(sessao, empresa, [0]).linhas[0].honorario
+    with pytest.raises(ErroDeValidacao, match="não pode vencer antes"):
+        acordos.registrar(sessao, [honorario], date(2026, 9, 30), date(2026, 9, 20))
+
+
+def test_sem_qrcode_tira_a_mensagem_e_move_o_pix():
+    from honorarios.servicos import imagem_cobranca
+
+    fundo = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
+        '<rect id="qrcode" width="2" height="2"/>'
+        '<g id="bloco-pix" data-sem-qrcode="translate(-5 2)" transform="scale(1)">'
+        '<text>Pague com Pix</text>'
+        '<g id="mensagem-qrcode"><text>Aponte a câmera</text></g>'
+        '</g></svg>'
+    )
+    sem = imagem_cobranca.sem_qrcode(fundo)
+    assert "Aponte a câmera" not in sem and "Pague com Pix" in sem
+    assert 'transform="translate(-5 2) scale(1)"' in sem
+    assert "data-sem-qrcode" not in sem
+    # fundo sem as marcações: fica como está
+    assert imagem_cobranca.sem_qrcode("<svg/>") == "<svg/>"
+
+
+def test_modelo_mostra_a_mensagem_do_qr_so_com_qr(tmp_path, monkeypatch):
+    from PySide6.QtGui import QImage
+    from PySide6.QtWidgets import QApplication
+
+    from honorarios.servicos import imagem_cobranca
+    from honorarios.ui.comum import imagem_cobranca as desenho
+
+    QApplication.instance() or QApplication([])
+    vistos = []
+    original = desenho.preencher
+    monkeypatch.setattr(desenho, "preencher",
+                        lambda texto_svg, campos: vistos.append(texto_svg) or
+                        original(texto_svg, campos))
+    fundo = imagem_cobranca.FUNDO_MODELO.read_text(encoding="utf-8")
+    dados = imagem_cobranca.DadosImagem(campos={}, linhas=[])
+    desenho.renderizar(fundo, dados)                      # sem QR
+    qr = tmp_path / "qr.png"
+    QImage(10, 10, QImage.Format.Format_ARGB32).save(str(qr))
+    dados.qrcode = qr
+    desenho.renderizar(fundo, dados)                      # com QR
+    assert "Aponte a câmera" not in vistos[0]
+    assert "Aponte a câmera" in vistos[1]

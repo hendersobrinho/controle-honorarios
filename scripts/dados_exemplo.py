@@ -38,6 +38,7 @@ from honorarios.dominio.enums import (  # noqa: E402
 from honorarios.dominio.valores import Competencia, dia_do_mes, hoje, somar_meses  # noqa: E402
 from honorarios.infra import carga_inicial, db, esquema  # noqa: E402
 from honorarios.infra.modelos import (  # noqa: E402
+    AcordoValor,
     Cliente,
     ClienteContato,
     ClienteJuros,
@@ -49,6 +50,7 @@ from honorarios.infra.modelos import (  # noqa: E402
     Importacao,
     ImportacaoErro,
     LogAlteracao,
+    Notificacao,
     Pagamento,
     Renegociacao,
     RenegociacaoItem,
@@ -176,10 +178,10 @@ def limpar(sessao) -> None:
     # o delete em massa não dispara o cascade do ORM, então a ordem das chaves
     # estrangeiras é explícita: filhos primeiro, cliente por último
     for modelo in (
-        Cobranca, CobrancaLote, Pagamento, RenegociacaoItem,
+        Cobranca, CobrancaLote, Pagamento, AcordoValor, RenegociacaoItem,
         ImportacaoErro, Importacao, Honorario, Renegociacao,
         ContratoHistorico, Contrato, ClienteContato, ClienteJuros,
-        LogAlteracao, Cliente,
+        LogAlteracao, Notificacao, Cliente,
     ):
         sessao.query(modelo).delete()
     sessao.commit()

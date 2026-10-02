@@ -29,10 +29,13 @@ from ..contexto import Contexto
 
 
 class DialogoGerarCompetencia(QDialog):
-    def __init__(self, contexto: Contexto, parent=None) -> None:
+    def __init__(self, contexto: Contexto, parent=None, ano: int | None = None,
+                 mes: int | None = None) -> None:
+        """``ano``/``mes``: a competência já escolhida (ex.: a que está na tela Mês a mês)."""
         super().__init__(parent)
         self.contexto = contexto
         self.gerados = 0
+        self._competencia_inicial = (ano, mes)
         self.setWindowTitle("Gerar competência")
         self.resize(900, 620)
         self._montar()
@@ -52,11 +55,12 @@ class DialogoGerarCompetencia(QDialog):
         self.mes = QComboBox()
         for indice, nome in enumerate(MESES_ABREVIADOS, start=1):
             self.mes.addItem(nome, indice)
-        self.mes.setCurrentIndex(hoje_.month - 1)
+        ano_inicial, mes_inicial = self._competencia_inicial
+        self.mes.setCurrentIndex((mes_inicial or hoje_.month) - 1)
         self.mes.currentIndexChanged.connect(self._carregar)
         self.ano = QSpinBox()
         self.ano.setRange(2000, 2100)
-        self.ano.setValue(hoje_.year)
+        self.ano.setValue(ano_inicial or hoje_.year)
         self.ano.valueChanged.connect(self._carregar)
         seletor.addWidget(widgets.rotulo_fraco("Competência:"))
         seletor.addWidget(self.mes)

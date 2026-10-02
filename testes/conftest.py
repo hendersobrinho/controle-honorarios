@@ -37,3 +37,28 @@ def contexto(sessao):
     from honorarios.ui.contexto import Contexto
 
     return Contexto(sessao=sessao, data_referencia=date(2026, 9, 29))
+
+
+class _CofreDeTeste:
+    """Cofre de senhas em memória: os testes nunca tocam o cofre de verdade."""
+
+    def __init__(self) -> None:
+        self.dados: dict[tuple[str, str], str] = {}
+
+    def set_password(self, servico, nome, valor):
+        self.dados[(servico, nome)] = valor
+
+    def get_password(self, servico, nome):
+        return self.dados.get((servico, nome))
+
+    def delete_password(self, servico, nome):
+        self.dados.pop((servico, nome), None)
+
+
+@pytest.fixture(autouse=True)
+def cofre(monkeypatch):
+    from honorarios.servicos import caixa_email
+
+    falso = _CofreDeTeste()
+    monkeypatch.setattr(caixa_email, "_cofre", lambda: falso)
+    return falso

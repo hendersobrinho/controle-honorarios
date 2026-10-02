@@ -87,6 +87,10 @@ class Cabecalho(QWidget):
         self.acoes.setSpacing(8)
         layout.addLayout(self.acoes)
 
+    def ocultar_titulo(self) -> None:
+        """Dentro de uma aba o título repetiria o nome da aba: fica só o subtítulo."""
+        self._titulo.setVisible(False)
+
     def definir_subtitulo(self, texto: str) -> None:
         self._subtitulo.setText(texto)
         self._subtitulo.setVisible(bool(texto))

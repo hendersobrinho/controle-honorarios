@@ -25,11 +25,20 @@ def main(argumentos: list[str] | None = None) -> int:
     aplicativo = QApplication(argumentos if argumentos is not None else sys.argv)
     aplicativo.setApplicationName("Controle de Honorários")
     aplicativo.setOrganizationName("Métodos Serviços Contábeis")
+    from .ui.comum.notificacoes import icone_da_marca
 
+    aplicativo.setWindowIcon(icone_da_marca())
+
+    from .ui.comum.logo import TelaAbertura
+
+    abertura = TelaAbertura()
+    abertura.show()
+    abertura.avancar(3, "Preparando o banco de dados…")
     try:
         preparar_banco()
     except Exception as falha:  # noqa: BLE001
         log.exception("Falha ao preparar o banco de dados")
+        abertura.close()
         QMessageBox.critical(
             None,
             "Não foi possível abrir o banco de dados",
@@ -38,8 +47,11 @@ def main(argumentos: list[str] | None = None) -> int:
         return 1
 
     contexto = Contexto(sessao=db.sessao(), data_referencia=hoje())
-    janela = JanelaPrincipal(contexto)
+    janela = JanelaPrincipal(contexto, progresso=abertura.avancar)
+    abertura.avancar(100, "Pronto")
     janela.show()
+    abertura.close()
+    janela.iniciar_notificacoes()
     log.info("Aplicativo iniciado")
     return aplicativo.exec()
 

@@ -5,7 +5,10 @@ O fundo é um SVG desenhado fora do sistema. Nele:
 * textos com ``{campo}`` são trocados pelos valores (ver ``CAMPOS``);
 * o retângulo ``id="lista"`` recebe os honorários selecionados, um por linha;
 * o retângulo ``id="qrcode"`` recebe o PNG do QR code do Pix, gerado no banco e
-  escolhido nas Configurações.
+  escolhido nas Configurações;
+* sem QR code anexado, sai o que tiver ``id="mensagem-qrcode"`` (o "aponte a
+  câmera…") e quem tiver ``data-sem-qrcode="translate(x y)"`` se move — para o
+  bloco do Pix ocupar o lugar do QR em vez de deixar um quadrado vazio.
 
 Aqui fica só o que não depende de Qt: os dados e o texto do SVG preenchido. O
 desenho em si está em ``ui/comum/imagem_cobranca.py``.
@@ -17,14 +20,16 @@ import re
 import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 from sqlalchemy.orm import Session
 
 from ..config.caminhos import pasta_dados
-from ..dominio.valores import ZERO, formatar_data, formatar_moeda
-from . import configuracoes
+from ..dominio.enums import StatusPagamento, TipoPessoa
+from ..dominio.valores import ZERO, formatar_data, formatar_documento, formatar_moeda
+from . import calculo, configuracoes
 from .cobrancas import Selecao
 from .erros import ErroDeValidacao
 
@@ -35,6 +40,9 @@ NOME_QRCODE = "qrcode_pix.png"
 CAMPOS = (
     ("cliente", "nome do cliente"),
     ("codigo", "código do cliente"),
+    ("documento", "CNPJ ou CPF do cliente cobrado"),
+    ("tipo_documento", "\"CNPJ\" ou \"CPF\""),
+    ("vencimento", "data para pagar (editável na prévia)"),
     ("data", "data dos valores"),
     ("total", "total a pagar"),
     ("total_original", "soma dos valores originais"),
@@ -54,7 +62,7 @@ class LinhaImagem:
     titulo: str          # competência e tipo (e de quem é, se for de pessoa vinculada)
     detalhe: str         # vencimento e atraso
     valor: str           # total atualizado
-    valor_detalhe: str   # original + juros, quando há juros
+    valor_detalhe: str = ""   # vazio: a imagem mostra só o valor final cheio
 
 
 @dataclass
@@ -160,32 +168,70 @@ def remover_qrcode(sessao: Session) -> None:
     sessao.flush()
 
 
-def base_do_fundo(texto_svg: str) -> str | None:
-    """O fundo sem o grupo ``id="conteudo"`` (a camada que só serve à imagem).
-
-    É o que o PDF da análise usa como papel de fundo. Sem esse grupo no SVG não
-    dá para separar o desenho da camada da cobrança: devolve ``None``.
-    """
+def _sem_elementos(texto_svg: str, ids: set[str]) -> tuple[str, set[str]]:
+    """O SVG sem os elementos destes ids, e quais deles existiam."""
     ET.register_namespace("", "http://www.w3.org/2000/svg")
     ET.register_namespace("xlink", "http://www.w3.org/1999/xlink")
+    raiz = ET.fromstring(texto_svg.encode("utf-8"))
+    achados: set[str] = set()
+    for pai in list(raiz.iter()):
+        for filho in list(pai):
+            if filho.get("id") in ids:
+                achados.add(filho.get("id"))
+                pai.remove(filho)
+    return ET.tostring(raiz, encoding="unicode"), achados
+
+
+def base_do_fundo(texto_svg: str) -> str | None:
+    """O papel dos PDFs: o fundo sem a camada da cobrança (``id="conteudo"``).
+
+    Se o fundo tiver um logo só para a imagem (``logo-imagem``) e outro só para os
+    PDFs (``logo-pdf``), sai o da imagem. Sem o grupo ``conteudo`` não dá para
+    separar o desenho da camada da cobrança: devolve ``None``.
+    """
     try:
-        raiz = ET.fromstring(texto_svg.encode("utf-8"))
+        base, achados = _sem_elementos(texto_svg, {"conteudo", "logo-imagem"})
     except ET.ParseError:
         return None
-    for pai in raiz.iter():
-        for filho in list(pai):
-            if filho.get("id") == "conteudo":
-                pai.remove(filho)
-                return ET.tostring(raiz, encoding="unicode")
-    return None
+    return base if "conteudo" in achados else None
+
+
+MENSAGEM_QRCODE = "mensagem-qrcode"
+
+
+def sem_qrcode(texto_svg: str) -> str:
+    """O fundo para quando não há QR code: sem a mensagem dele, com o Pix no lugar."""
+    if MENSAGEM_QRCODE not in texto_svg and "data-sem-qrcode" not in texto_svg:
+        return texto_svg
+    try:
+        texto, _ = _sem_elementos(texto_svg, {MENSAGEM_QRCODE})
+        raiz = ET.fromstring(texto.encode("utf-8"))
+    except ET.ParseError:
+        return texto_svg
+    for elemento in raiz.iter():
+        mover = elemento.attrib.pop("data-sem-qrcode", None)
+        if mover:
+            atual = elemento.get("transform", "")
+            elemento.set("transform", f"{mover} {atual}".strip())
+    return ET.tostring(raiz, encoding="unicode")
+
+
+def para_imagem(texto_svg: str) -> str:
+    """O fundo como vai na imagem de cobrança: com a logo nova, se o fundo tiver as duas.
+
+    A imagem e os PDFs usam a mesma logo (``logo-pdf``); o logo antigo
+    (``logo-imagem``) só aparece se for o único do fundo.
+    """
+    if 'id="logo-pdf"' not in texto_svg or 'id="logo-imagem"' not in texto_svg:
+        return texto_svg
+    return _sem_elementos(texto_svg, {"logo-imagem"})[0]
 
 
 # ----------------------------------------------------------------------- dados
 
 
-def _linha(linha, selecao: Selecao) -> LinhaImagem:
+def _linha(linha, selecao: Selecao, atualizacao) -> LinhaImagem:
     honorario = linha.honorario
-    atualizacao = linha.atualizacao
     competencia = honorario.competencia_rotulo or honorario.descricao
     tipo = honorario.tipo.nome
     if not competencia:
@@ -200,33 +246,48 @@ def _linha(linha, selecao: Selecao) -> LinhaImagem:
     if atualizacao.dias_atraso > 0:
         dias = atualizacao.dias_atraso
         detalhe += f" · {dias} dia{'s' if dias > 1 else ''} de atraso"
-    valor_detalhe = ""
-    if atualizacao.juros > 0:
-        valor_detalhe = (
-            f"{formatar_moeda(atualizacao.valor_original)} + "
-            f"{formatar_moeda(atualizacao.juros)} de juros"
-        )
-    return LinhaImagem(
-        titulo=titulo,
-        detalhe=detalhe,
-        valor=formatar_moeda(atualizacao.total),
-        valor_detalhe=valor_detalhe,
-    )
+    # só o valor final cheio: o juros não aparece separado na imagem
+    return LinhaImagem(titulo=titulo, detalhe=detalhe, valor=formatar_moeda(atualizacao.total))
 
 
-def montar(sessao: Session, selecao: Selecao) -> DadosImagem:
-    """Os dados da imagem para os honorários selecionados na tela de cobrança."""
+def montar(
+    sessao: Session,
+    selecao: Selecao,
+    vencimento: date | None = None,
+    atualizado_em: date | None = None,
+) -> DadosImagem:
+    """Os dados da imagem para os honorários selecionados na tela de cobrança.
+
+    ``atualizado_em``: a data em que os valores são calculados (juros até ela).
+    ``vencimento``: até quando esse valor vale — a data "pagar até" da imagem. Sem
+    elas, as duas são a data de referência da cobrança.
+    """
     if not selecao.linhas:
         raise ErroDeValidacao("Marque ao menos um honorário para gerar a imagem.")
+    data = atualizado_em or selecao.data_referencia
+    vencimento = vencimento or data
+    if vencimento < data:
+        raise ErroDeValidacao(
+            "O \"pagar até\" não pode ser antes da data em que os valores foram atualizados."
+        )
+    atualizacoes = [calculo.atualizar(linha.honorario, data) for linha in selecao.linhas]
     recebedor = configuracoes.recebedor(sessao)
-    original = sum((linha.atualizacao.valor_original for linha in selecao.linhas), start=ZERO)
-    juros = sum((linha.atualizacao.juros for linha in selecao.linhas), start=ZERO)
+    original = sum((atual.valor_original for atual in atualizacoes), start=ZERO)
+    juros = sum((atual.juros for atual in atualizacoes), start=ZERO)
+    total = sum((atual.total for atual in atualizacoes), start=ZERO)
     quantidade = len(selecao.linhas)
+    cliente = selecao.cliente
     campos = {
-        "cliente": selecao.cliente.nome,
-        "codigo": selecao.cliente.codigo,
-        "data": formatar_data(selecao.data_referencia),
-        "total": formatar_moeda(selecao.total),
+        "cliente": cliente.nome,
+        "codigo": cliente.codigo,
+        "documento": formatar_documento(cliente.documento) or "",
+        "tipo_documento": (
+            ("CNPJ" if cliente.tipo_pessoa is TipoPessoa.PJ else "CPF")
+            if cliente.documento else ""
+        ),
+        "vencimento": formatar_data(vencimento),
+        "data": formatar_data(data),
+        "total": formatar_moeda(total),
         "total_original": formatar_moeda(original),
         "total_juros": formatar_moeda(juros),
         "quantidade": f"{quantidade} honorário{'s' if quantidade > 1 else ''}",
@@ -235,8 +296,57 @@ def montar(sessao: Session, selecao: Selecao) -> DadosImagem:
     }
     return DadosImagem(
         campos=campos,
-        linhas=[_linha(linha, selecao) for linha in selecao.linhas],
+        linhas=[
+            _linha(linha, selecao, atual)
+            for linha, atual in zip(selecao.linhas, atualizacoes, strict=True)
+        ],
         qrcode=caminho_qrcode(sessao),
+    )
+
+
+def montar_agradecimento(sessao: Session, honorarios) -> DadosImagem:
+    """Os dados da imagem de agradecimento: o que foi pago, quando e quanto."""
+    if not honorarios:
+        raise ErroDeValidacao("Escolha um honorário pago para gerar o agradecimento.")
+    linhas, total, ultima = [], ZERO, None
+    for honorario in honorarios:
+        pagamentos = [p for p in honorario.pagamentos if p.ativo]
+        if not pagamentos:
+            raise ErroDeValidacao("Este honorário não tem pagamento registrado.")
+        pago = sum((p.valor_pago for p in pagamentos), start=ZERO)
+        data = max(p.data for p in pagamentos)
+        parcial = honorario.status is not StatusPagamento.PAGO
+        competencia = honorario.competencia_rotulo or honorario.descricao
+        tipo = honorario.tipo.nome
+        titulo = tipo if not competencia else (
+            competencia if competencia.startswith(tipo) else f"{tipo} · {competencia}"
+        )
+        linhas.append(LinhaImagem(
+            titulo=titulo,
+            # sem a data do pagamento: o dia exato nem sempre se sabe
+            detalhe=f"Vencimento {formatar_data(honorario.vencimento)}"
+            + (" · pagamento parcial" if parcial else ""),
+            valor=formatar_moeda(pago),
+        ))
+        total += pago
+        ultima = data if ultima is None or data > ultima else ultima
+    cliente = honorarios[0].cliente
+    recebedor = configuracoes.recebedor(sessao)
+    return DadosImagem(
+        campos={
+            "cliente": cliente.nome,
+            "codigo": cliente.codigo,
+            "documento": formatar_documento(cliente.documento) or "",
+            "tipo_documento": (
+                ("CNPJ" if cliente.tipo_pessoa is TipoPessoa.PJ else "CPF")
+                if cliente.documento else ""
+            ),
+            "data": formatar_data(ultima),
+            "total": formatar_moeda(total),
+            "quantidade": f"{len(linhas)} honorário{'s' if len(linhas) > 1 else ''}",
+            "recebedor": recebedor.razao_social,
+        },
+        linhas=linhas,
     )
 
 
@@ -257,6 +367,9 @@ def exemplo(sessao: Session) -> DadosImagem:
         campos={
             "cliente": "EMPRESA EXEMPLO LTDA",
             "codigo": "900",
+            "documento": "12.345.678/0001-95",
+            "tipo_documento": "CNPJ",
+            "vencimento": "30/09/2026",
             "data": "30/09/2026",
             "total": "R$ 3.880,69",
             "total_original": "R$ 3.778,68",
@@ -267,11 +380,11 @@ def exemplo(sessao: Session) -> DadosImagem:
         },
         linhas=[
             LinhaImagem("Honorário mensal · 07/2026", "Vencimento 05/08/2026 · 56 dias de "
-                        "atraso", "R$ 1.564,36", "R$ 1.507,80 + R$ 56,56 de juros"),
+                        "atraso", "R$ 1.564,36"),
             LinhaImagem("Honorário mensal · 08/2026", "Vencimento 05/09/2026 · 25 dias de "
-                        "atraso", "R$ 1.533,05", "R$ 1.507,80 + R$ 25,25 de juros"),
+                        "atraso", "R$ 1.533,05"),
             LinhaImagem("Alteração contratual", "Vencimento 10/09/2026 · 20 dias de atraso",
-                        "R$ 783,28", "R$ 763,08 + R$ 20,20 de juros"),
+                        "R$ 783,28"),
         ],
     )
     dados.qrcode = caminho_qrcode(sessao)

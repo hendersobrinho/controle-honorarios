@@ -262,6 +262,32 @@ do todo, legenda com duas séries ou mais, número escrito só onde ajuda e o me
 dado em tabela. As cores (azul e laranja, e verde-água para a composição) foram
 validadas para daltonismo e contraste no fundo claro e no escuro.
 
+### Avulsos: lançar e consultar, não cobrar
+A tela de Honorários avulsos era uma segunda fila de cobrança (com Cobrar e
+Registrar pagamento) para honorários que já estão em Atrasados e A vencer. Virou
+o lugar de lançar, corrigir, cancelar e consultar o histórico dos avulsos por
+período, pagos ou não, como a aba Recorrentes é o lugar dos contratos. As duas
+ficam no mesmo item do menu, **Honorários**, em abas — como Clientes separa
+ativos, IR e inativos.
+Para corrigir sem trocar de tela, os cartões em aberto da cobrança ganharam
+**Editar** (honorário pago continua não editável: estorne antes).
+
+### Um molde para os PDFs
+Os relatórios em PDF (análise de juros e painel) usam o mesmo molde
+(`servicos/pdf_relatorio.py`): o fundo da cobrança como papel, o cartão branco,
+os estilos, a tabela de cabeçalho cinza e a grade de indicadores. Os gráficos
+do painel vão para o PDF como imagem, desenhados pela interface sempre no tema
+claro (o PDF é branco) e em dobro de resolução.
+
+### Acordo de valor ("pague R$ X até tal data")
+A imagem separa a data dos valores ("atualizados em") do prazo ("pagar até").
+Guardado como acordo (tabela `acordo_valor`, um por honorário), o valor congelado
+vale para pagamentos até o prazo: a prévia da baixa sugere o juros combinado e o
+texto do abono. Nada é alterado no honorário — passado o prazo, o acordo só deixa
+de ser considerado e o juros corre desde o vencimento original, "retroativo". Um
+pagamento parcial no meio muda o saldo e invalida o acordo, porque a conta dele
+partia do saldo antigo.
+
 ### Imagem da cobrança com fundo SVG
 O fundo é um SVG feito fora do sistema e desenhado em vetor na largura final
 (1080 px), então não perde qualidade. O sistema não posiciona nada por
@@ -283,6 +309,100 @@ QR, logo) desce inteiro. Uma imagem só é mais fácil de copiar e mandar que
 "1 de 2, 2 de 2". O fundo precisa ter, nessa altura, algo que aguente ser
 repetido (cor lisa, cartão, faixa lateral) — degradê vertical ali ficaria
 esticado. Até 30 linhas; acima disso, "e mais N".
+
+### Notificações guardadas no banco
+
+Cada notificação tem uma `chave` única que identifica o fato (ex.:
+`nao_pago:{cliente}:{vencimento}`), então verificar de novo nunca duplica, e o
+que foi lido continua lido depois de fechar o sistema. Os avisos são por cliente
+(e por dia de vencimento), não por honorário, para a lista não virar uma fila.
+"Não pago na data" olha os últimos 30 dias, para pegar o que venceu num feriado
+com o sistema fechado. Ao abrir, só o contador muda: o aviso do canto e a
+notificação do sistema aparecem para o que surge depois. O cartão de resumo que
+aparecia ao abrir foi retirado, porque mais atrapalhava do que ajudava.
+A verificação usa a data de hoje, não a data de referência da tela.
+
+### Agradecimento diferente da cobrança
+
+A imagem de agradecimento usava o mesmo cartão e a mesma faixa azul do total da
+cobrança e dava para confundir as duas. Agora ela é um cartão branco de
+comprovante: a logo no topo em fundo branco, sem trocar nenhuma cor dela; o selo
+azul-marinho com "✓" laranja e o valor num painel verde-água claro; a lista num
+canhoto picotado. O verde comum e a faixa verde-água forte foram descartados: o
+primeiro não é cor da empresa, e a segunda obrigava a recolorir a logo. Ela sai
+em 1620 px de largura (1,5× a cobrança), porque o desenho é todo vetor.
+
+### Geração automática: uma vez por competência
+
+Desligada por padrão. Quando ligada, ela roda a partir do dia escolhido e só uma
+vez por mês (fica gravado em `geracao_automatica_ultima`). Honorário cancelado
+não conta como "já lançado" na geração. Por isso, rodando toda hora, o que foi
+cancelado à mão voltaria. Pelo mesmo motivo, contrato com honorário cancelado na
+competência fica de fora mesmo quando a geração é ligada no meio do mês.
+
+### E-mail de cobranças: a lista é do financeiro, o andamento é do sistema
+
+Quem decide quem está em aberto é o financeiro: o e-mail dele é a fonte da
+lista. O sistema confere essa lista com os honorários vencidos e responde com
+o andamento das cobranças. A resposta usa a lista dele, sem quem saiu, e soma
+as anotações do e-mail às do sistema, sem repetir. A comparação é por texto
+normalizado.
+
+A linha do e-mail é casada pelo código do cliente, quando vem. Sem código, vale
+o vencimento mais o nome, e a abreviação conta como começo das palavras do nome
+cadastrado. Linha com colunas separadas (tabulação ou 2+ espaços) é lida por
+coluna, para a competência com espaços não grudar no nome. "Saiu da lista" só
+vale para o que venceu antes da data do e-mail, e ninguém é baixado
+automaticamente: o valor e a data do pagamento não estão no e-mail.
+
+O sistema não envia o e-mail: copia com a formatação, para colar em Responder
+a todos, ou salva um `.eml` com `In-Reply-To`/`References` (mesma conversa) e
+`X-Unsent: 1` (o Outlook abre como rascunho).
+
+### Caixa de e-mail: uma pasta, um assunto, nada além
+
+O sistema lê uma pasta só (que a regra do Outlook ou o filtro do Gmail
+preenche) e, dela, só os e-mails com o assunto da conversa, sem "RE:"/"ENC:" e
+sem acento. No IMAP a leitura é `readonly` com `BODY.PEEK`, então nada é
+marcado como lido na caixa. A autorização dá acesso técnico à caixa inteira;
+quem limita é a pasta.
+
+- **Microsoft 365 pelo Graph, com código de dispositivo.** A Microsoft não
+  aceita mais usuário e senha (IMAP/SMTP básico). O fluxo de código não precisa
+  de servidor nem de segredo do aplicativo, só do ID dele. As permissões são as
+  mínimas: `Mail.Read` e `Mail.Send`. A resposta usa `replyAll` com o corpo e
+  os destinatários editados, e não precisa de `Mail.ReadWrite`.
+- **Gmail e outros por IMAP/SMTP com senha de app.** O nome da pasta vai no
+  "UTF-7 modificado" do IMAP ("Cobranças" → `Cobran&AOc-as`).
+- **Segredos no cofre do sistema (`keyring`).** Senha e autorização renovável
+  ficam no cofre, nunca no banco nem em arquivo. Nos testes, um cofre em
+  memória substitui o real.
+- **Rede em segundo plano.** Verificar e enviar rodam no `QThreadPool`, sem
+  tocar na sessão do banco. O resultado volta por sinal, e é na tela que se
+  grava.
+- **Enviar sempre pede confirmação.** A resposta enviada é guardada na
+  conversa, e o e-mail original fica como "respondido".
+
+### Baixa dos que saíram da lista: prévia, não automática
+
+Quem sai da lista do financeiro provavelmente pagou, mas o e-mail não diz
+quando nem quanto. Por isso a baixa nunca é automática. Uma janela abre ao lado
+(não modal, para conferir no e-mail), com tudo marcado e editável:
+
+- data do pagamento: padrão é a data do e-mail, que é o limite de quando foi
+  pago;
+- valor: com juros até a data (padrão, igual à tela de pagamento) ou só o
+  original, com abono justificado "saiu da lista do financeiro de dd/mm";
+- forma de pagamento: padrão Boleto.
+
+A baixa só acontece com a confirmação. Um honorário que veio no e-mail mas já
+está pago no sistema (baixa depois do e-mail) é reconhecido e fica fora da
+resposta.
+
+### Comprovante sem data de pagamento
+
+O dia exato em que o dinheiro entrou nem sempre se sabe. Por isso o comprovante
+não mostra a data do pagamento, e cada linha traz o vencimento do honorário.
 
 ## Decisões técnicas
 

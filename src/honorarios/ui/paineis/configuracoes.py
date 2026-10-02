@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QPushButton,
     QSpinBox,
     QTableView,
     QTabWidget,
@@ -98,6 +100,52 @@ class PainelConfiguracoes(QWidget):
         self.tema.addItem("Escuro", "escuro")
         geral.addRow("Tema:", self.tema)
         layout.addWidget(grupo_geral)
+
+        grupo_geracao = QGroupBox("Honorários mensais")
+        geracao = QFormLayout(grupo_geracao)
+        self.geracao_automatica = QCheckBox("Gerar a competência do mês automaticamente")
+        geracao.addRow(self.geracao_automatica)
+        self.geracao_dia = QSpinBox()
+        self.geracao_dia.setRange(1, 28)
+        self.geracao_dia.setPrefix("dia ")
+        self.geracao_automatica.toggled.connect(self.geracao_dia.setEnabled)
+        geracao.addRow("A partir do:", self.geracao_dia)
+        explicacao = widgets.rotulo_fraco(
+            "Com o sistema aberto a partir desse dia, ele gera os honorários dos "
+            "contratos recorrentes, uma vez por mês, com as mesmas regras da geração "
+            "manual (suspensos e fora da vigência ficam de fora), e avisa nas "
+            "notificações. O que for cancelado depois não volta."
+        )
+        explicacao.setWordWrap(True)
+        geracao.addRow(explicacao)
+        layout.addWidget(grupo_geracao)
+
+        grupo_email = QGroupBox("E-mail de cobranças")
+        email = QFormLayout(grupo_email)
+        self.email_nome = QLineEdit()
+        self.email_nome.setPlaceholderText("Seu nome, como aparece no e-mail")
+        email.addRow("Seu nome:", self.email_nome)
+        self.email_remetente = QLineEdit()
+        self.email_remetente.setPlaceholderText("quem cobra e responde ao financeiro")
+        email.addRow("Seu e-mail:", self.email_remetente)
+        self.email_para = QLineEdit()
+        self.email_para.setPlaceholderText("Quem manda a lista (usado sem o .eml dele)")
+        email.addRow("E-mail do financeiro:", self.email_para)
+        self.email_cc = QLineEdit()
+        self.email_cc.setPlaceholderText("Separe vários com ponto e vírgula")
+        email.addRow("Cópia (Cc):", self.email_cc)
+        self.email_assunto = QLineEdit()
+        self.email_assunto.setPlaceholderText("Clientes c/Honorários vencidos")
+        email.addRow("Assunto do e-mail do financeiro:", self.email_assunto)
+        conta_linha = QHBoxLayout()
+        self.conta_email = widgets.rotulo_fraco("")
+        conta_linha.addWidget(self.conta_email, 1)
+        botao_conta = QPushButton("Conta de e-mail…")
+        botao_conta.setToolTip("Outlook ou Gmail: de onde vêm os e-mails e por onde sai a resposta")
+        botao_conta.clicked.connect(self._configurar_conta_email)
+        conta_linha.addWidget(botao_conta)
+        email.addRow("Caixa:", conta_linha)
+        layout.addWidget(grupo_email)
         layout.addWidget(
             widgets.rotulo_fraco(
                 "O sistema não envia mensagem nem emite boleto: ele monta o texto, "
@@ -423,6 +471,22 @@ class PainelConfiguracoes(QWidget):
         self.backup_ao_fechar.setCurrentIndex(
             0 if servico.obter_bool(sessao, "backup_ao_fechar", True) else 1
         )
+        from ...servicos import geracao_automatica
+
+        self.geracao_automatica.setChecked(geracao_automatica.ligada(sessao))
+        self.geracao_dia.setValue(geracao_automatica.dia(sessao))
+        self.geracao_dia.setEnabled(self.geracao_automatica.isChecked())
+        from ...servicos import email_cobrancas
+
+        dados_email = email_cobrancas.remetente(sessao)
+        self.email_nome.setText(dados_email.nome)
+        self.email_remetente.setText(dados_email.email)
+        self.email_para.setText(dados_email.para)
+        self.email_cc.setText(dados_email.cc)
+        self.email_assunto.setText(dados_email.assunto)
+        from ...servicos import caixa_email
+
+        self.conta_email.setText(caixa_email.conta(sessao).descricao)
         self.backup_manter.setValue(servico.obter_int(sessao, "backup_manter", 20))
         self._carregar_modelo()
         self.modelo_formas.definir_itens(servico_tipos.listar_formas(sessao, somente_ativas=False))
@@ -510,6 +574,16 @@ class PainelConfiguracoes(QWidget):
             servico.gravar(sessao, "tema", self.tema.currentData())
             servico.gravar(sessao, "backup_ao_fechar", self.backup_ao_fechar.currentData())
             servico.gravar(sessao, "backup_manter", str(self.backup_manter.value()))
+            servico.gravar(sessao, "geracao_automatica",
+                           "1" if self.geracao_automatica.isChecked() else "0")
+            servico.gravar(sessao, "geracao_automatica_dia", str(self.geracao_dia.value()))
+            from ...servicos import email_cobrancas
+
+            email_cobrancas.gravar_remetente(sessao, email_cobrancas.Remetente(
+                nome=self.email_nome.text(), email=self.email_remetente.text(),
+                para=self.email_para.text(), cc=self.email_cc.text(),
+                assunto=self.email_assunto.text(),
+            ))
             servico.gravar_ordem_saudacao(sessao, self.ordem_saudacao.valor())
             servico.modelo(sessao, chave).corpo = self.modelo_corpo.toPlainText()
             self.contexto.salvar()
@@ -519,6 +593,12 @@ class PainelConfiguracoes(QWidget):
             self.contexto.desfazer()
             return
         widgets.informar(self, "Configurações salvas.", "Pronto")
+
+    def _configurar_conta_email(self) -> None:
+        from ..dialogos.conta_email import DialogoContaEmail
+
+        if DialogoContaEmail(self.contexto, self).exec():
+            self.recarregar()
 
     def _nova_forma(self) -> None:
         nome, confirmou = QInputDialog.getText(

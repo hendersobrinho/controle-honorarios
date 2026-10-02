@@ -101,3 +101,46 @@ def test_compara_com_o_ano_anterior_so_com_base(sessao, ano):
     dados = relatorios.indicadores(sessao, 2026, REFERENCIA)
     assert dados.emitido_anterior == Decimal("400.00")
     assert any("a mais que no mesmo período de 2025" in frase for frase in dados.leituras())
+
+
+def test_pdf_do_painel(sessao, ano, tmp_path, monkeypatch):
+    from PIL import Image
+    from reportlab import rl_config
+
+    from honorarios.servicos import configuracoes, relatorio_painel
+
+    monkeypatch.setattr(rl_config, "pageCompression", 0)
+    graficos = {}
+    # cores diferentes: imagens iguais o reportlab guarda uma vez só
+    for chave, cor in (("quitacao", "#2a78d6"), ("caixa", "#eb6834"), ("origem", "#1baf7a")):
+        graficos[chave] = tmp_path / f"{chave}.png"
+        Image.new("RGB", (900, 300), cor).save(graficos[chave])
+
+    dados = relatorios.indicadores(sessao, 2026, REFERENCIA)
+    arquivo = relatorio_painel.painel_pdf(
+        dados, configuracoes.recebedor(sessao), tmp_path / "painel.pdf", graficos=graficos,
+        gerado_em=REFERENCIA,
+    )
+    conteudo = arquivo.read_bytes()
+    assert conteudo.startswith(b"%PDF")
+    assert conteudo.count(b"/Subtype /Image") == 3          # os três gráficos
+    for trecho in (b"Painel 2026", b"O que os n", b"Entrou no caixa por m", b"Total"):
+        assert trecho in conteudo, trecho
+    assert b"atraso h" not in conteudo                       # nada de atraso no painel
+
+
+def test_honorarios_do_mes_pela_competencia_ou_vencimento(sessao, ano):
+    from honorarios.servicos import honorarios as servico_honorarios
+
+    empresa, pessoa = ano
+    # IR tem competência só de ano: conta no mês do vencimento (abril)
+    fabricas.honorario(sessao, pessoa, valor="300.00", vencimento=date(2026, 4, 30),
+                       competencia=Competencia(2026), tipo=fabricas.tipo_irpf(sessao))
+    janeiro = servico_honorarios.do_mes(sessao, 2026, 1, REFERENCIA)
+    assert [linha.honorario.valor_original for linha in janeiro] == [Decimal("1000.00")]
+    # a competência 02/2026 vence em março, mas conta em fevereiro
+    assert len(servico_honorarios.do_mes(sessao, 2026, 2, REFERENCIA)) == 1
+    abril = servico_honorarios.do_mes(sessao, 2026, 4, REFERENCIA)
+    assert [linha.honorario.valor_original for linha in abril] == [Decimal("300.00")]
+    meses = servico_honorarios.meses_com_lancamento(sessao)
+    assert meses[0] == (2026, 4) and (2026, 1) in meses

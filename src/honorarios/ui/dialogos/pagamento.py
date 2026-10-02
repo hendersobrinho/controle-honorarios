@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QLabel,
     QPlainTextEdit,
     QVBoxLayout,
 )
@@ -78,6 +80,24 @@ class DialogoPagamento(QDialog):
         layout.addWidget(self.resultado)
         layout.addStretch(1)
 
+        from ...servicos import configuracoes
+
+        self.agradecer = QCheckBox("Abrir a imagem de agradecimento depois de registrar")
+        self.agradecer.setToolTip(
+            "Gera a imagem \"Pagamento recebido\" para mandar ao cliente, se quiser"
+        )
+        self.agradecer.setChecked(
+            configuracoes.obter_bool(self.contexto.sessao, "agradecimento_apos_baixa", False)
+        )
+        layout.addWidget(self.agradecer)
+
+        self.info_acordo = QLabel()
+        self.info_acordo.setObjectName("previaMensagem")
+        self.info_acordo.setWordWrap(True)
+        self.info_acordo.setVisible(False)
+        layout.addWidget(self.info_acordo)
+        self._justificativa_automatica = ""
+
         acoes = QHBoxLayout()
         acoes.addStretch(1)
         cancelar = widgets.QPushButton("Cancelar")
@@ -97,7 +117,22 @@ class DialogoPagamento(QDialog):
         self.juros_devidos.setText(formatar_moeda(previa.juros_devidos))
         self.total_devido.setText(formatar_moeda(previa.total_devido))
         self.valor_pago.definir(previa.sugestao_valor)
-        self.juros_cobrados.definir(previa.juros_devidos)
+        acordo = previa.juros_acordo is not None
+        self.juros_cobrados.definir(previa.juros_acordo if acordo else previa.juros_devidos)
+        # a justificativa do acordo entra sozinha, mas não apaga o que foi digitado
+        atual = self.justificativa.toPlainText()
+        if acordo and atual in ("", self._justificativa_automatica):
+            self.justificativa.setPlainText(previa.justificativa_acordo)
+            self._justificativa_automatica = previa.justificativa_acordo
+        elif not acordo and atual == self._justificativa_automatica:
+            self.justificativa.setPlainText("")
+            self._justificativa_automatica = ""
+        self.info_acordo.setVisible(acordo)
+        if acordo:
+            self.info_acordo.setText(
+                "<b>Acordo vigente nesta data.</b> " + previa.justificativa_acordo
+                + " O juros a mais desde então entra como abono."
+            )
         self._avaliar()
 
     def _avaliar(self) -> None:
@@ -134,11 +169,36 @@ class DialogoPagamento(QDialog):
         )
 
         def acao():
+            from ...servicos import configuracoes
+
             pagamentos.registrar(self.contexto.sessao, self.honorario, dados)
+            # a escolha da caixa fica guardada para a próxima baixa
+            configuracoes.gravar(self.contexto.sessao, "agradecimento_apos_baixa",
+                                 "1" if self.agradecer.isChecked() else "0")
             self.contexto.salvar()
 
         deu_certo, _ = widgets.executar(self, acao)
         if not deu_certo:
             self.contexto.desfazer()
             return
+        if self.agradecer.isChecked():
+            abrir_agradecimento(self.parent() or self, self.contexto, [self.honorario])
         self.accept()
+
+
+def abrir_agradecimento(parent, contexto, honorarios) -> None:
+    """A imagem "Pagamento recebido" dos honorários, para copiar ou salvar."""
+    from ...servicos import imagem_cobranca
+    from .imagem_cobranca import DialogoImagemCobranca
+
+    def acao():
+        return imagem_cobranca.montar_agradecimento(contexto.sessao, honorarios)
+
+    deu_certo, dados = widgets.executar(parent, acao)
+    if not deu_certo:
+        return
+    cliente = honorarios[0].cliente
+    DialogoImagemCobranca(
+        contexto, dados, f"agradecimento_{cliente.codigo}_{dados.campos['data'].replace('/', '-')}",
+        f"Agradecimento – {cliente.nome}", parent, agradecimento=True,
+    ).exec()

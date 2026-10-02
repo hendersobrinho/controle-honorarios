@@ -18,7 +18,7 @@ from ..dominio.enums import (
     StatusPagamento,
     TipoPessoa,
 )
-from ..dominio.valores import ZERO, Competencia, agora_utc, dinheiro, hoje
+from ..dominio.valores import ZERO, Competencia, agora_utc, dinheiro, hoje, somar_meses
 from ..infra.modelos import (
     Cliente,
     Cobranca,
@@ -558,3 +558,53 @@ def contar_cobrancas_no_dia(sessao: Session, dia: date) -> int:
             Cobranca.estornada_em.is_(None),
         )
     ) or 0
+
+
+# ------------------------------------------------------------- mês a mês
+
+
+def mes_do_honorario(honorario: Honorario) -> tuple[int, int]:
+    """Em que mês o honorário conta: o da competência; sem mês nela, o do vencimento."""
+    if honorario.competencia_mes and honorario.competencia_ano:
+        return honorario.competencia_ano, honorario.competencia_mes
+    return honorario.vencimento.year, honorario.vencimento.month
+
+
+def do_mes(
+    sessao: Session, ano: int, mes: int, referencia: date | None = None
+) -> list[LinhaHonorario]:
+    """Tudo o que foi emitido no mês — recorrente ou avulso, pago, em aberto ou cancelado."""
+    # o mês pode vir da competência ou do vencimento: busca uma janela folgada e filtra
+    inicio = date(ano, mes, 1)
+    consulta = (
+        select(Honorario)
+        .join(Cliente)
+        .where(
+            Cliente.excluido_em.is_(None),
+            or_(
+                (Honorario.competencia_ano == ano) & (Honorario.competencia_mes == mes),
+                (Honorario.vencimento >= inicio)
+                & (Honorario.vencimento < somar_meses(inicio, 1)),
+            ),
+        )
+    )
+    honorarios = [
+        honorario for honorario in sessao.scalars(consulta).unique().all()
+        if mes_do_honorario(honorario) == (ano, mes)
+    ]
+    atualizacoes = calculo.atualizar_varios(honorarios, referencia or hoje())
+    linhas = [
+        LinhaHonorario(honorario=honorario, atualizacao=atualizacoes[honorario.id])
+        for honorario in honorarios
+    ]
+    linhas.sort(key=lambda linha: (linha.cliente.nome, linha.honorario.vencimento))
+    return linhas
+
+
+def meses_com_lancamento(sessao: Session) -> list[tuple[int, int]]:
+    """Os meses que têm algum honorário, do mais recente para o mais antigo."""
+    meses = {
+        mes_do_honorario(honorario)
+        for honorario in sessao.scalars(select(Honorario)).unique().all()
+    }
+    return sorted(meses, reverse=True)
