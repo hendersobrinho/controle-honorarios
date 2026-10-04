@@ -308,6 +308,14 @@ def folha_de_estilo(tema: str = "claro") -> str:
     QLabel#vazioEmail {{ color: {c["texto_fraco"]}; padding: 24px;
         background: {c["superficie"]}; border: 1px dashed {c["borda"]};
         border-radius: 10px; }}
+    QPushButton#abaCaixa {{
+        background: {c["faixa"]}; color: {c["texto_fraco"]}; border: 1px solid {c["borda"]};
+        border-radius: 8px; padding: 6px 8px; font-weight: 600;
+    }}
+    QPushButton#abaCaixa:hover {{ color: {c["texto"]}; }}
+    QPushButton#abaCaixa:checked {{
+        background: {c["destaque"]}; color: #ffffff; border-color: {c["destaque"]};
+    }}
     QLabel#vazioTitulo {{ font-size: 16px; font-weight: 600; color: {c["texto_fraco"]}; }}
     QFrame#cabecalhoEmail {{ background: {c["superficie"]}; border: 1px solid {c["borda"]};
         border-radius: 10px; }}

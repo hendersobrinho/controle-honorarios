@@ -42,8 +42,8 @@ from email.utils import getaddresses, make_msgid, parsedate_to_datetime
 from hashlib import sha1
 from html import escape
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, defer
 
 from ..dominio.valores import agora_utc, formatar_data_hora, remover_acentos
 from ..infra.modelos import EmailMensagem, Notificacao
@@ -386,28 +386,92 @@ class CaixaImap:
             uids = (dados[0] or b"").split()
             if not uids:
                 return []
-            _, cabecalhos = imap.uid(
-                "FETCH", b",".join(uids).decode(),
-                "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID SUBJECT)])",
-            )
-            querer = []
-            for parte in cabecalhos:
-                if not isinstance(parte, tuple):
-                    continue
-                uid = re.search(rb"UID (\d+)", parte[0])
-                cabecalho = BytesParser(policy=policy.default).parsebytes(parte[1])
-                message_id = str(cabecalho.get("Message-ID", "")).strip()
-                if uid and da_conversa(str(cabecalho.get("Subject", "")), assunto_da_conversa) \
-                        and message_id not in ja_tenho:
-                    querer.append(uid.group(1))
-            for uid in querer:
-                _, partes = imap.uid("FETCH", uid.decode(), "(BODY.PEEK[])")
-                for parte in partes:
-                    if isinstance(parte, tuple):
-                        novas.append(de_mime(parte[1], ref_provedor=uid.decode()))
+            gmail = self.conta.provedor == GMAIL
+            conversas: set[bytes] = set()
+            querer = self._da_conversa(imap, uids, ja_tenho, assunto_da_conversa,
+                                       conversas if gmail else None)
+            novas.extend(self._baixar_uids(imap, querer))
+            vistos = ja_tenho | {m.message_id for m in novas}
+            if gmail and conversas:
+                novas.extend(self._resto_das_conversas(imap, conversas, vistos,
+                                                       assunto_da_conversa))
         finally:
             imap.logout()
         return novas
+
+    @staticmethod
+    def _da_conversa(imap, uids: list[bytes], ja_tenho: set[str], assunto_da_conversa: str,
+                     conversas: set[bytes] | None) -> list[bytes]:
+        """Os uids com o assunto da conversa que ainda não foram baixados.
+
+        No Gmail, guarda também o id da conversa (``X-GM-THRID``) de cada um.
+        """
+        campos = "BODY.PEEK[HEADER.FIELDS (MESSAGE-ID SUBJECT)]"
+        if conversas is not None:
+            campos = f"X-GM-THRID {campos}"
+        _, cabecalhos = imap.uid("FETCH", b",".join(uids).decode(), f"({campos})")
+        querer = []
+        for parte in cabecalhos:
+            if not isinstance(parte, tuple):
+                continue
+            uid = re.search(rb"UID (\d+)", parte[0])
+            cabecalho = BytesParser(policy=policy.default).parsebytes(parte[1])
+            if not uid or not da_conversa(str(cabecalho.get("Subject", "")),
+                                          assunto_da_conversa):
+                continue
+            conversa = re.search(rb"X-GM-THRID (\d+)", parte[0])
+            if conversas is not None and conversa:
+                conversas.add(conversa.group(1))
+            if str(cabecalho.get("Message-ID", "")).strip() not in ja_tenho:
+                querer.append(uid.group(1))
+        return querer
+
+    @staticmethod
+    def _baixar_uids(imap, uids: list[bytes], prefixo: str = "") -> list[MensagemBaixada]:
+        baixadas = []
+        for uid in uids:
+            _, partes = imap.uid("FETCH", uid.decode(), "(BODY.PEEK[])")
+            for parte in partes:
+                if isinstance(parte, tuple):
+                    baixadas.append(de_mime(parte[1], ref_provedor=prefixo + uid.decode()))
+        return baixadas
+
+    def _resto_das_conversas(self, imap, conversas: set[bytes], vistos: set[str],
+                             assunto_da_conversa: str) -> list[MensagemBaixada]:
+        """Gmail: as respostas das mesmas conversas que o filtro não marcou.
+
+        As respostas (as suas enviadas pelo Gmail e as que chegam depois) nem sempre
+        recebem o marcador. Elas são buscadas em "Todos os e-mails", mas só as das
+        conversas que já estão na pasta e com o assunto da conversa.
+        """
+        todos = self._pasta_todos(imap)
+        if todos is None:
+            return []
+        estado, _ = imap.select(todos, readonly=True)
+        if estado != "OK":
+            return []
+        uids: list[bytes] = []
+        for conversa in conversas:
+            _, dados = imap.uid("SEARCH", None, "X-GM-THRID", conversa.decode())
+            uids.extend((dados[0] or b"").split())
+        if not uids:
+            return []
+        querer = self._da_conversa(imap, uids, vistos, assunto_da_conversa, None)
+        return self._baixar_uids(imap, querer, prefixo="todos:")
+
+    @staticmethod
+    def _pasta_todos(imap) -> str | None:
+        """A pasta "Todos os e-mails" do Gmail (o nome muda com o idioma: vale a marca \\All)."""
+        estado, linhas = imap.list()
+        if estado != "OK":
+            return None
+        for linha in linhas or []:
+            texto = linha.decode("utf-8", "replace") if isinstance(linha, bytes) else str(linha)
+            if "\\All" in texto:
+                nome = re.search(r'"([^"]+)"\s*$', texto) or re.search(r"(\S+)\s*$", texto)
+                if nome:
+                    return f'"{nome.group(1)}"'
+        return None
 
     def responder(self, original: Original, resposta: Resposta) -> MensagemBaixada:
         mensagem = EmailMessage()
@@ -605,21 +669,19 @@ class CaixaMicrosoft:
         for item in self._get(caminho).get("value", []):
             if not da_conversa(item.get("subject", ""), assunto_da_conversa):
                 continue
-            message_id = item.get("internetMessageId") or f"<{item['id']}@graph>"
-            corpo = item.get("body", {})
-            html = corpo.get("content", "") if corpo.get("contentType") == "html" else ""
-            texto = _texto_de_html(html) if html else corpo.get("content", "")
-            mensagens.append(MensagemBaixada(
-                message_id=message_id,
-                assunto=item.get("subject", ""),
-                de=_endereco_graph(item.get("from")),
-                para=", ".join(_endereco_graph(d) for d in item.get("toRecipients", [])),
-                cc=", ".join(_endereco_graph(d) for d in item.get("ccRecipients", [])),
-                data=datetime.fromisoformat(item["receivedDateTime"].replace("Z", "+00:00")),
-                html=html, texto=texto,
-                conversa=item.get("conversationId", ""),
-                ref_provedor=item["id"],
-            ))
+            mensagens.append(_de_graph(item))
+        # as respostas das mesmas conversas que a regra não moveu para a pasta
+        vistos = {m.message_id for m in mensagens}
+        for conversa in {m.conversa for m in mensagens if m.conversa}:
+            filtro = urllib.parse.quote(f"conversationId eq '{conversa}'")
+            for item in self._get(f"/me/messages?$filter={filtro}&$top=50"
+                                  f"&$select={campos}").get("value", []):
+                if not da_conversa(item.get("subject", ""), assunto_da_conversa):
+                    continue
+                mensagem = _de_graph(item)
+                if mensagem.message_id not in vistos:
+                    vistos.add(mensagem.message_id)
+                    mensagens.append(mensagem)
         # o id do Graph muda se o e-mail mudar de pasta: os já guardados vêm também,
         # para atualizar a referência de resposta
         return [m for m in mensagens if m.message_id not in ja_tenho] + \
@@ -651,6 +713,24 @@ class CaixaMicrosoft:
             html=html, texto=resposta.texto, in_reply_to=original.message_id,
             conversa=original.conversa,
         )
+
+
+def _de_graph(item: dict) -> MensagemBaixada:
+    message_id = item.get("internetMessageId") or f"<{item['id']}@graph>"
+    corpo = item.get("body", {})
+    html = corpo.get("content", "") if corpo.get("contentType") == "html" else ""
+    texto = _texto_de_html(html) if html else corpo.get("content", "")
+    return MensagemBaixada(
+        message_id=message_id,
+        assunto=item.get("subject", ""),
+        de=_endereco_graph(item.get("from")),
+        para=", ".join(_endereco_graph(d) for d in item.get("toRecipients", [])),
+        cc=", ".join(_endereco_graph(d) for d in item.get("ccRecipients", [])),
+        data=datetime.fromisoformat(item["receivedDateTime"].replace("Z", "+00:00")),
+        html=html, texto=texto,
+        conversa=item.get("conversationId", ""),
+        ref_provedor=item["id"],
+    )
 
 
 def _endereco_graph(destinatario: dict | None) -> str:
@@ -726,7 +806,7 @@ def _notificar(sessao: Session, registro: EmailMensagem) -> None:
     sessao.add(Notificacao(
         chave=chave, tipo=servico_notificacoes.EMAIL,
         titulo=f"Chegou e-mail de {nome}: {registro.assunto}",
-        texto="Confira a lista e responda pela tela E-mail de cobranças",
+        texto="Confira a lista e responda pela tela E-mail",
         tela=servico_notificacoes.TELAS[servico_notificacoes.EMAIL],
     ))
     sessao.flush()
@@ -758,14 +838,21 @@ def guardar_do_arquivo(sessao: Session, recebido) -> EmailMensagem:
 
 
 def listar(sessao: Session, limite: int = 200) -> list[EmailMensagem]:
+    """Para a lista: sem o corpo dos e-mails (só é lido quando um é aberto)."""
     return list(sessao.scalars(
-        select(EmailMensagem).order_by(EmailMensagem.recebido_em.desc(), EmailMensagem.id.desc())
+        select(EmailMensagem)
+        .options(defer(EmailMensagem.corpo_html), defer(EmailMensagem.corpo_texto))
+        .order_by(EmailMensagem.recebido_em.desc(), EmailMensagem.id.desc())
         .limit(limite)
     ).all())
 
 
 def nao_lidos(sessao: Session) -> int:
-    return sum(1 for m in listar(sessao) if not m.lida)
+    return sessao.scalar(
+        select(func.count(EmailMensagem.id)).where(
+            EmailMensagem.lida_em.is_(None), EmailMensagem.enviada.is_(False)
+        )
+    ) or 0
 
 
 def marcar_lido(sessao: Session, mensagem: EmailMensagem) -> None:

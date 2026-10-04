@@ -144,3 +144,23 @@ def test_honorarios_do_mes_pela_competencia_ou_vencimento(sessao, ano):
     assert [linha.honorario.valor_original for linha in abril] == [Decimal("300.00")]
     meses = servico_honorarios.meses_com_lancamento(sessao)
     assert meses[0] == (2026, 4) and (2026, 1) in meses
+
+
+def test_contagem_do_menu_bate_com_as_telas(sessao):
+    from datetime import date
+
+    from honorarios.dominio.valores import Competencia
+    from honorarios.servicos import honorarios as servico
+    from testes import fabricas
+
+    cliente = fabricas.cliente(sessao)
+    for mes, vencimento in ((7, date(2026, 8, 5)), (8, date(2026, 9, 5)), (9, date(2026, 10, 5))):
+        fabricas.honorario(sessao, cliente, valor="100.00", vencimento=vencimento,
+                           competencia=Competencia(2026, mes))
+    sessao.commit()
+    referencia = date(2026, 9, 20)
+    contagem = servico.contar_pendentes(sessao, referencia)
+    linhas = servico.pendentes(sessao, servico.Filtro(data_referencia=referencia))
+    atrasados = sum(1 for linha in linhas if linha.atualizacao.dias_atraso > 0)
+    assert (contagem.atrasados, contagem.a_vencer) == (atrasados, len(linhas) - atrasados)
+    assert (contagem.atrasados, contagem.a_vencer, contagem.imposto_de_renda) == (2, 1, 0)

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..dominio.enums import (
@@ -423,6 +423,37 @@ def consultar(sessao: Session, filtro: Filtro) -> list[LinhaHonorario]:
             continue
         linhas.append(linha)
     return linhas
+
+
+@dataclass
+class Contagem:
+    atrasados: int = 0
+    a_vencer: int = 0
+    imposto_de_renda: int = 0
+
+
+def contar_pendentes(sessao: Session, referencia: date) -> Contagem:
+    """Os números do menu, contados no banco (sem carregar nem calcular nada).
+
+    Mesma regra das telas: em aberto, cliente não excluído; atrasado é o que
+    venceu antes da referência; quem só tem IR conta à parte.
+    """
+    so_ir = clientes_so_imposto_de_renda(sessao)
+    consulta = (
+        select(Honorario.cliente_id, Honorario.vencimento < referencia, func.count())
+        .join(Cliente)
+        .where(Honorario.status == StatusPagamento.EM_ABERTO, Cliente.excluido_em.is_(None))
+        .group_by(Honorario.cliente_id, Honorario.vencimento < referencia)
+    )
+    contagem = Contagem()
+    for cliente_id, vencido, quantidade in sessao.execute(consulta):
+        if cliente_id in so_ir:
+            contagem.imposto_de_renda += quantidade
+        elif vencido:
+            contagem.atrasados += quantidade
+        else:
+            contagem.a_vencer += quantidade
+    return contagem
 
 
 def pendentes(sessao: Session, filtro: Filtro | None = None) -> list[LinhaHonorario]:

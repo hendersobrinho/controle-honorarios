@@ -27,9 +27,13 @@ class _Tarefa(QRunnable):
         try:
             resultado = self.funcao()
         except Exception as falha:  # noqa: BLE001 - o erro volta para a tela
-            self.sinais.falhou.emit(falha)
+            sinal, valor = self.sinais.falhou, falha
         else:
-            self.sinais.terminou.emit(resultado)
+            sinal, valor = self.sinais.terminou, resultado
+        try:
+            sinal.emit(valor)
+        except RuntimeError:   # a tela fechou antes de a rede responder: nada a fazer
+            pass
 
 
 _vivas: set[_Tarefa] = set()   # segura a referência até o sinal chegar

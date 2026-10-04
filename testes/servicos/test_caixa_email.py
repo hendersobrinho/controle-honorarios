@@ -44,13 +44,22 @@ def test_reconhece_a_conversa():
 
 
 class ImapDeMentira:
-    """Uma pasta com três e-mails: dois da conversa (um já baixado) e um de fora."""
+    """A pasta Cobranças com três e-mails: dois da conversa (um já baixado) e um de
+    fora. Em "Todos os e-mails" do Gmail, a conversa 7 tem também uma resposta que
+    o filtro não marcou, e a conversa 9 é outro assunto."""
 
     caixas = {
         b"1": _mime("<a@x>", ASSUNTO),
         b"2": _mime("<b@x>", "RE: " + ASSUNTO),
         b"3": _mime("<c@x>", "Promoção imperdível"),
     }
+    todos = {
+        b"11": (b"7", _mime("<a@x>", ASSUNTO)),
+        b"12": (b"7", _mime("<b@x>", "RE: " + ASSUNTO)),
+        b"13": (b"7", _mime("<resposta@x>", "Re: RE: " + ASSUNTO)),
+        b"14": (b"9", _mime("<c@x>", "Promoção imperdível")),
+    }
+    conversas = {b"1": b"7", b"2": b"7", b"3": b"9"}
     instancias: list = []
 
     def __init__(self, host, porta, ssl_context=None, timeout=None):
@@ -65,19 +74,36 @@ class ImapDeMentira:
 
     def select(self, pasta, readonly=False):
         self.pasta, self.somente_leitura = pasta, readonly
-        return ("OK", [b"3"]) if pasta == '"Cobran&AOc-as"' else ("NO", [b""])
+        if pasta in ('"Cobran&AOc-as"', '"[Gmail]/Todos os e-mails"'):
+            return "OK", [b"3"]
+        return "NO", [b""]
+
+    def list(self):
+        return "OK", [b'(\\HasNoChildren) "/" "INBOX"',
+                      b'(\\All \\HasNoChildren) "/" "[Gmail]/Todos os e-mails"']
+
+    def _pasta(self):
+        if self.pasta == '"Cobran&AOc-as"':
+            return {uid: (self.conversas[uid], bruto) for uid, bruto in self.caixas.items()}
+        return self.todos
 
     def uid(self, comando, *argumentos):
         self.comandos.append((comando, argumentos))
+        pasta = self._pasta()
         if comando == "SEARCH":
-            return "OK", [b" ".join(self.caixas)]
+            if argumentos[1] == "X-GM-THRID":
+                return "OK", [b" ".join(u for u, (c, _) in pasta.items()
+                                        if c == argumentos[2].encode())]
+            return "OK", [b" ".join(pasta)]
         uids, pedido = argumentos
         saida = []
         for uid in uids.split(","):
-            bruto = self.caixas[uid.encode()]
+            conversa, bruto = pasta[uid.encode()]
+            extra = f"X-GM-THRID {conversa.decode()} " if "X-GM-THRID" in pedido else ""
             if "HEADER.FIELDS" in pedido:
                 cabecalho = bruto.split(b"\n\n")[0]
-                saida.append((f"{uid} (UID {uid} BODY[HEADER] {{1}}".encode(), cabecalho))
+                saida.append((f"{uid} ({extra}UID {uid} BODY[HEADER] {{1}}".encode(),
+                              cabecalho))
             else:
                 saida.append((f"{uid} (UID {uid} BODY[] {{1}}".encode(), bruto))
             saida.append(b")")
@@ -97,8 +123,8 @@ def conta_gmail():
 
 def test_imap_baixa_so_a_conversa_da_pasta(monkeypatch, conta_gmail):
     monkeypatch.setattr(servico.imaplib, "IMAP4_SSL", ImapDeMentira)
-    caixa = servico.CaixaImap(conta_gmail, "senha-de-app")
-    novas = caixa.baixar({"<a@x>"}, ASSUNTO)
+    conta_gmail.provedor = servico.IMAP                        # sem o recurso do Gmail
+    novas = servico.CaixaImap(conta_gmail, "senha-de-app").baixar({"<a@x>"}, ASSUNTO)
     assert [m.message_id for m in novas] == ["<b@x>"]          # o de fora e o já baixado não
     imap = ImapDeMentira.instancias[-1]
     assert imap.pasta == '"Cobran&AOc-as"' and imap.somente_leitura
@@ -225,7 +251,7 @@ def test_guardar_sem_repetir_e_avisar(sessao):
     [nova] = servico.guardar(sessao, servico.GMAIL, baixadas)
     assert not nova.lida and servico.nao_lidos(sessao) == 1
     [aviso] = notificacoes.listar(sessao)
-    assert aviso.tipo == notificacoes.EMAIL and aviso.tela == "E-mail de cobranças"
+    assert aviso.tipo == notificacoes.EMAIL and aviso.tela == "E-mail"
     assert "Financeiro" in aviso.titulo
     # de novo, com outra referência no provedor: não repete, só atualiza
     baixadas[0].ref_provedor = "9"
@@ -262,3 +288,13 @@ def test_mensagem_sem_id_ganha_um_estavel():
     primeira, segunda = servico.de_mime(bruto), servico.de_mime(bruto)
     assert primeira.message_id == segunda.message_id
     assert BytesParser(policy=policy.default).parsebytes(bruto)["Message-ID"] in (None, "")
+
+
+def test_gmail_pega_as_respostas_da_conversa_fora_do_marcador(monkeypatch, conta_gmail):
+    monkeypatch.setattr(servico.imaplib, "IMAP4_SSL", ImapDeMentira)
+    novas = servico.CaixaImap(conta_gmail, "senha-de-app").baixar({"<a@x>"}, ASSUNTO)
+    # a resposta que o filtro não marcou vem; a promoção (outra conversa) não
+    assert [m.message_id for m in novas] == ["<b@x>", "<resposta@x>"]
+    imap = ImapDeMentira.instancias[-1]
+    assert imap.pasta == '"[Gmail]/Todos os e-mails"' and imap.somente_leitura
+    assert all("PEEK" in args[1] for cmd, args in imap.comandos if cmd == "FETCH")

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QFont, QFontMetricsF, QKeySequence, QPainter
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QFont, QFontMetricsF, QKeySequence, QPainter
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -120,22 +120,29 @@ class JanelaPrincipal(QMainWindow):
             )),
         )
 
+        # Só as telas que trabalham desde a abertura são montadas já (a primeira
+        # tela e a do e-mail, que verifica a caixa); as outras, na primeira vez em
+        # que forem abertas — cada uma lê e calcula os seus dados ao ser montada.
+        ja_na_abertura = (grupos[0][1][0], PainelEmailCobrancas)
         self.paineis: list[QWidget] = []
         self.linhas_de_tela: dict[int, int] = {}   # linha da lista -> índice da tela
         self.itens_de_tela: dict[str, QListWidgetItem] = {}
+        self._recem_montada: QWidget | None = None
+        self._lidas: dict[int, tuple] = {}   # tela -> estado dos dados quando leu
         total = sum(len(classes) for _, classes in grupos)
         montadas = 0
-        for titulo_grupo, classes in grupos:
+        for numero, (titulo_grupo, classes) in enumerate(grupos):
             if self.navegacao.count():
                 self._separador()
-            self._cabecalho_grupo(titulo_grupo)
+            self._cabecalho_grupo(titulo_grupo, numero)
             for classe in classes:
                 self._progresso(10 + round(85 * montadas / total), f"Carregando {classe.titulo}…")
                 montadas += 1
-                painel = classe(self.contexto)
+                painel = classe(self.contexto) if classe in ja_na_abertura else TelaAdiada(classe)
                 indice = self.telas.addWidget(painel)
                 self.paineis.append(painel)
                 item = QListWidgetItem(classe.titulo)
+                item.setData(ContadorDoMenu.PAPEL_GRUPO, numero)
                 self.navegacao.addItem(item)
                 self.linhas_de_tela[self.navegacao.row(item)] = indice
                 self.itens_de_tela[classe.titulo] = item
@@ -154,7 +161,7 @@ class JanelaPrincipal(QMainWindow):
 
         atalho_atualizar = QAction("Atualizar", self)
         atalho_atualizar.setShortcut(QKeySequence("F5"))
-        atalho_atualizar.triggered.connect(self._recarregar_atual)
+        atalho_atualizar.triggered.connect(lambda: self._recarregar_atual(forcar=True))
         self.addAction(atalho_atualizar)
         for numero, linha in enumerate(list(self.linhas_de_tela)[:9], start=1):
             acao = QAction(self)
@@ -164,20 +171,19 @@ class JanelaPrincipal(QMainWindow):
             )
             self.addAction(acao)
 
-    def _cabecalho_grupo(self, titulo: str) -> None:
+    def _cabecalho_grupo(self, titulo: str, numero: int) -> None:
+        """O nome do grupo, na cor dele (desenhado pelo ContadorDoMenu)."""
         item = QListWidgetItem(titulo)
         item.setFlags(Qt.ItemFlag.NoItemFlags)
-        fonte = item.font()
-        fonte.setPointSizeF(max(8.0, fonte.pointSizeF() - 2))
-        fonte.setBold(True)
-        item.setFont(fonte)
-        item.setForeground(tema.cor("texto_fraco", cores.tema_atual()))
+        item.setData(ContadorDoMenu.PAPEL_CABECALHO, numero)
+        item.setSizeHint(QSize(0, 34))
         self.navegacao.addItem(item)
 
     def _separador(self) -> None:
         espaco = QListWidgetItem()
         espaco.setFlags(Qt.ItemFlag.NoItemFlags)
-        espaco.setSizeHint(QSize(0, 12))
+        espaco.setData(ContadorDoMenu.PAPEL_SEPARADOR, True)
+        espaco.setSizeHint(QSize(0, 18))
         self.navegacao.addItem(espaco)
 
     def _mensagem_status(self) -> str:
@@ -188,38 +194,47 @@ class JanelaPrincipal(QMainWindow):
             f"{formatar_data(self.contexto.data_referencia)} · banco: {caminho_banco()}"
         )
 
+    def tela(self, indice: int) -> QWidget:
+        """A tela desse índice, montada agora se ainda não foi."""
+        atual = self.telas.widget(indice)
+        if not isinstance(atual, TelaAdiada):
+            return atual
+        painel = atual.classe(self.contexto)   # já lê os dados ao ser montada
+        era_a_atual = self.telas.currentIndex() == indice
+        self.telas.insertWidget(indice, painel)
+        self.telas.removeWidget(atual)
+        atual.deleteLater()
+        self.paineis[self.paineis.index(atual)] = painel
+        if era_a_atual:
+            self.telas.setCurrentIndex(indice)
+        self._recem_montada = painel
+        return painel
+
     def _trocar_tela(self, linha: int) -> None:
         indice = self.linhas_de_tela.get(linha)
         if indice is None:  # clicou num título de grupo
             return
+        self.tela(indice)
         self.telas.setCurrentIndex(indice)
         self._recarregar_atual()  # também atualiza os contadores
         self.statusBar().showMessage(self._mensagem_status())
 
     def _atualizar_contadores(self) -> None:
         """Quantidade ao lado das telas de cobrança, para ver o volume sem abrir."""
+        from ..servicos import caixa_email
         from ..servicos import honorarios as servico_honorarios
-        from ..servicos.honorarios import Filtro
 
-        try:
-            so_ir = servico_honorarios.clientes_so_imposto_de_renda(self.contexto.sessao)
-            pendentes = servico_honorarios.pendentes(
-                self.contexto.sessao, Filtro(data_referencia=self.contexto.data_referencia)
+        try:   # contado no banco: não carrega nem calcula os honorários
+            contagem = servico_honorarios.contar_pendentes(
+                self.contexto.sessao, self.contexto.data_referencia
             )
+            emails = caixa_email.nao_lidos(self.contexto.sessao)
         except Exception:  # noqa: BLE001 - contador nunca derruba a navegação
             return
-        from ..servicos import caixa_email
-
-        try:
-            emails = caixa_email.nao_lidos(self.contexto.sessao)
-        except Exception:  # noqa: BLE001
-            emails = 0
-        demais = [linha for linha in pendentes if linha.cliente.id not in so_ir]
-        atrasados = sum(1 for linha in demais if linha.atualizacao.dias_atraso > 0)
         contagens = (
-            (PainelAtrasados.titulo, atrasados),
-            (PainelAVencer.titulo, len(demais) - atrasados),
-            (PainelImpostoRenda.titulo, len(pendentes) - len(demais)),
+            (PainelAtrasados.titulo, contagem.atrasados),
+            (PainelAVencer.titulo, contagem.a_vencer),
+            (PainelImpostoRenda.titulo, contagem.imposto_de_renda),
             (PainelEmailCobrancas.titulo, emails),
         )
         for titulo, quantidade in contagens:
@@ -227,10 +242,20 @@ class JanelaPrincipal(QMainWindow):
             if item is not None:
                 item.setData(ContadorDoMenu.PAPEL, quantidade or None)
 
-    def _recarregar_atual(self) -> None:
+    def _estado_dos_dados(self) -> tuple:
+        return (self.contexto.versao, self.contexto.data_referencia, hoje())
+
+    def _recarregar_atual(self, forcar: bool = False) -> None:
+        """Relê a tela aberta — ao voltar a uma tela, só se algo mudou desde a última
+        leitura (gravação no banco, dia ou data de referência). F5 sempre relê."""
         painel = self.telas.currentWidget()
-        if hasattr(painel, "recarregar"):
+        recem = painel is self._recem_montada   # acabou de ler os dados ao ser montada
+        self._recem_montada = None
+        estado = self._estado_dos_dados()
+        em_dia = self._lidas.get(id(painel)) == estado
+        if hasattr(painel, "recarregar") and (forcar or not (recem or em_dia)):
             widgets.executar(self, painel.recarregar)
+        self._lidas[id(painel)] = estado
         self._atualizar_contadores()
 
     def _aplicar_tema(self) -> None:
@@ -369,14 +394,14 @@ class JanelaPrincipal(QMainWindow):
         item = self.itens_de_tela.get(notificacao.tela)
         if item is None:
             return
-        painel = self.telas.widget(self.linhas_de_tela[self.navegacao.row(item)])
+        painel = self.tela(self.linhas_de_tela[self.navegacao.row(item)])
         busca = getattr(painel, "busca", None)
         if busca is not None and cliente is not None:
             busca.blockSignals(True)
             busca.setText(cliente.nome)
             busca.blockSignals(False)
         if self.navegacao.currentItem() is item:
-            self._recarregar_atual()
+            self._recarregar_atual(forcar=True)
         else:
             self.navegacao.setCurrentItem(item)
 
@@ -415,13 +440,60 @@ class JanelaPrincipal(QMainWindow):
 INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000   # meia hora
 
 
+class TelaAdiada(QWidget):
+    """Lugar de uma tela que ainda não foi aberta (montada na primeira vez)."""
+
+    def __init__(self, classe) -> None:
+        super().__init__()
+        self.classe = classe
+        self.titulo = classe.titulo
+
+
+# cor de cada grupo do menu (Cobrança, Cadastros, Gestão): as cores da logo,
+# em tons que dão leitura sobre o fundo claro e sobre o escuro
+CORES_DOS_GRUPOS = {
+    "claro": ("#1E8A9A", "#C27A1A", "#203461"),
+    "escuro": ("#6FD3E0", "#F9B259", "#A9B8E6"),
+}
+
+
+def cor_do_grupo(numero: int) -> QColor:
+    tons = CORES_DOS_GRUPOS.get(cores.tema_atual(), CORES_DOS_GRUPOS["claro"])
+    return QColor(tons[numero % len(tons)])
+
+
 class ContadorDoMenu(QStyledItemDelegate):
-    """Desenha a quantidade ao lado da tela como um selo no laranja da logo."""
+    """O menu lateral: o nome de cada grupo na cor dele, um fio da mesma cor ao
+    lado das telas do grupo, a linha entre grupos e a quantidade num selo laranja."""
 
     PAPEL = Qt.ItemDataRole.UserRole + 1
+    PAPEL_GRUPO = Qt.ItemDataRole.UserRole + 2       # tela: a que grupo pertence
+    PAPEL_CABECALHO = Qt.ItemDataRole.UserRole + 3   # nome do grupo
+    PAPEL_SEPARADOR = Qt.ItemDataRole.UserRole + 4
 
     def paint(self, pintor: QPainter, opcao, indice) -> None:
+        caixa = QRectF(opcao.rect)
+        if indice.data(self.PAPEL_SEPARADOR):
+            pintor.save()
+            pintor.setPen(tema.cor("borda", cores.tema_atual()))
+            meio = caixa.center().y()
+            pintor.drawLine(QPointF(caixa.left() + 8, meio), QPointF(caixa.right() - 8, meio))
+            pintor.restore()
+            return
+        cabecalho = indice.data(self.PAPEL_CABECALHO)
+        if cabecalho is not None:
+            self._cabecalho(pintor, caixa, indice.data(Qt.ItemDataRole.DisplayRole),
+                            cor_do_grupo(cabecalho))
+            return
         super().paint(pintor, opcao, indice)
+        grupo = indice.data(self.PAPEL_GRUPO)
+        if grupo is not None:   # o fio do grupo, à esquerda das telas dele
+            pintor.save()
+            cor = cor_do_grupo(grupo)
+            cor.setAlpha(150)
+            pintor.fillRect(QRectF(caixa.left() + 1, caixa.top() + 2, 2, caixa.height() - 4),
+                            cor)
+            pintor.restore()
         quantidade = indice.data(self.PAPEL)
         if not quantidade:
             return
@@ -446,4 +518,26 @@ class ContadorDoMenu(QStyledItemDelegate):
         pintor.setFont(fonte)
         pintor.setPen(tema.cor("texto_sobre_marca", nome))
         pintor.drawText(caixa, Qt.AlignmentFlag.AlignCenter, texto)
+        pintor.restore()
+
+    @staticmethod
+    def _cabecalho(pintor: QPainter, caixa: QRectF, titulo: str, cor: QColor) -> None:
+        pintor.save()
+        pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
+        faixa = QRectF(caixa.left() + 1, caixa.top() + 4, caixa.width() - 2, caixa.height() - 8)
+        fundo = QColor(cor)
+        fundo.setAlpha(28)
+        pintor.setPen(Qt.PenStyle.NoPen)
+        pintor.setBrush(fundo)
+        pintor.drawRoundedRect(faixa, 6, 6)
+        pintor.setBrush(cor)
+        pintor.drawRoundedRect(QRectF(faixa.left(), faixa.top(), 4, faixa.height()), 2, 2)
+        fonte = QFont(pintor.font())
+        fonte.setPixelSize(11)
+        fonte.setBold(True)
+        fonte.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.2)
+        pintor.setFont(fonte)
+        pintor.setPen(cor)
+        pintor.drawText(faixa.adjusted(14, 0, -6, 0),
+                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, titulo)
         pintor.restore()

@@ -351,6 +351,10 @@ def responder(sessao: Session, conferencia: Conferencia, referencia: date,
             bloco = grupos.setdefault(chave, BlocoCliente(nome=nome))
             bloco.linhas.append(LinhaEmail(lida.competencia, lida.vencimento, lida.valor))
         bloco.notas.extend(lida.notas)
+    for incompleta in conferencia.leitura.incompletas:
+        chave = ("texto", normalizar_busca(incompleta.texto))
+        bloco = grupos.setdefault(chave, BlocoCliente(nome=incompleta.texto))
+        bloco.notas.extend(incompleta.notas)
     for chave, bloco in grupos.items():
         do_sistema = notas_do_sistema(honorarios_do_grupo.get(chave, []))
         if bloco.cliente is not None:
@@ -365,6 +369,8 @@ def texto(email: EmailCobrancas) -> str:
     partes = [f"Cobranças de {formatar_data(email.referencia)}", "",
               "Cliente\tCompetência\tVencimento\tValor", ""]
     for bloco in email.blocos:
+        if not bloco.linhas:   # cliente que veio sem vencimento e valor
+            partes.append(bloco.nome)
         for linha in bloco.linhas:
             partes.append(f"{bloco.nome}\t{linha.competencia}\t{linha.vencimento_texto}\t"
                           f"{linha.valor_texto}")
@@ -383,6 +389,10 @@ def html(email: EmailCobrancas) -> str:
     celula = f"padding:1px 18px 1px 0;color:{_AZUL};white-space:nowrap"
     linhas_html = []
     for bloco in email.blocos:
+        if not bloco.linhas:   # cliente que veio sem vencimento e valor
+            linhas_html.append(
+                f"<tr><td colspan='4' style='{celula}'>{escape(bloco.nome)}</td></tr>"
+            )
         for linha in bloco.linhas:
             linhas_html.append(
                 f"<tr><td style='{celula}'>{escape(bloco.nome)}</td>"
@@ -467,9 +477,18 @@ class LinhaLida:
 
 
 @dataclass
+class Incompleta:
+    """Cliente na lista sem vencimento ou valor (linha cortada ao copiar)."""
+
+    texto: str
+    notas: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Leitura:
     data: date | None
     linhas: list[LinhaLida]
+    incompletas: list[Incompleta] = field(default_factory=list)
 
 
 _LINHA = re.compile(
@@ -512,15 +531,67 @@ def _colunas(linha: str) -> dict[str, str] | None:
     return dict(zip(("cliente", "competencia", "vencimento", "valor"), partes, strict=True))
 
 
+_SO_DATA = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+_SO_VALOR = re.compile(r"^\d{1,3}(?:[.,]?\d{3})*[.,]\d{2}$")
+_SO_COMPETENCIA_NUMERO = re.compile(r"^\d{1,2}/\d{4}$")
+_CABECALHOS = {"cliente", "competência", "competencia", "vencimento", "valor"}
+_SO_COMPETENCIA = re.compile(r"^(\d{1,2}/\d{4}|[A-Za-zÀ-ú]+)$")
+
+
+def _cabeca(linha: str) -> bool:
+    """Pedaço de linha de honorário (nome, competência) que não é data nem valor."""
+    return bool(linha) and not (
+        _SO_DATA.match(linha) or _SO_VALOR.match(linha) or _NOTA.match(linha)
+        or _IGNORAR.match(linha) or _DATA.search(linha)
+        or _colunas(linha) or _LINHA.match(linha)
+    )
+
+
+def _reagrupar(linhas: list[str]) -> list[str]:
+    """Junta as colunas que vieram em linhas separadas (lista copiada de PDF ou de
+    uma tabela): "nome / competência / vencimento / valor", uma por linha, ou
+    blocos de N nomes seguidos de N vencimentos e N valores."""
+    saida, i, n = [], 0, len(linhas)
+    while i < n:
+        atual = linhas[i]
+        # nome, competência, vencimento e valor, um em cada linha
+        if (i + 3 < n and _cabeca(atual) and _SO_COMPETENCIA.match(linhas[i + 1])
+                and _SO_DATA.match(linhas[i + 2]) and _SO_VALOR.match(linhas[i + 3])):
+            saida.append("\t".join(linhas[i:i + 4]))
+            i += 4
+            continue
+        # N linhas "nome competência", depois N vencimentos e N valores
+        k = 0
+        while i + k < n and _cabeca(linhas[i + k]):
+            k += 1
+        if k and i + 3 * k <= n and all(_SO_DATA.match(x) for x in linhas[i + k:i + 2 * k]) \
+                and all(_SO_VALOR.match(x) for x in linhas[i + 2 * k:i + 3 * k]):
+            for j in range(k):
+                saida.append(f"{linhas[i + j]}\t{linhas[i + k + j]}\t{linhas[i + 2 * k + j]}")
+            i += 3 * k
+            continue
+        saida.append(atual)
+        i += 1
+    return saida
+
+
 def ler(texto_email: str) -> Leitura:
-    """As linhas de honorário e as anotações de cada cliente."""
+    """As linhas de honorário e as anotações de cada cliente.
+
+    Aceita uma linha por honorário (colunas separadas por espaços ou tabulação)
+    e também as colunas em linhas separadas, como sai ao copiar de um PDF.
+    """
     encontrada = _DATA.search(texto_email)
     data_email = _data(encontrada.group(1)) if encontrada else None
     linhas: list[LinhaLida] = []
+    incompletas: list[Incompleta] = []
+    alvo: list[str] | None = None          # as anotações do último cliente lido
+    incompleta: Incompleta | None = None
     ultima_nota: list[str] | None = None
-    for bruta in texto_email.splitlines():
-        linha = bruta.replace(" ", " ").strip()
-        if not linha or _IGNORAR.match(linha):
+    limpas = [bruta.replace("\u00a0", " ").strip() for bruta in texto_email.splitlines()]
+    agrupadas = _reagrupar([linha for linha in limpas if linha])
+    for indice, linha in enumerate(agrupadas):
+        if _IGNORAR.match(linha) or linha.lower() in _CABECALHOS:
             continue
         casou = _colunas(linha) or _LINHA.match(linha)
         if casou:
@@ -534,15 +605,30 @@ def ler(texto_email: str) -> Leitura:
                 codigo, nome = com_codigo["codigo"], com_codigo["nome"].strip()
             linhas.append(LinhaLida(nome, casou["competencia"], vencimento,
                                     _valor(casou["valor"]), codigo))
-            ultima_nota = None
+            alvo, incompleta, ultima_nota = linhas[-1].notas, None, None
             continue
         nota = _NOTA.match(linha)
-        if nota and linhas:
-            linhas[-1].notas.append(f"{nota['dia']}: {nota['texto'].strip()}")
-            ultima_nota = linhas[-1].notas
-        elif ultima_nota is not None and not _DATA.search(linha):
-            ultima_nota[-1] += " " + linha   # a anotação continua na linha de baixo
-    return Leitura(data_email, linhas)
+        if nota and alvo is not None:
+            alvo.append(f"{nota['dia']}: {nota['texto'].strip()}")
+            ultima_nota = alvo
+            continue
+        # a anotação continua na linha de baixo (frase sem ponto final)
+        if ultima_nota and not ultima_nota[-1].rstrip().endswith((".", "!", "?")) \
+                and not _DATA.search(linha):
+            ultima_nota[-1] += " " + linha
+            continue
+        if incompleta is not None and _SO_COMPETENCIA_NUMERO.match(linha):
+            incompleta.texto += f" {linha}"
+            continue
+        # nome de cliente sem vencimento nem valor, seguido de anotação ou competência
+        proxima = agrupadas[indice + 1] if indice + 1 < len(agrupadas) else ""
+        if _cabeca(linha) and (_NOTA.match(proxima) or _SO_COMPETENCIA_NUMERO.match(proxima)):
+            incompleta = Incompleta(linha)
+            incompletas.append(incompleta)
+            alvo, ultima_nota = incompleta.notas, None
+            continue
+        ultima_nota = None
+    return Leitura(data_email, linhas, incompletas)
 
 
 class _TextoDoHtml(HTMLParser):

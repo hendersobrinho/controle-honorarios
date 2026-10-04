@@ -24,6 +24,7 @@ from pathlib import Path
 from PySide6.QtCore import QMimeData, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -213,7 +214,13 @@ class AbaConferencia(QWidget):
         self.arvore.clear()
         self.faixa_saiu.setVisible(bool(conferencia and conferencia.sairam))
         if conferencia is None:
-            self.resumo.setText("Este e-mail não tem a lista de honorários para conferir.")
+            self.resumo.setText(
+                "Não encontrei a lista de honorários neste e-mail. O sistema procura, para "
+                "cada honorário, o cliente, a competência, o vencimento (dd/mm/aaaa) e o "
+                "valor — numa linha ou cada coluna numa linha, como sai ao copiar do PDF. "
+                "Confira o e-mail na aba Mensagem."
+            )
+            self.resumo.setWordWrap(True)
             self._atualizar_botoes()
             return
         if conferencia.sairam:
@@ -254,6 +261,13 @@ class AbaConferencia(QWidget):
                     formatar_moeda(lida.valor) if lida.valor is not None else "",
                     "  ".join(lida.notas),
                 )
+        incompletas = conferencia.leitura.incompletas
+        if incompletas:
+            grupo = self._grupo("No e-mail sem vencimento ou valor — confira no e-mail",
+                                len(incompletas))
+            for incompleta in incompletas:
+                self._linha(grupo, FORA, incompleta.texto, "", "", "",
+                            "  ".join(incompleta.notas))
         partes = [f"{len(conferencia.continuam)} continuam", f"{len(conferencia.sairam)} saíram"]
         if conferencia.pagos:
             partes.append(f"{len(conferencia.pagos)} já pagos")
@@ -330,8 +344,11 @@ class AbaResponder(QWidget):
         self.aviso = widgets.rotulo_fraco("")
         self.aviso.setWordWrap(True)
         barra.addWidget(self.aviso, 1)
-        self.botao_refazer = QPushButton("Refazer pelo sistema")
-        self.botao_refazer.setToolTip("Descarta as edições e monta a resposta de novo")
+        self.botao_refazer = QPushButton("Desfazer minhas edições")
+        self.botao_refazer.setToolTip(
+            "Volta a resposta para o texto que o sistema montou (lista do financeiro sem "
+            "quem pagou + os retornos anotados), descartando o que você escreveu"
+        )
         self.botao_refazer.clicked.connect(self.painel.montar_resposta)
         self.botao_copiar = QPushButton("Copiar")
         self.botao_copiar.setToolTip("Copia com a formatação, para colar no Outlook")
@@ -415,7 +432,7 @@ class AbaResponder(QWidget):
 
 # ------------------------------------------------------------------ tela
 class PainelEmailCobrancas(QWidget):
-    titulo = "E-mail de cobranças"
+    titulo = "E-mail"
     chegaram = Signal(int)   # e-mails novos baixados (para a janela avisar)
     recarregado = Signal()   # houve baixa: a janela atualiza os contadores
 
@@ -432,7 +449,7 @@ class PainelEmailCobrancas(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
         self.cabecalho = widgets.Cabecalho(
-            "E-mail de cobranças", "A conversa \"Clientes c/Honorários vencidos\" com o financeiro"
+            "E-mail", "A conversa \"Clientes c/Honorários vencidos\" com o financeiro"
         )
         self.situacao = widgets.rotulo_fraco("")
         self.cabecalho.acoes.addWidget(self.situacao)
@@ -444,9 +461,11 @@ class PainelEmailCobrancas(QWidget):
         self.menu_acoes.setObjectName("menuAcoes")
         self.menu_acoes.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.menu_acoes)
-        menu.addAction("Abrir e-mail de arquivo…", lambda: self.abrir_arquivo())
+        menu.addAction("Abrir e-mail salvo no computador (.eml, PDF)…",
+                       lambda: self.abrir_arquivo())
         menu.addAction("Colar o texto de um e-mail…", self.colar_texto)
-        menu.addAction("Montar a lista pelo sistema", self.montar_pelo_sistema)
+        menu.addAction("Gerar a lista dos vencidos sem o e-mail do financeiro",
+                       self.montar_pelo_sistema)
         menu.addSeparator()
         menu.addAction("Conta de e-mail…", self.configurar_conta)
         self.menu_acoes.setMenu(menu)
@@ -457,6 +476,21 @@ class PainelEmailCobrancas(QWidget):
         esquerda = QWidget()
         esquerda_layout = QVBoxLayout(esquerda)
         esquerda_layout.setContentsMargins(0, 0, 0, 0)
+        esquerda_layout.setSpacing(6)
+        caixas = QHBoxLayout()
+        caixas.setSpacing(6)
+        self.botao_recebidos = QPushButton("Recebidos")
+        self.botao_enviados = QPushButton("Enviados por você")
+        self.grupo_caixas = QButtonGroup(self)
+        for botao in (self.botao_recebidos, self.botao_enviados):
+            botao.setObjectName("abaCaixa")
+            botao.setCheckable(True)
+            botao.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.grupo_caixas.addButton(botao)
+            caixas.addWidget(botao, 1)
+        self.botao_recebidos.setChecked(True)
+        self.grupo_caixas.buttonClicked.connect(lambda *_: self._trocar_caixa())
+        esquerda_layout.addLayout(caixas)
         self.lista = QListWidget()
         self.lista.setObjectName("listaEmails")
         self.lista.setSpacing(2)
@@ -540,8 +574,8 @@ class PainelEmailCobrancas(QWidget):
         self.conferencia_aba = AbaConferencia(self)
         self.responder = AbaResponder(self)
         self.abas.addTab(self.corpo, "Mensagem")
-        self.abas.addTab(self.conferencia_aba, "Conferência")
-        self.abas.addTab(self.responder, "Responder")
+        self.abas.addTab(self.conferencia_aba, "Conferir com o sistema")
+        self.abas.addTab(self.responder, "Sua resposta")
         layout.addWidget(self.abas, 1)
         return pagina
 
@@ -570,7 +604,16 @@ class PainelEmailCobrancas(QWidget):
         self.lista.blockSignals(True)
         self.lista.clear()
         selecionar = None
-        for mensagem in caixa_email.listar(self.contexto.sessao):
+        todas = caixa_email.listar(self.contexto.sessao)
+        enviadas = sum(1 for m in todas if m.enviada)
+        novas = sum(1 for m in todas if not m.lida)
+        self.botao_recebidos.setText(f"Recebidos · {novas} nova(s)" if novas
+                                     else f"Recebidos ({len(todas) - enviadas})")
+        self.botao_enviados.setText(f"Enviados por você ({enviadas})")
+        mostrar_enviadas = self.botao_enviados.isChecked()
+        for mensagem in todas:
+            if mensagem.enviada != mostrar_enviadas:
+                continue
             item = QListWidgetItem()
             item.setData(PAPEL_MENSAGEM, mensagem.id)
             widget = ItemEmail(mensagem)
@@ -585,8 +628,23 @@ class PainelEmailCobrancas(QWidget):
         tem = self.lista.count() > 0
         self.lista.setVisible(tem)
         self.lista_vazia.setVisible(not tem)
+        self.lista_vazia.setText(
+            "Nenhuma resposta enviada pelo sistema ainda." if mostrar_enviadas else
+            "Nenhum e-mail recebido ainda.\n\nClique em Verificar caixa, ou abra um e-mail "
+            "salvo pelo menu Ações."
+        )
         if self.mensagem is None and self.conferencia is None:
             self.direita.setCurrentIndex(0)
+
+    def _trocar_caixa(self) -> None:
+        self._preencher_lista()
+        if self.lista.currentItem() is None:   # o aberto é da outra caixa
+            self.mensagem = None
+            self.direita.setCurrentIndex(0)
+
+    def mostrar_caixa(self, enviados: bool) -> None:
+        (self.botao_enviados if enviados else self.botao_recebidos).setChecked(True)
+        self._trocar_caixa()
 
     def _abrir_item(self, item: QListWidgetItem | None) -> None:
         if item is None:
@@ -618,8 +676,11 @@ class PainelEmailCobrancas(QWidget):
         self.direita.setCurrentIndex(1)
         self.reconferir()
         tem_lista = self.conferencia is not None
-        self.abas.setTabEnabled(1, tem_lista)
+        # a conferência abre mesmo sem lista: lá diz o que faltou para reconhecer
+        self.abas.setTabEnabled(1, not mensagem.enviada)
         self.abas.setTabEnabled(2, not mensagem.enviada and tem_lista)
+        self.abas.setTabToolTip(2, "" if tem_lista else
+                                "Sem a lista de honorários reconhecida não há o que responder")
         self.botao_responder.setVisible(not mensagem.enviada and tem_lista)
         if not self.abas.isTabEnabled(self.abas.currentIndex()):
             self.abas.setCurrentIndex(0)
@@ -658,13 +719,14 @@ class PainelEmailCobrancas(QWidget):
         if self.mensagem is not None and not self.mensagem.enviada:
             recebido = caixa_email.recebido_de(self.mensagem)
             leitura = servico.ler(recebido.texto)
-            if leitura.linhas:
+            if leitura.linhas or leitura.incompletas:
                 self.conferencia = servico.conferir(
                     self.contexto.sessao, leitura, self.contexto.data_referencia
                 )
         self.conferencia_aba.mostrar(self.conferencia)
         saiu = len(self.conferencia.sairam) if self.conferencia is not None else 0
-        self.abas.setTabText(1, f"Conferência · {saiu} saíram" if saiu else "Conferência")
+        self.abas.setTabText(1, f"Conferir com o sistema · {saiu} saíram" if saiu
+                             else "Conferir com o sistema")
         self.montar_resposta()
 
     def montar_resposta(self) -> None:

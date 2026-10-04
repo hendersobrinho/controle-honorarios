@@ -404,6 +404,24 @@ resposta.
 O dia exato em que o dinheiro entrou nem sempre se sabe. Por isso o comprovante
 não mostra a data do pagamento, e cada linha traz o vencimento do honorário.
 
+### Mais leve: telas montadas quando abertas e sem reler à toa
+
+Medido com cerca de mil honorários em aberto:
+
+- Abrir o sistema levava 2,0 s porque montava as 14 telas, e cada uma lia e
+  calculava os seus dados. Agora só a primeira tela e a de E-mail (que verifica
+  a caixa) são montadas ao abrir; as outras, na primeira vez em que são
+  abertas. Abrir caiu para 0,7 s.
+- Toda troca de tela relia a tela e, para os contadores do menu, carregava
+  todos os honorários em aberto com juros e histórico. Agora:
+  - os contadores são uma contagem direta no banco;
+  - a tela só relê se algo foi gravado desde a última leitura (o `Contexto`
+    conta as gravações) ou se o dia ou a data de referência mudaram. O F5
+    sempre relê.
+  Voltar a uma tela já aberta caiu de até 0,35 s para 0,04 s.
+- A lista de e-mails não carrega o corpo das mensagens; o corpo só é lido
+  quando o e-mail é aberto.
+
 ## Decisões técnicas
 
 ### SQLAlchemy 2.0 + Alembic

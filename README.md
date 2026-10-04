@@ -75,10 +75,14 @@ Os testes de interface usam `pytest-qt` e rodam sem servidor gráfico
 A navegação é agrupada por momento do trabalho:
 
 - **Cobrança**: primeiro as telas com contador ao lado (Atrasados, A vencer e
-  Imposto de Renda), depois Pagos, Cobranças enviadas e E-mail de cobranças.
-  Este último também tem contador, com os e-mails não lidos.
+  Imposto de Renda), depois Pagos, Cobranças enviadas e E-mail. A tela E-mail
+  também tem contador, com os e-mails não lidos.
 - **Cadastros**.
 - **Gestão**.
+
+Cada grupo tem a sua cor da logo (Cobrança em verde-água, Cadastros em
+laranja, Gestão em azul). O nome do grupo fica numa faixa, e um fio da mesma cor
+acompanha as telas dele.
 
 Atalhos: `F5` atualiza, `Ctrl+1..9` troca de tela, `Ctrl+B` cobra, `Ctrl+P`
 registra pagamento, `Ctrl+R` registra a resposta, `Ctrl+F` abre a ficha, `Ctrl+C`
@@ -145,21 +149,22 @@ Ela roda uma vez por competência, então o que você cancelar depois no Mês a 
 não volta. Um contrato criado no meio do mês entra pela geração manual, e a
 tela Mês a mês avisa o que falta.
 
-### E-mail de cobranças
+### E-mail
 
 O financeiro manda o e-mail **"Clientes c/Honorários vencidos"** com a lista de
 quem está em aberto, e quem cobra responde com o andamento. A tela **E-mail de
-cobranças** é uma caixa de e-mail só dessa conversa.
+cobranças** — no menu, só **E-mail** — é uma caixa de e-mail só dessa conversa.
 
 **A tela**
-- À esquerda ficam os e-mails da pasta e as respostas enviadas daqui. As
-  etiquetas mostram a situação: *Nova*, *Respondida*, *Enviada daqui*.
+- À esquerda, duas listas separadas: **Recebidos** (o que o financeiro mandou,
+  com as etiquetas *Nova* e *Respondida*) e **Enviados por você** (as respostas
+  que saíram do sistema).
 - **Verificar caixa** busca os e-mails novos. O sistema também verifica sozinho
   ao abrir e a cada 30 minutos. E-mail novo vira notificação, e o menu mostra
   quantos não foram lidos.
 - À direita fica o e-mail aberto, com três abas:
   - **Mensagem**: o e-mail como chegou.
-  - **Conferência**: quem continua, quem **saiu da lista** (provável
+  - **Conferir com o sistema**: quem continua, quem **saiu da lista** (provável
     pagamento), o que já foi pago no sistema e o que não bate com nada.
     - Ao abrir um e-mail novo com gente que saiu, a janela **Baixa dos que
       saíram da lista** abre sozinha, ao lado, sem travar o sistema, para
@@ -171,10 +176,11 @@ cobranças** é uma caixa de e-mail só dessa conversa.
       registre o que ele disse (não respondeu, prometeu pagar em…, pediu
       renegociação…). Se há uma cobrança esperando resposta, o retorno vai
       nela; senão, vira um contato de hoje.
-  - **Responder**: a resposta pronta. Ela mantém a lista do financeiro, sem
+  - **Sua resposta**: a resposta pronta. Ela mantém a lista do financeiro, sem
     quem saiu, com as anotações das cobranças. Para, Cc e assunto vêm
     preenchidos ("Responder a todos"). Dá para escrever no texto antes de
-    enviar. **Enviar resposta** pede confirmação e envia pela sua conta, na
+    enviar; **Desfazer minhas edições** volta ao texto que o sistema montou.
+    **Enviar resposta** pede confirmação e envia pela sua conta, na
     mesma conversa, com o e-mail do financeiro citado embaixo. Também há
     **Copiar** e **Salvar rascunho**.
 - Sem conta configurada, o menu **Ações** abre um e-mail de arquivo (.eml, PDF

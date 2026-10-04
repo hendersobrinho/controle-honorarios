@@ -285,3 +285,54 @@ def test_anotar_retorno_na_cobranca_que_espera_ou_contato_novo(sessao, carteira)
     with pytest.raises(ErroDeValidacao):
         acompanhamento.anotar_retorno(sessao, ipe, [linha.honorario],
                                       ResultadoCobranca.AGUARDANDO)
+
+
+# a lista copiada de um PDF: cada coluna numa linha, um bloco em colunas e
+# clientes que perderam vencimento e valor na cópia
+COPIADO_DO_PDF = """\
+Cobranças de 24/09/2026
+Cliente
+Competência
+Vencimento
+Valor
+Alfa Móveis Ltda.
+07/2026
+05/08/2026
+1.507,80
+Beta Representações 02/2026
+Beta Representações 03/2026
+16/03/2026
+16/04/2026
+158,00
+344,00
+17/09: Feito cobrança - disse que está sem caixa. Vai precisar
+de um tempo para pagar.
+Gama Serviços
+22/09: Pagou hoje.
+Delta Consult.
+08/2026
+17/09: Feito cobrança sem retorno
+"""
+
+
+def test_le_colunas_em_linhas_separadas():
+    leitura = servico.ler(COPIADO_DO_PDF)
+    assert [(x.cliente, x.competencia, x.vencimento, x.valor) for x in leitura.linhas] == [
+        ("Alfa Móveis Ltda.", "07/2026", date(2026, 8, 5), Decimal("1507.80")),
+        ("Beta Representações", "02/2026", date(2026, 3, 16), Decimal("158.00")),
+        ("Beta Representações", "03/2026", date(2026, 4, 16), Decimal("344.00")),
+    ]
+    assert leitura.linhas[-1].notas == [
+        "17/09: Feito cobrança - disse que está sem caixa. Vai precisar de um tempo para pagar."
+    ]
+    # sem vencimento e valor: à parte, com as anotações delas (não grudam na Beta)
+    assert [(i.texto, i.notas) for i in leitura.incompletas] == [
+        ("Gama Serviços", ["22/09: Pagou hoje."]),
+        ("Delta Consult. 08/2026", ["17/09: Feito cobrança sem retorno"]),
+    ]
+
+
+def test_incompletas_voltam_na_resposta(sessao, carteira):
+    conferencia = servico.conferir(sessao, servico.ler(COPIADO_DO_PDF), HOJE)
+    corpo = servico.texto(servico.responder(sessao, conferencia, HOJE))
+    assert "Gama Serviços" in corpo and "22/09: Pagou hoje." in corpo

@@ -449,7 +449,7 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
     assert janela.telas.count() == 14
     assert len(janela.linhas_de_tela) == 14
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
-    assert "E-mail de cobranças" in titulos
+    assert "E-mail" in titulos
     assert "Cobranças enviadas" in titulos and "Ranking dos atrasados" in titulos
     assert "Imposto de Renda" in titulos and "Grupos e tipos" in titulos
     # recorrentes e avulsos viraram abas de uma tela só
@@ -1643,7 +1643,7 @@ def test_caixa_de_email_verificar_conferir_e_responder(
     # abrir: marca como lido, confere e já prepara a resposta
     painel.lista.setCurrentRow(0)
     assert painel.mensagem.lida
-    assert painel.abas.tabText(1) == "Conferência · 1 saíram"
+    assert painel.abas.tabText(1) == "Conferir com o sistema · 1 saíram"
     assert "1 continuam · 1 saíram" in painel.conferencia_aba.resumo.text()
     responder = painel.responder
     assert responder.para.text() == "Financeiro <financeiro@exemplo.com.br>"
@@ -1665,18 +1665,21 @@ def test_caixa_de_email_verificar_conferir_e_responder(
     assert "Bom dia!" in resposta.texto
     assert painel.mensagem.message_id == original.message_id
     assert painel.mensagem.respondida_em is not None
-    assert painel.lista.count() == 2                             # a enviada entra na lista
     assert responder.aviso.text() == "✓ Resposta enviada."
-    enviada = next(r for r in range(2) if painel.lista.itemWidget(
-        painel.lista.item(r)).quem.text() == "Você")
-    painel.lista.setCurrentRow(enviada)                          # a resposta: só leitura
+    # recebidos e enviados ficam separados
+    assert painel.lista.count() == 1
+    assert painel.botao_enviados.text() == "Enviados por você (1)"
+    painel.mostrar_caixa(enviados=True)
+    assert painel.lista.count() == 1 and painel.direita.currentIndex() == 0
+    painel.lista.setCurrentRow(0)                                # a resposta: só leitura
     assert painel.mensagem.enviada and not painel.abas.isTabEnabled(2)
-    painel.lista.setCurrentRow(1 - enviada)                      # reabrindo o original
+    painel.mostrar_caixa(enviados=False)
+    painel.lista.setCurrentRow(0)                                # reabrindo o original
     assert "Já respondido" in responder.aviso.text()
 
     # de novo, nada repetido
     painel.verificar()
-    assert painel.lista.count() == 2 and chegaram == [1]
+    assert painel.lista.count() == 1 and chegaram == [1]
 
 
 def test_caixa_de_email_sem_conta(qtbot, contexto, cliente_com_debito, tmp_path):
@@ -1797,3 +1800,32 @@ def test_caixa_de_email_baixa_dos_que_sairam_e_retorno(
     texto = painel.responder.editor.toPlainText()
     assert "prometeu pagar em 05/10 - vai pagar o de agosto dia 05" in texto
     assert "A resposta já inclui o retorno" in painel.responder.aviso.text()
+
+
+def test_telas_montadas_ao_abrir_e_sem_reler_a_toa(qtbot, contexto, monkeypatch):
+    from honorarios.ui.janela_principal import JanelaPrincipal, TelaAdiada
+
+    janela = JanelaPrincipal(contexto)
+    qtbot.addWidget(janela)
+    adiadas = [janela.telas.widget(i) for i in range(janela.telas.count())
+               if isinstance(janela.telas.widget(i), TelaAdiada)]
+    assert len(adiadas) == janela.telas.count() - 2       # só Atrasados e E-mail já montadas
+
+    linha_pagos = next(linha for linha, indice in janela.linhas_de_tela.items()
+                       if janela.telas.widget(indice).titulo == "Pagos")
+    janela.navegacao.setCurrentRow(linha_pagos)            # monta na primeira vez
+    pagos = janela.telas.currentWidget()
+    assert not isinstance(pagos, TelaAdiada) and pagos.titulo == "Pagos"
+
+    leituras = []
+    monkeypatch.setattr(pagos, "recarregar", lambda: leituras.append(1))
+    primeira = next(iter(janela.linhas_de_tela))
+    janela.navegacao.setCurrentRow(primeira)
+    janela.navegacao.setCurrentRow(linha_pagos)
+    assert leituras == []                                  # nada mudou: não relê
+    contexto.salvar()                                      # gravou algo
+    janela.navegacao.setCurrentRow(primeira)
+    janela.navegacao.setCurrentRow(linha_pagos)
+    assert leituras == [1]
+    janela._recarregar_atual(forcar=True)                  # F5 sempre relê
+    assert leituras == [1, 1]
