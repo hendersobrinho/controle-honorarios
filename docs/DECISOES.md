@@ -455,6 +455,29 @@ pela Páscoa), Nossa Senhora da Penha (ES) e 23 de maio (Vila Velha), em
 
 ## Decisões técnicas
 
+### PostgreSQL no escritório, SQLite no desenvolvimento
+
+Instalado, o banco é o PostgreSQL de um computador da rede, compartilhado por
+todos. A conexão é pedida no primeiro uso. Ela fica num JSON em `%APPDATA%`, e
+a senha no cofre do sistema. O código-fonte e os testes seguem em SQLite. A
+mesma bateria roda contra um PostgreSQL de teste (`HONORARIOS_TESTE_PG`), e foi
+assim que apareceram as diferenças corrigidas:
+
+- **Índice único "só quando preenchido":** só tinha a condição do SQLite, e
+  ganhou a do PostgreSQL.
+- **`strftime` e `date()`:** existem só no SQLite e viraram `extract` ou
+  intervalo de datas.
+- **`GROUP BY` com comparação:** o PostgreSQL exige a mesma expressão do
+  `SELECT`, então a comparação passou para o Python.
+- **Tamanho das colunas:** o PostgreSQL recusa texto maior que a coluna. Os
+  títulos de notificação e os campos de e-mail são cortados no tamanho.
+
+O backup do PostgreSQL vai para um SQLite local (mesmo formato dos outros
+backups), tabela por tabela, na ordem das chaves estrangeiras. A coluna que
+aponta para a própria tabela (`cliente.empresa_id`) é preenchida numa segunda
+passada, e os contadores de id são acertados depois. Só se restaura backup da
+mesma versão do banco.
+
 ### SQLAlchemy 2.0 + Alembic
 Migrations versionadas eram requisito. O ORM evita SQL manual espalhado por 20
 telas, e o Alembic é o par natural. Banco novo é criado pelo metadata e marcado

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import QByteArray, QPoint, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
@@ -27,14 +27,15 @@ from PySide6.QtWidgets import (
 from ...dominio.valores import FUSO_LOCAL, formatar_data
 from . import logo
 
+ICONE = logo.ICONE
+
 
 def icone_da_marca() -> QIcon:
-    """Só o "m" da logo, quadrado: ícone da janela e da notificação do sistema."""
-    texto = logo.ARQUIVO.read_text(encoding="utf-8")
-    renderizador = QSvgRenderer(QByteArray(texto.encode("utf-8")))
-    renderizador.setViewBox(QRectF(10, 0, 112, 118))   # a marca, sem o "financeiro"
+    """O ícone do programa (o mesmo da área de trabalho): janela, barra de tarefas e
+    notificação do sistema. Vetor: desenhado em cada tamanho, sempre nítido."""
+    renderizador = QSvgRenderer(str(ICONE))
     icone = QIcon()
-    for lado in (16, 32, 64, 128, 256):
+    for lado in (16, 20, 24, 32, 40, 48, 64, 96, 128, 256):
         imagem = QPixmap(lado, lado)
         imagem.fill(QColor(0, 0, 0, 0))
         pintor = QPainter(imagem)

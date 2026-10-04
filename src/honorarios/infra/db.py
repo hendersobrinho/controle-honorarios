@@ -6,10 +6,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import URL, Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..config.caminhos import caminho_banco
 from .modelos import Base
 
 _engine: Engine | None = None
@@ -25,12 +24,26 @@ def _ligar_pragmas(engine: Engine) -> None:
         cursor.close()
 
 
-def criar_engine(caminho: Path | str | None = None, echo: bool = False) -> Engine:
-    destino = str(caminho or caminho_banco())
-    url = destino if destino.startswith("sqlite") else f"sqlite:///{destino}"
-    engine = create_engine(url, echo=echo, future=True)
-    _ligar_pragmas(engine)
-    return engine
+def _url(destino: Path | str | URL | None) -> URL | str:
+    """Caminho de arquivo vira SQLite; URL vale como está; nada = a configuração."""
+    if destino is None:
+        from ..config.conexao import url_do_banco
+
+        return url_do_banco()
+    if isinstance(destino, URL) or "://" in str(destino):
+        return destino
+    return f"sqlite:///{destino}"
+
+
+def criar_engine(caminho: Path | str | URL | None = None, echo: bool = False) -> Engine:
+    url = _url(caminho)
+    if (url.drivername if isinstance(url, URL) else str(url)).startswith("sqlite"):
+        engine = create_engine(url, echo=echo, future=True)
+        _ligar_pragmas(engine)
+        return engine
+    # PostgreSQL na rede: confere a conexão antes de usar (o servidor pode ter caído)
+    return create_engine(url, echo=echo, future=True, pool_pre_ping=True,
+                         connect_args={"connect_timeout": 10})
 
 
 def configurar(caminho: Path | str | None = None, criar: bool = True) -> Engine:

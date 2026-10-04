@@ -43,7 +43,7 @@ class JanelaPrincipal(QMainWindow):
         self.contexto = contexto
         self._progresso = progresso or (lambda *_: None)
         self.bandeja = None   # ícone na bandeja do sistema, para a notificação do sistema
-        self.setWindowTitle("Controle de Honorários – Métodos Serviços Contábeis")
+        self.setWindowTitle("Financeiro Métodos")
         self.resize(1360, 820)
         self._montar()
         self._aplicar_tema()
@@ -182,11 +182,11 @@ class JanelaPrincipal(QMainWindow):
         self.navegacao.addItem(espaco)
 
     def _mensagem_status(self) -> str:
-        from ..config.caminhos import caminho_banco
+        from ..config.conexao import descricao
 
         return (
             f"Hoje: {formatar_data(hoje())} · data de referência: "
-            f"{formatar_data(self.contexto.data_referencia)} · banco: {caminho_banco()}"
+            f"{formatar_data(self.contexto.data_referencia)} · banco: {descricao()}"
         )
 
     def tela(self, indice: int) -> QWidget:
@@ -358,10 +358,10 @@ class JanelaPrincipal(QMainWindow):
             return
         if self.bandeja is None:
             self.bandeja = QSystemTrayIcon(icone_da_marca(), self)
-            self.bandeja.setToolTip("Controle de Honorários")
+            self.bandeja.setToolTip("Financeiro Métodos")
             self.bandeja.messageClicked.connect(self._trazer_e_abrir)
             self.bandeja.show()
-        self.bandeja.showMessage("Controle de Honorários", texto, icone_da_marca(), 10000)
+        self.bandeja.showMessage("Financeiro Métodos", texto, icone_da_marca(), 10000)
 
     def _trazer_e_abrir(self) -> None:
         self.showNormal()
@@ -420,7 +420,8 @@ class JanelaPrincipal(QMainWindow):
         """Backup automático ao fechar, se estiver ligado nas configurações."""
         sessao = self.contexto.sessao
         try:
-            if servico_configuracoes.obter_bool(sessao, "backup_ao_fechar", True):
+            if servico_configuracoes.obter_bool(sessao, "backup_ao_fechar", True) and \
+                    not getattr(self, "sem_backup_ao_fechar", False):
                 manter = servico_configuracoes.obter_int(sessao, "backup_manter", 20)
                 servico_backup.gerar("ao-fechar", manter)
         except Exception:  # noqa: BLE001

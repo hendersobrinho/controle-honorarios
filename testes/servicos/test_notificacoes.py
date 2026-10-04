@@ -93,3 +93,14 @@ def test_marcar_lidas_e_limpar_antigas(sessao):
     # lidas há mais de dois meses saem da lista
     servico.limpar_antigas(sessao, agora=agora_utc() + timedelta(days=61))
     assert servico.listar(sessao) == []
+
+
+def test_titulo_longo_cabe_na_coluna(sessao):
+    from honorarios.infra.modelos import Notificacao
+
+    nome = "EMPRESA COM NOME MUITO GRANDE LTDA " * 5          # 175 caracteres
+    aviso = Notificacao(chave="x", tipo=servico.NAO_PAGO, tela="Atrasados",
+                        titulo=f"{nome}: 2 honorários venceram em 10/09/2026 sem pagamento")
+    sessao.add(aviso)
+    sessao.commit()                                  # no PostgreSQL, maior que 200 falharia
+    assert len(aviso.titulo) == 200 and aviso.titulo.endswith("…")

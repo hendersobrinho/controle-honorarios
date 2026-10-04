@@ -5,7 +5,6 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy import event
 
-from honorarios.config.caminhos import caminho_banco
 from honorarios.infra.db import criar_engine
 from honorarios.infra.modelos import Base
 
@@ -23,8 +22,10 @@ def render_item(tipo, obj, autogen_context):  # noqa: ANN001
 
 
 def run_migrations_offline() -> None:
+    from honorarios.config.conexao import url_do_banco
+
     context.configure(
-        url=f"sqlite:///{caminho_banco()}",
+        url=url_do_banco(),
         target_metadata=target_metadata,
         literal_binds=True,
         render_as_batch=True,
@@ -35,17 +36,20 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    engine = criar_engine()
+    # o engine do aplicativo (o mesmo banco já aberto); sem ele, o da configuração
+    engine = config.attributes.get("engine") or criar_engine()
+    if engine.dialect.name == "sqlite":
+        engine = criar_engine(engine.url)   # conexão própria, para o PRAGMA abaixo
 
-    # O SQLite altera coluna recriando a tabela (batch). Com as chaves
-    # estrangeiras ligadas, o DROP TABLE intermediário é recusado — então elas
-    # ficam desligadas durante a migration. O listener é registrado depois do
-    # que o aplicativo instala, e por isso é o último a valer.
-    @event.listens_for(engine, "connect")
-    def _sem_chaves_estrangeiras(conexao, _registro):  # noqa: ANN001
-        cursor = conexao.cursor()
-        cursor.execute("PRAGMA foreign_keys=OFF")
-        cursor.close()
+        # O SQLite altera coluna recriando a tabela (batch). Com as chaves
+        # estrangeiras ligadas, o DROP TABLE intermediário é recusado — então elas
+        # ficam desligadas durante a migration. O listener é registrado depois do
+        # que o aplicativo instala, e por isso é o último a valer.
+        @event.listens_for(engine, "connect")
+        def _sem_chaves_estrangeiras(conexao, _registro):  # noqa: ANN001
+            cursor = conexao.cursor()
+            cursor.execute("PRAGMA foreign_keys=OFF")
+            cursor.close()
 
     with engine.connect() as conexao:
         context.configure(

@@ -18,10 +18,25 @@ def pasta_dados(tmp_path, monkeypatch):
     return tmp_path
 
 
+# HONORARIOS_TESTE_PG=<url do SQLAlchemy> roda tudo contra um PostgreSQL de teste
+# (as tabelas são apagadas e recriadas a cada teste: use um banco só para isso)
+URL_TESTE_PG = os.environ.get("HONORARIOS_TESTE_PG")
+
+
 @pytest.fixture
-def sessao(pasta_dados):
+def sessao(pasta_dados, monkeypatch):
     db.encerrar()
-    db.configurar(pasta_dados / "teste.db", criar=True)
+    if URL_TESTE_PG:
+        monkeypatch.setenv("HONORARIOS_BANCO_URL", URL_TESTE_PG)
+        engine = db.configurar(URL_TESTE_PG, criar=False)
+        from honorarios.infra.modelos import Base
+
+        Base.metadata.drop_all(engine)
+        with engine.begin() as conexao:   # o que o Alembic deixou de outro teste
+            conexao.exec_driver_sql("drop table if exists alembic_version")
+        Base.metadata.create_all(engine)
+    else:
+        db.configurar(pasta_dados / "teste.db", criar=True)
     with db.sessao() as aberta:
         carga_inicial.aplicar(aberta)
         aberta.commit()

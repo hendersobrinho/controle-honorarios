@@ -458,13 +458,14 @@ def contar_pendentes(sessao: Session, referencia: date) -> Contagem:
     """
     so_ir = clientes_so_imposto_de_renda(sessao)
     consulta = (
-        select(Honorario.cliente_id, Honorario.vencimento < referencia, func.count())
+        select(Honorario.cliente_id, Honorario.vencimento, func.count())
         .join(Cliente)
         .where(Honorario.status == StatusPagamento.EM_ABERTO, Cliente.excluido_em.is_(None))
-        .group_by(Honorario.cliente_id, Honorario.vencimento < referencia)
+        .group_by(Honorario.cliente_id, Honorario.vencimento)
     )
     contagem = Contagem()
-    for cliente_id, vencido, quantidade in sessao.execute(consulta):
+    for cliente_id, vencimento, quantidade in sessao.execute(consulta):
+        vencido = vencimento < referencia
         if cliente_id in so_ir:
             contagem.imposto_de_renda += quantidade
         elif vencido:
@@ -629,11 +630,13 @@ def total_de(linhas: Iterable[LinhaHonorario]) -> Decimal:
 
 
 def contar_cobrancas_no_dia(sessao: Session, dia: date) -> int:
-    from sqlalchemy import func
+    from datetime import UTC, datetime, time
 
+    inicio = datetime.combine(dia, time.min, tzinfo=UTC)   # o dia (UTC), sem função de data
     return sessao.scalar(
         select(func.count(Cobranca.id)).where(
-            func.date(Cobranca.data_hora) == dia.isoformat(),
+            Cobranca.data_hora >= inicio,
+            Cobranca.data_hora < inicio + timedelta(days=1),
             Cobranca.estornada_em.is_(None),
         )
     ) or 0

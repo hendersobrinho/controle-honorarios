@@ -18,6 +18,9 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# saída do instalador e a prévia do ícone (geradas)
+instalador/saida/
+instalador/financeiro_metodos_512.png
 .pytest_cache/
 .ruff_cache/
 .coverage

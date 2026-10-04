@@ -428,6 +428,15 @@ class PainelConfiguracoes(QWidget):
         self.backup_manter = QSpinBox()
         self.backup_manter.setRange(1, 200)
         formulario.addRow("Quantos backups manter:", self.backup_manter)
+        linha_pasta = QHBoxLayout()
+        self.pasta_dados = widgets.rotulo_fraco("")
+        self.pasta_dados.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        linha_pasta.addWidget(self.pasta_dados, 1)
+        trocar = widgets.QPushButton("Trocar conexão…")
+        trocar.setToolTip("Conectar a outro servidor ou banco (o sistema fecha para trocar)")
+        trocar.clicked.connect(self._trocar_pasta_dados)
+        linha_pasta.addWidget(trocar)
+        formulario.addRow("Banco de dados:", linha_pasta)
         layout.addLayout(formulario)
 
         botoes = QHBoxLayout()
@@ -498,6 +507,10 @@ class PainelConfiguracoes(QWidget):
 
         self.conta_email.setText(caixa_email.conta(sessao).descricao)
         self.backup_manter.setValue(servico.obter_int(sessao, "backup_manter", 20))
+        from ...config.caminhos import pasta_backups
+        from ...config.conexao import descricao
+
+        self.pasta_dados.setText(f"{descricao()} · backups em {pasta_backups()}")
         self._carregar_modelo()
         self.modelo_backups.definir_itens(servico_backup.listar())
         for tabela, modelo in (
@@ -607,6 +620,32 @@ class PainelConfiguracoes(QWidget):
 
         if DialogoContaEmail(self.contexto, self).exec():
             self.recarregar()
+
+    def _trocar_pasta_dados(self) -> None:
+        """Conecta a outro banco; antes, um backup do atual. O sistema fecha para trocar
+        (o banco aberto continua sendo o antigo até reabrir)."""
+        from ..dialogos.primeiro_uso import DialogoPrimeiroUso
+
+        if not widgets.confirmar(
+            self, "Trocar a conexão com o banco?", "Banco de dados",
+            "Antes, é feito um backup do banco atual. Depois de escolher, o sistema fecha; "
+            "ao abrir de novo, ele usa a conexão nova.", acao="Configurar a conexão…",
+        ):
+            return
+        deu_certo, _ = widgets.executar(
+            self, lambda: servico_backup.gerar("antes-de-trocar-pasta",
+                                               self.backup_manter.value()))
+        if not deu_certo:
+            return
+        dialogo = DialogoPrimeiroUso(self)
+        dialogo.setWindowTitle("Trocar a conexão com o banco")
+        if not dialogo.exec():
+            return
+        widgets.informar(self, "Conexão trocada. O sistema vai fechar agora — abra de novo "
+                               "para usar o banco novo.", "Banco de dados")
+        janela = self.window()
+        janela.sem_backup_ao_fechar = True   # o backup "ao fechar" já foi feito acima
+        janela.close()
 
     def _gerar_backup(self) -> None:
         def acao():

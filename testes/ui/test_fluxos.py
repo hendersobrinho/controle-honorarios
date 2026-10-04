@@ -1841,9 +1841,10 @@ def test_dialogo_conta_de_email(qtbot, contexto, cofre, monkeypatch):
     assert conta.provedor == caixa_email.GMAIL and conta.pasta == "Cobranças"
     assert caixa_email.ler_segredo(caixa_email.chave_senha("cobranca@exemplo.com.br")) == \
         "abcdefghijklmnop"                                       # no cofre, sem espaços
-    assert "abcdefgh" not in str(contexto.sessao.execute(
-        __import__("sqlalchemy").text("select group_concat(valor) from configuracao")
-    ).scalar())                                                  # nunca no banco
+    from honorarios.infra.modelos import Configuracao
+
+    valores = " ".join(c.valor for c in contexto.sessao.query(Configuracao))
+    assert "abcdefgh" not in valores                             # nunca no banco
 
 
 def test_caixa_de_email_baixa_dos_que_sairam_e_retorno(

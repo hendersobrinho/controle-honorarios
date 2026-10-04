@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import extract, func, select
 from sqlalchemy.orm import Session
 
 from ..dominio.enums import StatusPagamento
@@ -164,12 +164,13 @@ def _quitado_e_aberto(honorario: Honorario) -> tuple[Decimal, Decimal]:
 
 def _caixa_por_mes(sessao: Session, ano: int) -> dict[int, Decimal]:
     linhas = sessao.execute(
-        select(func.strftime("%m", Pagamento.data), func.sum(Pagamento.valor_pago))
+        # extract: o SQLAlchemy traduz para o SQLite (strftime) e para o PostgreSQL
+        select(extract("month", Pagamento.data), func.sum(Pagamento.valor_pago))
         .where(
             Pagamento.estornado_em.is_(None),
-            func.strftime("%Y", Pagamento.data) == str(ano),
+            Pagamento.data.between(date(ano, 1, 1), date(ano, 12, 31)),
         )
-        .group_by(func.strftime("%m", Pagamento.data))
+        .group_by(extract("month", Pagamento.data))
     ).all()
     return {int(mes): dinheiro(Decimal(str(total or 0))) for mes, total in linhas}
 

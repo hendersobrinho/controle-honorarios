@@ -25,7 +25,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import TypeDecorator
 
 from ..dominio.enums import (
@@ -158,6 +158,7 @@ class Cliente(Base):
             "documento",
             unique=True,
             sqlite_where=text("documento <> ''"),
+            postgresql_where=text("documento <> ''"),
         ),
         Index("ix_cliente_busca", "nome_busca"),
     )
@@ -375,6 +376,7 @@ class Honorario(Base):
             "competencia_chave",
             unique=True,
             sqlite_where=text("status <> 'CANCELADO' AND competencia_chave <> ''"),
+            postgresql_where=text("status <> 'CANCELADO' AND competencia_chave <> ''"),
         ),
         Index("ix_honorario_status", "status", "vencimento"),
         Index("ix_honorario_cliente", "cliente_id", "status"),
@@ -472,6 +474,12 @@ class Notificacao(Base):
     def lida(self) -> bool:
         return self.lida_em is not None
 
+    @validates("titulo", "chave", "tela", "tipo")
+    def _caber(self, campo: str, valor: str) -> str:
+        """O PostgreSQL recusa texto maior que a coluna (o SQLite aceitava calado)."""
+        limite = self.__table__.c[campo].type.length
+        return valor if not valor or len(valor) <= limite else valor[: limite - 1] + "…"
+
 
 class EmailMensagem(Base):
     """E-mail da conversa "Clientes c/Honorários vencidos", guardado no sistema.
@@ -514,6 +522,12 @@ class EmailMensagem(Base):
     @property
     def lida(self) -> bool:
         return self.enviada or self.lida_em is not None
+
+    @validates("message_id", "ref_provedor", "conversa", "assunto", "de", "in_reply_to")
+    def _caber(self, campo: str, valor: str) -> str:
+        """O PostgreSQL recusa texto maior que a coluna (o SQLite aceitava calado)."""
+        limite = self.__table__.c[campo].type.length
+        return valor if not valor or len(valor) <= limite else valor[:limite]
 
 
 class AcordoValor(Base):
