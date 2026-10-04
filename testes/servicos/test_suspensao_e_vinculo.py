@@ -211,3 +211,28 @@ def test_empresas_disponiveis_para_vinculo(sessao, empresa, pessoa):
     disponiveis = clientes.empresas_para_vinculo(sessao)
     assert empresa.id in [c.id for c in disponiveis]
     assert pessoa.id not in [c.id for c in disponiveis]
+
+
+def test_quem_paga_pela_empresa_nao_gera_honorario(sessao):
+    from honorarios.servicos import contratos
+    from testes import fabricas
+
+    empresa = fabricas.cliente(sessao, codigo="710", nome="EMPRESA PAGADORA LTDA", documento="")
+    pessoa = fabricas.cliente(sessao, codigo="711", nome="SOCIO EXEMPLO", documento="",
+                              tipo=TipoPessoa.PF)
+    fabricas.contrato(sessao, pessoa)
+    pessoa.empresa_id = empresa.id
+    sessao.commit()
+    [item] = contratos.previa_geracao(sessao, Competencia(2026, 10), cliente_id=pessoa.id)
+    assert item.impedimento == "Paga pela empresa 710 – EMPRESA PAGADORA LTDA"
+    assert contratos.gerar(sessao, [item]) == []
+    # o cadastro fica, e um honorário à mão continua possível
+    fabricas.honorario(sessao, pessoa, valor="100.00", vencimento=date(2026, 10, 10),
+                       competencia=Competencia(2026, 10))
+    sessao.commit()
+    assert servico_honorarios.pendentes(sessao, Filtro(cliente_id=pessoa.id))
+    # sem o vínculo, volta a gerar normalmente
+    pessoa.empresa_id = None
+    sessao.commit()
+    [item] = contratos.previa_geracao(sessao, Competencia(2026, 11), cliente_id=pessoa.id)
+    assert not item.impedimento

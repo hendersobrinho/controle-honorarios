@@ -422,6 +422,28 @@ Medido com cerca de mil honorários em aberto:
 - A lista de e-mails não carrega o corpo das mensagens; o corpo só é lido
   quando o e-mail é aberto.
 
+### Divergências do e-mail: corrigidas à mão e guardadas no e-mail
+
+Nem toda linha do e-mail bate sozinha: o nome é abreviado, o vencimento está
+noutro dia, o cliente não é do sistema. A conferência automática tenta, em
+ordem: código ou nome com o mesmo vencimento; depois o nome com a mesma
+competência e vencimento a até 31 dias. O que sobrar a pessoa corrige: associa
+a linha a um honorário ou a ignora. A correção fica na coluna
+`email_mensagem.correcoes` (chave da linha → id do honorário, 0 = ignorar), vale
+antes da conferência automática e dá para desfazer.
+
+Num e-mail de resposta, a mensagem citada embaixo é cortada antes de ler. Sem
+isso, a lista antiga entra de novo e cada honorário aparece duas vezes.
+
+### "Paga pela empresa" impede a geração
+
+Quem tem a empresa pagadora preenchida não gera honorário na competência: o
+valor cobrado da empresa já cobre a pessoa, e o campo é a justificativa. A
+regra fica na prévia da geração, como um impedimento com o nome da empresa.
+Por isso vale igual para a geração manual e para a automática, e o Mês a mês
+não conta essas pessoas como "faltando". Lançar honorário à mão para ela
+continua possível.
+
 ## Decisões técnicas
 
 ### SQLAlchemy 2.0 + Alembic

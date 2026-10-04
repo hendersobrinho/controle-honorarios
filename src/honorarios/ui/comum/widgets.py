@@ -8,7 +8,9 @@ from decimal import Decimal
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
+    QDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -130,18 +132,67 @@ def informar(parent, texto: str, titulo: str = "Pronto") -> None:
     QMessageBox.information(parent, titulo, texto)
 
 
-def confirmar(parent, texto: str, titulo: str = "Confirmar", detalhe: str = "") -> bool:
-    caixa = QMessageBox(parent)
-    caixa.setWindowTitle(titulo)
-    caixa.setIcon(QMessageBox.Icon.Question)
-    caixa.setText(texto)
-    if detalhe:
-        caixa.setInformativeText(detalhe)
-    sim = caixa.addButton("Confirmar", QMessageBox.ButtonRole.AcceptRole)
-    caixa.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
-    caixa.setDefaultButton(sim)
-    caixa.exec()
-    return caixa.clickedButton() is sim
+class DialogoConfirmacao(QDialog):
+    """Confirmação no visual do sistema: a pergunta em destaque, um resumo do que
+    vai acontecer, o detalhe e o botão com o nome da ação (não um "OK")."""
+
+    def __init__(self, parent, texto: str, titulo: str, detalhe: str = "",
+                 acao: str = "Confirmar", resumo=None, tipo: str = "primario") -> None:
+        super().__init__(parent)
+        self.setWindowTitle(titulo)
+        self.setObjectName("dialogoConfirmacao")
+        self.setMinimumWidth(460)
+        self.setMaximumWidth(620)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 18)
+        layout.setSpacing(14)
+        pergunta = QLabel(texto)
+        pergunta.setObjectName("perguntaConfirmacao")
+        pergunta.setWordWrap(True)
+        layout.addWidget(pergunta)
+        if resumo:
+            cartao = QFrame()
+            cartao.setObjectName("resumoConfirmacao")
+            grade = QGridLayout(cartao)
+            grade.setContentsMargins(14, 10, 14, 10)
+            grade.setHorizontalSpacing(18)
+            grade.setVerticalSpacing(6)
+            for linha, (rotulo, valor) in enumerate(resumo):
+                nome = QLabel(rotulo)
+                nome.setObjectName("rotuloResumoConfirmacao")
+                dado = QLabel(valor)
+                dado.setObjectName("valorResumoConfirmacao")
+                dado.setWordWrap(True)
+                grade.addWidget(nome, linha, 0, Qt.AlignmentFlag.AlignTop)
+                grade.addWidget(dado, linha, 1)
+            grade.setColumnStretch(1, 1)
+            layout.addWidget(cartao)
+        if detalhe:
+            explicacao = QLabel(detalhe)
+            explicacao.setObjectName("detalheConfirmacao")
+            explicacao.setWordWrap(True)
+            layout.addWidget(explicacao)
+        botoes = QHBoxLayout()
+        botoes.addStretch(1)
+        cancelar = QPushButton("Cancelar")
+        cancelar.clicked.connect(self.reject)
+        self.botao_acao = QPushButton(acao)
+        # "pagamento" (verde), "perigo" (vermelho) ou "primario" (azul)
+        self.botao_acao.setObjectName(
+            {"pagamento": "cartaoPagamento", "perigo": "botaoPerigo"}.get(tipo, "primario")
+        )
+        self.botao_acao.setMinimumWidth(120)
+        self.botao_acao.clicked.connect(self.accept)
+        self.botao_acao.setDefault(True)
+        botoes.addWidget(cancelar)
+        botoes.addWidget(self.botao_acao)
+        layout.addLayout(botoes)
+
+
+def confirmar(parent, texto: str, titulo: str = "Confirmar", detalhe: str = "",
+              acao: str = "Confirmar", resumo=None, tipo: str = "primario") -> bool:
+    """Pergunta antes de uma ação; ``resumo`` é uma lista de (rótulo, valor)."""
+    return bool(DialogoConfirmacao(parent, texto, titulo, detalhe, acao, resumo, tipo).exec())
 
 
 def executar(

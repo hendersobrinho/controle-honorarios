@@ -136,6 +136,18 @@ def folha_de_estilo(tema: str = "claro") -> str:
         font-weight: 600;
     }}
     QPushButton#primario:hover {{ background: {c["texto"]}; border-color: {c["texto"]}; }}
+    QPushButton#botaoPerigo {{
+        background: {c["atrasado"]}; color: #ffffff; border: 1px solid {c["atrasado"]};
+        font-weight: 600; padding: 6px 14px;
+    }}
+    QDialog#dialogoConfirmacao {{ background: {c["superficie"]}; }}
+    QLabel#perguntaConfirmacao {{ font-size: 16px; font-weight: 700; }}
+    QFrame#resumoConfirmacao {{
+        background: {c["faixa"]}; border: 1px solid {c["borda"]}; border-radius: 8px;
+    }}
+    QLabel#rotuloResumoConfirmacao {{ color: {c["texto_fraco"]}; background: transparent; }}
+    QLabel#valorResumoConfirmacao {{ font-weight: 600; background: transparent; }}
+    QLabel#detalheConfirmacao {{ color: {c["texto_fraco"]}; }}
     QPushButton#primario:disabled {{
         background: {c["faixa"]}; border-color: {c["borda"]}; color: {c["texto_fraco"]};
     }}

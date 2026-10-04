@@ -27,17 +27,13 @@ from .paineis.cadastro_honorarios import PainelHonorarios
 from .paineis.clientes import PainelClientes
 from .paineis.configuracoes import PainelConfiguracoes
 from .paineis.email_cobrancas import PainelEmailCobrancas
-from .paineis.honorarios import (
-    PainelAtrasados,
-    PainelAVencer,
-    PainelImpostoRenda,
-    PainelPagos,
-)
+from .paineis.honorarios import PainelImpostoRenda
 from .paineis.importar import PainelImportar
 from .paineis.painel import PainelResumo
 from .paineis.rankings import PainelRankings
 from .paineis.relatorios import PainelRelatorios
 from .paineis.tipos import PainelTipos
+from .paineis.vencimentos import PainelVencimentos
 
 
 class JanelaPrincipal(QMainWindow):
@@ -99,14 +95,13 @@ class JanelaPrincipal(QMainWindow):
         self.verificacao.timeout.connect(self.verificar_email)
 
         # a navegação é agrupada pelo momento do trabalho. Cada situação de
-        # honorário tem a sua tela (atrasado, a vencer e pago nunca se misturam),
+        # honorário tem a sua aba em Vencimentos (a vencer, atrasado e pago nunca se
+        # misturam),
         # e as cobranças já feitas ficam ao lado, para anotar a resposta.
         grupos = (
             ("COBRANÇA", (
-                PainelAtrasados,
-                PainelAVencer,
-                PainelImpostoRenda,   # junto das que têm contador; Pagos não tem
-                PainelPagos,
+                PainelVencimentos,    # abas: A vencer, Atrasados, Pagos
+                PainelImpostoRenda,
                 PainelAcompanhamento,
                 PainelEmailCobrancas,
             )),
@@ -232,8 +227,7 @@ class JanelaPrincipal(QMainWindow):
         except Exception:  # noqa: BLE001 - contador nunca derruba a navegação
             return
         contagens = (
-            (PainelAtrasados.titulo, contagem.atrasados),
-            (PainelAVencer.titulo, contagem.a_vencer),
+            (PainelVencimentos.titulo, contagem.atrasados),
             (PainelImpostoRenda.titulo, contagem.imposto_de_renda),
             (PainelEmailCobrancas.titulo, emails),
         )
@@ -391,10 +385,14 @@ class JanelaPrincipal(QMainWindow):
         self._atualizar_botao_notificacoes()
         self.lista_notificacoes.hide()
         cliente = notificacao.cliente
-        item = self.itens_de_tela.get(notificacao.tela)
+        # "A vencer"/"Atrasados"/"Pagos" são abas de Vencimentos
+        aba = notificacao.tela if notificacao.tela in ABAS_DE_VENCIMENTOS else None
+        item = self.itens_de_tela.get(PainelVencimentos.titulo if aba else notificacao.tela)
         if item is None:
             return
         painel = self.tela(self.linhas_de_tela[self.navegacao.row(item)])
+        if aba:
+            painel = painel.aba(aba)
         busca = getattr(painel, "busca", None)
         if busca is not None and cliente is not None:
             busca.blockSignals(True)
@@ -438,6 +436,7 @@ class JanelaPrincipal(QMainWindow):
 
 
 INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000   # meia hora
+ABAS_DE_VENCIMENTOS = ("A vencer", "Atrasados", "Pagos")
 
 
 class TelaAdiada(QWidget):

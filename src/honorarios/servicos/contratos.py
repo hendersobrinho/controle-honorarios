@@ -241,7 +241,13 @@ def previa_geracao(
             valor=dinheiro(contrato.valor),
             vencimento=vencimento,
         )
-        if contrato.suspenso:
+        empresa_id = contrato.cliente.empresa_id
+        empresa = sessao.get(Cliente, empresa_id) if empresa_id else None
+        if empresa is not None and empresa.excluido_em is None:
+            # o que a empresa paga já cobre esta pessoa: não se gera honorário dela
+            # (lançar um à mão continua possível, se um dia for preciso)
+            item.impedimento = f"Paga pela empresa {empresa.codigo} – {empresa.nome}"
+        elif contrato.suspenso:
             item.impedimento = "Contrato suspenso temporariamente"
         elif contrato.vigencia_inicio > _ultimo_dia(competencia):
             item.impedimento = (

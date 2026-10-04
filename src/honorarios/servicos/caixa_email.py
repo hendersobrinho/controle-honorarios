@@ -882,6 +882,27 @@ def recebido_de(mensagem: EmailMensagem) -> servico_email.EmailRecebido:
     )
 
 
+def correcoes(mensagem: EmailMensagem) -> dict[str, int]:
+    """As associações feitas à mão na conferência deste e-mail."""
+    try:
+        dados = json.loads(mensagem.correcoes or "{}")
+    except ValueError:
+        return {}
+    return {str(chave): int(valor) for chave, valor in dados.items()}
+
+
+def corrigir(sessao: Session, mensagem: EmailMensagem, chave: str,
+             honorario_id: int | None) -> None:
+    """Associa a linha do e-mail a um honorário (0 = ignorar; None = desfazer)."""
+    atuais = correcoes(mensagem)
+    if honorario_id is None:
+        atuais.pop(chave, None)
+    else:
+        atuais[chave] = honorario_id
+    mensagem.correcoes = json.dumps(atuais, ensure_ascii=False) if atuais else ""
+    sessao.flush()
+
+
 def registrar_verificacao(sessao: Session) -> None:
     configuracoes.gravar(sessao, ULTIMA_VERIFICACAO, agora_utc().isoformat())
 

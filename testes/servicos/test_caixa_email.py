@@ -298,3 +298,12 @@ def test_gmail_pega_as_respostas_da_conversa_fora_do_marcador(monkeypatch, conta
     imap = ImapDeMentira.instancias[-1]
     assert imap.pasta == '"[Gmail]/Todos os e-mails"' and imap.somente_leitura
     assert all("PEEK" in args[1] for cmd, args in imap.comandos if cmd == "FETCH")
+
+
+def test_correcoes_ficam_guardadas_no_email(sessao):
+    [mensagem] = servico.guardar(sessao, servico.GMAIL, [servico.de_mime(_mime("<a@x>", ASSUNTO))])
+    servico.corrigir(sessao, mensagem, "linha-1", 42)
+    servico.corrigir(sessao, mensagem, "linha-2", 0)
+    assert servico.correcoes(mensagem) == {"linha-1": 42, "linha-2": 0}
+    servico.corrigir(sessao, mensagem, "linha-1", None)              # desfazer
+    assert servico.correcoes(mensagem) == {"linha-2": 0}

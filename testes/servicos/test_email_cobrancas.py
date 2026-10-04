@@ -336,3 +336,47 @@ def test_incompletas_voltam_na_resposta(sessao, carteira):
     conferencia = servico.conferir(sessao, servico.ler(COPIADO_DO_PDF), HOJE)
     corpo = servico.texto(servico.responder(sessao, conferencia, HOJE))
     assert "Gama Serviços" in corpo and "22/09: Pagou hoje." in corpo
+
+
+def test_resposta_ignora_o_email_citado_embaixo():
+    texto = (EMAIL_DO_FINANCEIRO
+             + "\nOn Sun, Oct 4, 2026 at 12:51 AM Fulano <a@\nexemplo.com> wrote:\n"
+             "> Alfa Móveis Ltda.        07/2026   05/08/2026   1.507,80\n> 17/09: velho\n")
+    leitura = servico.ler(texto)
+    assert len(leitura.linhas) == 3                      # a lista citada não volta
+    assert not any("wrote" in nota for linha in leitura.linhas for nota in linha.notas)
+    assert len(servico.ler(EMAIL_DO_FINANCEIRO + "\n-----Mensagem original-----\n"
+                           "Ipê Ind.Com. 08/2026 08/09/2026 399,00\n").linhas) == 3
+
+
+def test_mesma_competencia_com_vencimento_diferente(sessao, carteira):
+    # no e-mail o honorário de julho da Alfa vence 06/08, no sistema 05/08
+    texto = "Cobranças de 24/09/2026\nAlfa Móveis Ltda.  07/2026  06/08/2026  1.507,80\n"
+    conferencia = servico.conferir(sessao, servico.ler(texto), HOJE)
+    [casou] = conferencia.continuam
+    assert casou.linha.honorario.vencimento == date(2026, 8, 5)
+    assert conferencia.nao_encontradas == []
+
+
+def test_correcao_a_mao_associa_ou_ignora(sessao, carteira):
+    alfa, ipe = carteira
+    texto = ("Cobranças de 24/09/2026\n"
+             "Fornecedor Qualquer  08/2026  08/09/2026  399,00\n"
+             "Cliente Novo Ltda  08/2026  10/09/2026  50,00\n")
+    leitura = servico.ler(texto)
+    conferencia = servico.conferir(sessao, leitura, HOJE)
+    assert len(conferencia.nao_encontradas) == 2
+    honorario_ipe = next(linha.honorario for linha in conferencia.sairam
+                         if linha.cliente.id == ipe.id)
+    correcoes = {
+        servico.chave_da_linha(leitura.linhas[0]): honorario_ipe.id,   # era a Ipê
+        servico.chave_da_linha(leitura.linhas[1]): 0,                  # ignorar
+    }
+    conferencia = servico.conferir(sessao, leitura, HOJE, correcoes)
+    [casou] = conferencia.continuam
+    assert casou.linha.honorario.id == honorario_ipe.id
+    assert id(casou.lida) in conferencia.corrigidas
+    assert [x.cliente for x in conferencia.ignoradas] == ["Cliente Novo Ltda"]
+    assert conferencia.nao_encontradas == []
+    # quem não está mais na lista (os dois da Alfa) sai para a baixa
+    assert {linha.cliente.id for linha in conferencia.sairam} == {alfa.id}

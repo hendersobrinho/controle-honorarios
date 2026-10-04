@@ -172,15 +172,22 @@ class PainelConfiguracoes(QWidget):
         self.fundo_avisos.setVisible(False)
         caixa.addWidget(self.fundo_avisos)
         botoes = QHBoxLayout()
+        self.botoes_fundo = {}
         for texto, funcao in (
             ("Escolher fundo SVG…", self._escolher_fundo),
+            ("Voltar para o meu fundo", self._voltar_ao_fundo),
             ("Usar o modelo do sistema", self._usar_modelo_fundo),
             ("Salvar uma cópia do modelo…", self._exportar_modelo_fundo),
             ("Ver prévia", self._previa_imagem),
         ):
             botao = widgets.QPushButton(texto)
-            botao.clicked.connect(funcao)
+            botao.clicked.connect(lambda _=False, f=funcao: f())
             botoes.addWidget(botao)
+            self.botoes_fundo[texto] = botao
+        self.botoes_fundo["Voltar para o meu fundo"].setToolTip(
+            "Volta a usar o último fundo que você escolheu (ele fica guardado na pasta "
+            "de dados, mesmo usando o modelo)"
+        )
         botoes.addStretch(1)
         caixa.addLayout(botoes)
         layout.addWidget(grupo)
@@ -228,8 +235,17 @@ class PainelConfiguracoes(QWidget):
         from ...servicos import imagem_cobranca
 
         sessao = self.contexto.sessao
-        if imagem_cobranca.usa_modelo(sessao):
-            self.fundo_atual.setText("Usando o <b>fundo modelo</b> do sistema.")
+        modelo = imagem_cobranca.usa_modelo(sessao)
+        guardado = imagem_cobranca.fundo_guardado()
+        if hasattr(self, "botoes_fundo"):
+            self.botoes_fundo["Voltar para o meu fundo"].setVisible(modelo and guardado is not None)
+            self.botoes_fundo["Usar o modelo do sistema"].setEnabled(not modelo)
+        if modelo:
+            self.fundo_atual.setText(
+                "Usando o <b>fundo modelo</b> do sistema."
+                + (" O seu fundo continua guardado: <b>Voltar para o meu fundo</b>."
+                   if guardado else "")
+            )
         else:
             caminho = imagem_cobranca.caminho_fundo(sessao)
             self.fundo_atual.setText(f"Usando o seu fundo: <b>{caminho}</b>")
@@ -293,8 +309,29 @@ class PainelConfiguracoes(QWidget):
             return
         self._mostrar_fundo(avisos)
 
+    def _voltar_ao_fundo(self) -> None:
+        from ...servicos import imagem_cobranca
+
+        def acao():
+            avisos = imagem_cobranca.voltar_ao_fundo_guardado(self.contexto.sessao)
+            self.contexto.salvar()
+            return avisos
+
+        deu_certo, avisos = widgets.executar(self, acao)
+        if not deu_certo:
+            self.contexto.desfazer()
+            return
+        self._mostrar_fundo(avisos)
+
     def _usar_modelo_fundo(self) -> None:
         from ...servicos import imagem_cobranca
+
+        if not widgets.confirmar(
+            self, "Usar o fundo modelo do sistema?", "Usar o modelo",
+            "O seu fundo não é apagado: fica guardado, e o botão \"Voltar para o meu "
+            "fundo\" volta a usá-lo.", acao="Usar o modelo",
+        ):
+            return
 
         def acao():
             imagem_cobranca.usar_modelo(self.contexto.sessao)

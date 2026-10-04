@@ -446,8 +446,8 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
 
     janela = JanelaPrincipal(contexto)
     qtbot.addWidget(janela)
-    assert janela.telas.count() == 14
-    assert len(janela.linhas_de_tela) == 14
+    assert janela.telas.count() == 12
+    assert len(janela.linhas_de_tela) == 12
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
     assert "E-mail" in titulos
     assert "Cobranças enviadas" in titulos and "Ranking dos atrasados" in titulos
@@ -456,6 +456,12 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
     assert "Honorários" in titulos
     assert "Honorários recorrentes" not in titulos and "Honorários avulsos" not in titulos
     assert not any("Fila" in titulo for titulo in titulos)
+    # a vencer, atrasados e pagos são abas de Vencimentos, nessa ordem
+    assert titulos[0] == "Vencimentos"
+    assert not {"A vencer", "Atrasados", "Pagos"} & set(titulos)
+    vencimentos = janela.telas.widget(0)
+    assert [vencimentos.abas.widget(i).titulo for i in range(3)] == [
+        "A vencer", "Atrasados", "Pagos"]
     for linha in janela.linhas_de_tela:
         janela.navegacao.setCurrentRow(linha)
     assert janela.telas.currentWidget().titulo == "Configurações"
@@ -1180,13 +1186,16 @@ def test_cobrar_gera_imagem_dos_honorarios_marcados(
     assert aberto.dados.qrcode is None
     assert aberto.dados.campos["cliente"] == cliente_com_debito.nome
     assert not QGuiApplication.clipboard().image().isNull()   # copiada para colar no WhatsApp
-    assert "copiada" in aberto.aviso.text()
+    # junto vai a chave como texto (Outlook/Telegram colam os dois; o WhatsApp, a imagem)
+    assert QGuiApplication.clipboard().text() == aberto.dados.campos["chave_pix"]
+    assert "1/2" in aberto.aviso.text() and "Copiar chave Pix" in aberto.aviso.text()
 
-    # a chave vai também como texto, pelo botão (o clique manda um bool: não pode atrapalhar)
+    # o segundo passo fica em destaque (o clique manda um bool: não pode atrapalhar)
     from PySide6.QtWidgets import QPushButton
 
     botoes = {b.text(): b for b in aberto.findChildren(QPushButton)}
-    botoes["Copiar chave Pix"].click()
+    assert botoes["2/2 · Copiar chave Pix"].objectName() == "primario"
+    botoes["2/2 · Copiar chave Pix"].click()
     assert QGuiApplication.clipboard().text() == aberto.dados.campos["chave_pix"]
     assert "Copiar Pix copia e cola" not in botoes            # o QR é o PNG do banco
     # "pagar até" muda só o prazo; "valores atualizados em" muda o valor
@@ -1524,7 +1533,9 @@ def test_notificacoes_na_janela(qtbot, contexto, cliente_com_debito, monkeypatch
     lista = janela.lista_notificacoes
     item = lista.itens.itemAt(0).widget()
     item.findChild(QPushButton, "cartaoAcao").click()
-    painel = janela.telas.currentWidget()
+    vencimentos = janela.telas.currentWidget()
+    assert vencimentos.titulo == "Vencimentos"
+    painel = vencimentos.abas.currentWidget()                # já na aba do aviso
     assert painel.titulo in ("A vencer", "Atrasados")
     assert painel.busca.text() == cliente_com_debito.nome
     assert janela.botao_notificacoes.quantidade == 1
@@ -1774,7 +1785,7 @@ def test_caixa_de_email_baixa_dos_que_sairam_e_retorno(
     perguntas = []
     monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: perguntas.append(a[1]) or True)
     janela.botao_baixa.click()
-    assert "Dar baixa em 1 honorário(s)" in perguntas[0]
+    assert perguntas[0] == "Confirmar o pagamento de 1 honorário?"
     assert item.honorario.status is StatusPagamento.PAGO
     assert painel.conferencia.sairam == []
     assert not painel.conferencia_aba.faixa_saiu.isVisibleTo(painel)
@@ -1812,10 +1823,10 @@ def test_telas_montadas_ao_abrir_e_sem_reler_a_toa(qtbot, contexto, monkeypatch)
     assert len(adiadas) == janela.telas.count() - 2       # só Atrasados e E-mail já montadas
 
     linha_pagos = next(linha for linha, indice in janela.linhas_de_tela.items()
-                       if janela.telas.widget(indice).titulo == "Pagos")
+                       if janela.telas.widget(indice).titulo == "Clientes")
     janela.navegacao.setCurrentRow(linha_pagos)            # monta na primeira vez
     pagos = janela.telas.currentWidget()
-    assert not isinstance(pagos, TelaAdiada) and pagos.titulo == "Pagos"
+    assert not isinstance(pagos, TelaAdiada) and pagos.titulo == "Clientes"
 
     leituras = []
     monkeypatch.setattr(pagos, "recarregar", lambda: leituras.append(1))
@@ -1829,3 +1840,97 @@ def test_telas_montadas_ao_abrir_e_sem_reler_a_toa(qtbot, contexto, monkeypatch)
     assert leituras == [1]
     janela._recarregar_atual(forcar=True)                  # F5 sempre relê
     assert leituras == [1, 1]
+
+
+def test_confirmacao_no_visual_do_sistema(qtbot):
+    from honorarios.ui.comum.widgets import DialogoConfirmacao
+
+    dialogo = DialogoConfirmacao(None, "Confirmar o pagamento de 2 honorários?", "Dar baixa",
+                                 "Dá para estornar depois.", acao="Dar baixa em 2",
+                                 resumo=[("Total recebido", "R$ 895,08")], tipo="pagamento")
+    qtbot.addWidget(dialogo)
+    assert dialogo.botao_acao.text() == "Dar baixa em 2"
+    assert dialogo.botao_acao.objectName() == "cartaoPagamento"
+    dialogo.botao_acao.click()
+    assert dialogo.result() == 1
+
+
+def test_corrigir_linha_do_email_libera_a_baixa(qtbot, contexto, cliente_com_debito, tmp_path,
+                                                monkeypatch):
+    from email.message import EmailMessage
+
+    from honorarios.servicos import caixa_email
+    from honorarios.ui.comum import segundo_plano
+    from honorarios.ui.dialogos import corrigir_linha
+    from honorarios.ui.paineis import email_cobrancas as tela
+
+    contexto.data_referencia = date(2026, 9, 30)
+    # o e-mail traz o honorário de agosto com outro nome e outra competência
+    mensagem = EmailMessage()
+    mensagem["From"] = "financeiro@exemplo.com.br"
+    mensagem["Subject"] = "Clientes c/Honorários vencidos"
+    mensagem["Message-ID"] = "<lista@exemplo.com.br>"
+    mensagem.set_content("Cobranças de 30/09/2026\nNome Diferente SA  Agosto  19/08/2026  500,00\n")
+    arquivo = tmp_path / "lista.eml"
+    arquivo.write_bytes(bytes(mensagem))
+
+    painel = tela.PainelEmailCobrancas(contexto)
+    painel.executor = segundo_plano.imediato
+    qtbot.addWidget(painel)
+    painel.abrir_arquivo(str(arquivo))
+    aba = painel.conferencia_aba
+    assert len(painel.conferencia.nao_encontradas) == 1
+    assert len(painel.conferencia.sairam) == 2               # sem par, os dois "saíram"
+
+    fora = next(aba.arvore.topLevelItem(i) for i in range(aba.arvore.topLevelItemCount())
+                if aba.arvore.topLevelItem(i).text(0).startswith("No e-mail, mas sem"))
+    aba.arvore.clearSelection()
+    fora.child(0).setSelected(True)
+    assert aba.botao_corrigir.isEnabled()
+
+    def escolher(dialogo):
+        # o mais parecido vem primeiro: o de vencimento 19/08 (valor 500)
+        assert dialogo.linhas[0].honorario.vencimento == date(2026, 8, 19)
+        dialogo._associar()
+        return dialogo.result()
+
+    monkeypatch.setattr(corrigir_linha.DialogoCorrigirLinha, "exec", escolher)
+    aba.botao_corrigir.click()
+    conferencia = painel.conferencia
+    assert conferencia.nao_encontradas == [] and len(conferencia.continuam) == 1
+    [saiu] = conferencia.sairam                               # só o de setembro: dá baixa
+    assert saiu.honorario.vencimento == date(2026, 9, 19)
+    assert caixa_email.correcoes(painel.mensagem)            # guardado no e-mail
+
+    # desfazer volta ao que era
+    continua = next(aba.arvore.topLevelItem(i) for i in range(aba.arvore.topLevelItemCount())
+                    if aba.arvore.topLevelItem(i).text(0).startswith("Continuam"))
+    aba.arvore.clearSelection()
+    continua.child(0).setSelected(True)
+    assert aba.botao_desfazer.isVisibleTo(aba)
+    aba.botao_desfazer.click()
+    assert len(painel.conferencia.nao_encontradas) == 1
+
+
+def test_voltar_para_o_meu_fundo(qtbot, contexto, tmp_path, monkeypatch):
+    from honorarios.servicos import imagem_cobranca
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    meu = tmp_path / "meu_fundo.svg"
+    meu.write_text(imagem_cobranca.FUNDO_MODELO.read_text(encoding="utf-8"), encoding="utf-8")
+    imagem_cobranca.definir_fundo(contexto.sessao, meu)
+    contexto.salvar()
+    painel = PainelConfiguracoes(contexto)
+    qtbot.addWidget(painel)
+    painel.recarregar()
+    voltar = painel.botoes_fundo["Voltar para o meu fundo"]
+    assert voltar.isHidden()                    # já está usando o seu
+
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    painel.botoes_fundo["Usar o modelo do sistema"].click()
+    assert imagem_cobranca.usa_modelo(contexto.sessao)
+    assert not voltar.isHidden()                        # dá para voltar
+    voltar.click()
+    assert not imagem_cobranca.usa_modelo(contexto.sessao)
+    assert imagem_cobranca.caminho_fundo(contexto.sessao) == imagem_cobranca.fundo_guardado()

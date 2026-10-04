@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QMimeData, Qt
 from PySide6.QtGui import QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -142,11 +142,11 @@ class DialogoImagemCobranca(QDialog):
             ),
             1,
         )
-        chave = widgets.QPushButton("Copiar chave Pix")
-        chave.setToolTip(self.dados.campos.get("chave_pix", ""))
-        chave.clicked.connect(lambda: self.copiar_texto("chave"))
-        chave.setEnabled(bool(self.dados.campos.get("chave_pix")))
-        textos.addWidget(chave)
+        self.botao_chave = widgets.QPushButton("Copiar chave Pix")
+        self.botao_chave.setToolTip(self.dados.campos.get("chave_pix", ""))
+        self.botao_chave.clicked.connect(lambda: self.copiar_texto("chave"))
+        self.botao_chave.setEnabled(bool(self.dados.campos.get("chave_pix")))
+        textos.addWidget(self.botao_chave)
         layout.addLayout(textos)
 
     def _mostrar_imagem(self) -> None:
@@ -219,14 +219,28 @@ class DialogoImagemCobranca(QDialog):
         self._explicar_acordo()
 
     def copiar(self) -> None:
-        QGuiApplication.clipboard().setImage(self.imagem)
+        """A imagem e, junto, a chave Pix como texto: Outlook e Telegram colam os dois;
+        o WhatsApp cola só a imagem — por isso o próximo passo fica em destaque."""
+        dados = QMimeData()
+        dados.setImageData(self.imagem)
+        chave = self.dados.campos.get("chave_pix", "") if not self.agradecimento else ""
+        if chave:
+            dados.setText(chave)
+        QGuiApplication.clipboard().setMimeData(dados)
         self._guardar_acordo()
-        self.aviso.setText("Imagem copiada: cole na conversa do WhatsApp (Ctrl+V)."
+        proximo = (" Depois clique em Copiar chave Pix e cole como mensagem: no WhatsApp o "
+                   "cliente toca na chave e copia." if chave else "")
+        self.aviso.setText("1/2 · Imagem copiada: cole na conversa (Ctrl+V)." + proximo
                            + (" Acordo guardado." if self._acordo_registrado else ""))
+        if chave and hasattr(self, "botao_chave"):   # o segundo passo, em destaque
+            self.botao_chave.setObjectName("primario")
+            self.botao_chave.setText("2/2 · Copiar chave Pix")
+            self.botao_chave.style().unpolish(self.botao_chave)
+            self.botao_chave.style().polish(self.botao_chave)
 
     def copiar_texto(self, qual: str = "chave") -> None:
         widgets.copiar(self.dados.campos.get("chave_pix", ""))
-        self.aviso.setText("Chave Pix copiada: cole como mensagem logo depois da imagem.")
+        self.aviso.setText("2/2 · Chave Pix copiada: cole como mensagem logo depois da imagem.")
 
     def _salvar(self) -> None:
         sugestao = str(pasta_exportacoes() / f"{self.nome_arquivo}.png")

@@ -58,10 +58,10 @@ Os testes de interface usam `pytest-qt` e rodam sem servidor gráfico
 
 | Tela | Para que serve |
 |---|---|
-| **Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, agrupados por faixa de atraso (a dívida mais antiga primeiro), com cobrar, editar (valor, vencimento, descrição), **Confirmar pagamento** (botão verde em cada cartão em aberto, também em A vencer e Imposto de Renda), cobrança em lote e renegociação |
-| **A vencer** | Em aberto e dentro do prazo: vence hoje, nos próximos dias e mais adiante. Daqui sai o lembrete antes do vencimento |
+| **Vencimentos → A vencer** (1ª aba) | Em aberto e dentro do prazo: vence hoje, nos próximos dias e mais adiante. Daqui sai o lembrete antes do vencimento |
+| **Vencimentos → Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, agrupados por faixa de atraso (a dívida mais antiga primeiro), com cobrar, editar (valor, vencimento, descrição), **Confirmar pagamento** (botão verde em cada cartão em aberto, também em A vencer e Imposto de Renda), cobrança em lote e renegociação |
+| **Vencimentos → Pagos** | Registro dos quitados, por mês do pagamento, com seletor de período (padrão: últimos 3 meses). Mostra se pagou em dia ou com atraso, os juros cobrados e o abono |
 | **Imposto de Renda** | Cobrança própria dos clientes que só fazem IR com o escritório: em aberto (atrasados e a vencer) ou pagos, com filtro por ano do IR. Esses clientes não aparecem em Atrasados, A vencer e Pagos |
-| **Pagos** | Registro dos quitados, por mês do pagamento, com seletor de período (padrão: últimos 3 meses). Mostra se pagou em dia ou com atraso, os juros cobrados e o abono |
 | **Cobranças enviadas** | Cada mensagem enviada e o que o cliente respondeu, com período e agrupamento à escolha. É aqui que a resposta é anotada |
 | **Clientes** | Abas **Ativos**, **Imposto de Renda** (quem só tem honorário de IR) e **Inativos**; PF \| PJ \| Todos e busca sem acento/pontuação; ficha completa da empresa. Dívida e atraso não aparecem aqui (têm telas próprias). Aqui também se suspende e retoma a cobrança de um cliente |
 | **Honorários** | Três abas. **Mês a mês**: tudo o que foi emitido no mês (recorrente ou avulso), com ◀ ▶ e um menu para ir direto a qualquer mês, os totais (emitido, pago, em aberto, cancelados), filtros de origem e situação, e o aviso de contratos que ainda não geraram a competência — "Gerar competência" já abre no mês da tela. **Recorrentes**: contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia. **Avulsos**: lançar, corrigir e cancelar serviços que não vêm de contrato (IRPF, alteração contratual, atas…) e consultar o histórico por período, pagos ou não, com a situação de cada um. A cobrança desses honorários fica em Atrasados e A vencer |
@@ -74,9 +74,9 @@ Os testes de interface usam `pytest-qt` e rodam sem servidor gráfico
 
 A navegação é agrupada por momento do trabalho:
 
-- **Cobrança**: primeiro as telas com contador ao lado (Atrasados, A vencer e
-  Imposto de Renda), depois Pagos, Cobranças enviadas e E-mail. A tela E-mail
-  também tem contador, com os e-mails não lidos.
+- **Cobrança**: **Vencimentos** (abas A vencer, Atrasados e Pagos, com a
+  quantidade em aberto em cada aba; o número no menu é o de atrasados), Imposto
+  de Renda, Cobranças enviadas e E-mail (com o número de e-mails não lidos).
 - **Cadastros**.
 - **Gestão**.
 
@@ -111,8 +111,12 @@ só dali para frente.
 
 ### Pessoa física que paga pela empresa
 
-No cadastro de uma pessoa física há o campo **"Paga pela empresa"**. Quando ele
-está preenchido, a tela de Cobrar da empresa oferece **"Incluir N honorário(s)
+No cadastro de uma pessoa física há o campo **"Paga pela empresa"**. Ele quer
+dizer que o que a empresa paga já cobre essa pessoa. Por isso a geração da
+competência (manual ou automática) **não cria honorário para ela**, e a prévia
+mostra o motivo, "Paga pela empresa …". O cadastro fica. Se um dia for preciso,
+dá para lançar um honorário para ela à mão. Para esse honorário, a tela de
+Cobrar da empresa oferece **"Incluir N honorário(s)
 de N pessoa(s) que pagam por esta empresa"**: marcando, os honorários dela
 entram na mesma mensagem, e cada linha diz de quem é —
 `• SOCIO EXEMPLO: imposto de renda/2026, vencimento 25/06/2026 – R$ 269,24`.
@@ -172,6 +176,16 @@ cobranças** — no menu, só **E-mail** — é uma caixa de e-mail só dessa co
       do e-mail), o valor (com juros até a data, ou só o valor original com
       abono justificado), a forma de pagamento e um ✓ por honorário.
     - **Dar baixa** sempre pede confirmação. Nada é baixado sozinho.
+    - **Corrigir…**: para a linha do e-mail que não bateu com o sistema. A
+      janela mostra os honorários mais parecidos (cliente, competência,
+      vencimento e valor; o mais provável já vem marcado). Escolha a qual
+      honorário a linha se refere, ou **Ignorar esta linha**. A escolha fica
+      guardada no e-mail, e quem fica sem par passa para "saíram", pronto para a
+      baixa. **Desfazer correção** volta atrás.
+    - Mesma competência com vencimento diferente (até 31 dias) já conta como o
+      mesmo honorário. De um e-mail de resposta, só a mensagem nova é lida (o
+      e-mail citado embaixo, "On … wrote:", "De:/Enviado:", linhas com ">", fica
+      de fora).
     - **Anotar retorno…**: selecione honorários de um cliente que continua e
       registre o que ele disse (não respondeu, prometeu pagar em…, pediu
       renegociação…). Se há uma cobrança esperando resposta, o retorno vai

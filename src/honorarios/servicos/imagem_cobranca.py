@@ -137,8 +137,24 @@ def definir_fundo(sessao: Session, origem: Path) -> list[str]:
 
 
 def usar_modelo(sessao: Session) -> None:
+    """Passa a usar o modelo — o seu fundo continua guardado na pasta de dados."""
     configuracoes.gravar(sessao, "imagem_fundo", "")
     sessao.flush()
+
+
+def fundo_guardado() -> Path | None:
+    """O último fundo escolhido, guardado na pasta de dados (para poder voltar a ele)."""
+    caminho = pasta_dados() / NOME_FUNDO
+    return caminho if caminho.is_file() else None
+
+
+def voltar_ao_fundo_guardado(sessao: Session) -> list[str]:
+    caminho = fundo_guardado()
+    if caminho is None:
+        raise ErroDeValidacao("Não há fundo seu guardado: escolha um arquivo SVG.")
+    configuracoes.gravar(sessao, "imagem_fundo", str(caminho))
+    sessao.flush()
+    return validar_svg(caminho.read_text(encoding="utf-8"))
 
 
 def caminho_qrcode(sessao: Session) -> Path | None:

@@ -36,7 +36,7 @@ import shutil
 import subprocess
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from email import policy
 from email.message import EmailMessage
@@ -575,12 +575,46 @@ def _reagrupar(linhas: list[str]) -> list[str]:
     return saida
 
 
+_CITACAO_GMAIL = re.compile(r"^(On|Em)\s.+", re.IGNORECASE)
+_CITACAO_FIM = re.compile(r"(wrote|escreveu)\s*:\s*$", re.IGNORECASE)
+_CITACAO_OUTLOOK = re.compile(
+    r"^\s*(-{2,}\s*(original message|mensagem original)\s*-{2,}|_{5,})\s*$", re.IGNORECASE
+)
+_CABECALHO_OUTLOOK = re.compile(r"^\s*(De|From)\s*:", re.IGNORECASE)
+_ENVIADO = re.compile(r"^\s*(Enviado|Enviada|Sent|Data|Date)\s*:", re.IGNORECASE)
+
+
+def sem_citacao(texto_email: str) -> str:
+    """Só a mensagem nova de uma resposta: corta o e-mail anterior citado embaixo
+    ("On … wrote:", "Em … escreveu:", "-----Mensagem original-----", o bloco
+    "De:/Enviado:" do Outlook) e as linhas citadas com ">"."""
+    linhas = texto_email.splitlines()
+    for indice, linha in enumerate(linhas):
+        # "On Sun, Oct 4, 2026 at 12:51 AM <x@y> wrote:" (às vezes em duas linhas)
+        junto = " ".join(x.strip() for x in linhas[indice:indice + 3])
+        if _CITACAO_GMAIL.match(linha.strip()) and _CITACAO_FIM.search(
+                junto[:junto.lower().find("wrote:") + 6] if "wrote:" in junto.lower()
+                else junto[:junto.lower().find("escreveu:") + 9]):
+            linhas = linhas[:indice]
+            break
+        if _CITACAO_OUTLOOK.match(linha):
+            linhas = linhas[:indice]
+            break
+        if _CABECALHO_OUTLOOK.match(linha) and any(
+                _ENVIADO.match(x) for x in linhas[indice + 1:indice + 4]):
+            linhas = linhas[:indice]
+            break
+    return "\n".join(x for x in linhas if not x.lstrip().startswith(">"))
+
+
 def ler(texto_email: str) -> Leitura:
     """As linhas de honorário e as anotações de cada cliente.
 
     Aceita uma linha por honorário (colunas separadas por espaços ou tabulação)
-    e também as colunas em linhas separadas, como sai ao copiar de um PDF.
+    e também as colunas em linhas separadas, como sai ao copiar de um PDF. De
+    uma resposta, só a mensagem nova conta (o e-mail citado embaixo é ignorado).
     """
+    texto_email = sem_citacao(texto_email)
     encontrada = _DATA.search(texto_email)
     data_email = _data(encontrada.group(1)) if encontrada else None
     linhas: list[LinhaLida] = []
@@ -718,6 +752,8 @@ class Conferencia:
     # vieram no e-mail mas já estão pagos no sistema (baixa feita depois do e-mail)
     pagos: list[Casamento] = field(default_factory=list)
     casadas: dict[int, object] = field(default_factory=dict)   # id(lida) -> LinhaHonorario
+    ignoradas: list[LinhaLida] = field(default_factory=list)   # marcadas à mão
+    corrigidas: set[int] = field(default_factory=set)          # id(lida) associadas à mão
 
     def sairam_por_cliente(self) -> dict[Cliente, list]:
         grupos: dict[int, list] = defaultdict(list)
@@ -743,11 +779,30 @@ def semelhanca(lido: str, cadastrado: str) -> float:
 
 
 MINIMO_SEMELHANCA = 0.6
+TOLERANCIA_DIAS = 31   # mesma competência, vencimento diferente no e-mail
 
 
-def _casar(lida: LinhaLida, candidatos: list):
-    """O honorário da linha do e-mail: pelo código, ou pelo vencimento e o nome."""
-    do_dia = [linha for linha in candidatos if linha.honorario.vencimento == lida.vencimento]
+def chave_da_linha(lida: LinhaLida) -> str:
+    """Identifica a linha do e-mail para guardar a correção feita à mão."""
+    return f"{lida.cliente}|{lida.competencia}|{lida.vencimento.isoformat()}|{lida.valor}"
+
+
+def _casar(lida: LinhaLida, candidatos: list, por_competencia: bool = False):
+    """O honorário da linha do e-mail: pelo código, ou pelo vencimento e o nome.
+
+    ``por_competencia``: segunda tentativa, para quando o vencimento do e-mail
+    difere do sistema (outro dia útil, digitado diferente): mesma competência e
+    vencimento a até ``TOLERANCIA_DIAS``.
+    """
+    if por_competencia:
+        do_dia = [
+            linha for linha in candidatos
+            if linha.honorario.competencia_rotulo == lida.competencia
+            and abs((linha.honorario.vencimento - lida.vencimento).days) <= TOLERANCIA_DIAS
+        ]
+    else:
+        do_dia = [linha for linha in candidatos
+                  if linha.honorario.vencimento == lida.vencimento]
     if lida.codigo:
         pontos = [(1.0, linha) for linha in do_dia if linha.cliente.codigo == lida.codigo]
     else:
@@ -762,36 +817,75 @@ def _casar(lida: LinhaLida, candidatos: list):
     ))[1]
 
 
-def conferir(sessao: Session, leitura: Leitura, referencia: date) -> Conferencia:
+def conferir(sessao: Session, leitura: Leitura, referencia: date,
+             correcoes: dict[str, int] | None = None) -> Conferencia:
     """Compara o e-mail com os honorários vencidos do sistema na data dele.
 
     Casa com o que vence até o dia do e-mail; "saiu da lista" só vale para o que
-    já tinha vencido antes dele.
+    já tinha vencido antes dele. ``correcoes`` são as associações feitas à mão
+    (chave da linha → id do honorário; 0 = ignorar a linha) e valem primeiro.
     """
+    from . import calculo
+
     data = leitura.data or referencia
     livres = list(_vencidos(sessao, data, ate_o_dia=True))
     resultado = Conferencia(data=data, leitura=leitura)
-    sem_par = []
+    correcoes = correcoes or {}
+    automaticas = []
     for lida in leitura.linhas:
-        melhor = _casar(lida, livres)
-        if melhor is None:
-            sem_par.append(lida)
+        escolhido = correcoes.get(chave_da_linha(lida))
+        if escolhido is None:
+            automaticas.append(lida)
             continue
-        livres.remove(melhor)
-        resultado.continuam.append(Casamento(lida, melhor))
-        resultado.casadas[id(lida)] = melhor
+        if escolhido == 0:
+            resultado.ignoradas.append(lida)
+            continue
+        linha = next((x for x in livres if x.honorario.id == escolhido), None)
+        if linha is not None:
+            livres.remove(linha)
+        else:
+            honorario = sessao.get(Honorario, escolhido)
+            if honorario is None:   # apagado depois da correção: volta ao automático
+                automaticas.append(lida)
+                continue
+            if honorario.status is StatusPagamento.PAGO:
+                resultado.pagos.append(Casamento(lida, _Pago(honorario)))
+                resultado.corrigidas.add(id(lida))
+                continue
+            linha = servico_honorarios.montar_linha(
+                honorario, calculo.atualizar(honorario, data), data)
+        resultado.continuam.append(Casamento(lida, linha))
+        resultado.casadas[id(lida)] = linha
+        resultado.corrigidas.add(id(lida))
+    sem_par = []
+    for por_competencia in (False, True):
+        restantes = automaticas if not por_competencia else sem_par
+        sem_par = []
+        for lida in restantes:
+            melhor = _casar(lida, livres, por_competencia)
+            if melhor is None:
+                sem_par.append(lida)
+                continue
+            livres.remove(melhor)
+            resultado.continuam.append(Casamento(lida, melhor))
+            resultado.casadas[id(lida)] = melhor
     # o que veio no e-mail mas já foi baixado no sistema (pago depois do e-mail)
-    vencimentos = {lida.vencimento for lida in sem_par}
-    pagos = [_Pago(h) for h in sessao.scalars(select(Honorario).where(
-        Honorario.status == StatusPagamento.PAGO, Honorario.vencimento.in_(vencimentos)
-    ))] if vencimentos else []
+    if sem_par:
+        menor = min(lida.vencimento for lida in sem_par) - timedelta(days=TOLERANCIA_DIAS)
+        maior = max(lida.vencimento for lida in sem_par) + timedelta(days=TOLERANCIA_DIAS)
+        pagos = [_Pago(h) for h in sessao.scalars(select(Honorario).where(
+            Honorario.status == StatusPagamento.PAGO, Honorario.vencimento.between(menor, maior)
+        ))]
+    else:
+        pagos = []
     for lida in sem_par:
-        pago = _casar(lida, pagos)
+        pago = _casar(lida, pagos) or _casar(lida, pagos, por_competencia=True)
         if pago is None:
             resultado.nao_encontradas.append(lida)
         else:
             pagos.remove(pago)
             resultado.pagos.append(Casamento(lida, pago))
+    resultado.continuam.sort(key=lambda c: leitura.linhas.index(c.lida))
     resultado.sairam = sorted(
         (linha for linha in livres if linha.honorario.vencimento < data),
         key=lambda linha: (normalizar_busca(linha.cliente.nome), linha.honorario.vencimento),

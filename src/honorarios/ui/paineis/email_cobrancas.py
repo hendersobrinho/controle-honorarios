@@ -124,9 +124,11 @@ class ItemEmail(QFrame):
 
 
 # ------------------------------------------------------------ conferência
-SAIU, CONTINUA, FORA, PAGO = "saiu", "continua", "fora", "pago"
+SAIU, CONTINUA, FORA, PAGO, IGNORADA = "saiu", "continua", "fora", "pago", "ignorada"
 PAPEL_HONORARIO = Qt.ItemDataRole.UserRole
 PAPEL_GRUPO = Qt.ItemDataRole.UserRole + 1
+PAPEL_LIDA = Qt.ItemDataRole.UserRole + 2      # a linha do e-mail (para corrigir)
+PAPEL_CORRIGIDA = Qt.ItemDataRole.UserRole + 3
 
 
 class AbaConferencia(QWidget):
@@ -171,6 +173,15 @@ class AbaConferencia(QWidget):
         )
         self.dica.setWordWrap(True)
         rodape.addWidget(self.dica, 1)
+        self.botao_corrigir = QPushButton("Corrigir…")
+        self.botao_corrigir.setToolTip(
+            "Dizer a qual honorário do sistema esta linha do e-mail se refere, ou ignorá-la"
+        )
+        self.botao_corrigir.clicked.connect(self.corrigir)
+        self.botao_desfazer = QPushButton("Desfazer correção")
+        self.botao_desfazer.clicked.connect(self.desfazer_correcao)
+        rodape.addWidget(self.botao_desfazer)
+        rodape.addWidget(self.botao_corrigir)
         self.botao_retorno = QPushButton("Anotar retorno…")
         self.botao_retorno.setObjectName("primario")
         self.botao_retorno.clicked.connect(self.anotar_retorno)
@@ -181,6 +192,14 @@ class AbaConferencia(QWidget):
         rodape.addWidget(self.botao_pagar)
         layout.addLayout(rodape)
         self._atualizar_botoes()
+
+    @staticmethod
+    def _marcar(item: QTreeWidgetItem, lida, corrigida: bool = False) -> QTreeWidgetItem:
+        item.setData(0, PAPEL_LIDA, lida)
+        item.setData(0, PAPEL_CORRIGIDA, corrigida)
+        if corrigida:
+            item.setToolTip(0, "Associado à mão a este honorário (dá para desfazer)")
+        return item
 
     def _linha(self, pai, grupo: str, cliente: str, competencia: str, vencimento: str,
                valor: str, notas: str = "", honorario=None) -> QTreeWidgetItem:
@@ -202,13 +221,21 @@ class AbaConferencia(QWidget):
         grupo.setFlags(Qt.ItemFlag.ItemIsEnabled)
         return grupo
 
-    def _do_sistema(self, pai, grupo: str, linha, notas: str = "") -> None:
+    def _linha_do_email(self, pai, grupo: str, lida) -> QTreeWidgetItem:
+        return self._linha(
+            pai, grupo, f"{lida.codigo} – {lida.cliente}" if lida.codigo else lida.cliente,
+            lida.competencia, formatar_data(lida.vencimento),
+            formatar_moeda(lida.valor) if lida.valor is not None else "",
+            "  ".join(lida.notas),
+        )
+
+    def _do_sistema(self, pai, grupo: str, linha, notas: str = "") -> QTreeWidgetItem:
         honorario = linha.honorario
         valor = honorario.saldo_aberto if grupo != PAGO else honorario.valor_original
-        self._linha(pai, grupo, servico.nome_no_email(linha.cliente),
-                    honorario.competencia_rotulo or honorario.tipo.nome,
-                    formatar_data(honorario.vencimento), formatar_moeda(valor), notas,
-                    honorario)
+        return self._linha(pai, grupo, servico.nome_no_email(linha.cliente),
+                           honorario.competencia_rotulo or honorario.tipo.nome,
+                           formatar_data(honorario.vencimento), formatar_moeda(valor), notas,
+                           honorario)
 
     def mostrar(self, conferencia: servico.Conferencia | None) -> None:
         self.arvore.clear()
@@ -244,23 +271,26 @@ class AbaConferencia(QWidget):
             cliente = casamento.linha.cliente
             texto = "" if cliente.id in anotados else "  ".join(notas[cliente.id])
             anotados.add(cliente.id)
-            self._do_sistema(continuam, CONTINUA, casamento.linha, texto)
+            corrigida = id(casamento.lida) in conferencia.corrigidas
+            if corrigida:
+                texto = f"(corrigido à mão)  {texto}".strip()
+            item = self._do_sistema(continuam, CONTINUA, casamento.linha, texto)
+            self._marcar(item, casamento.lida, corrigida)
         if conferencia.pagos:
             pagos = self._grupo("No e-mail, mas já pagos no sistema (ficam fora da resposta)",
                                 len(conferencia.pagos))
             for casamento in conferencia.pagos:
-                self._do_sistema(pagos, PAGO, casamento.linha)
+                item = self._do_sistema(pagos, PAGO, casamento.linha)
+                self._marcar(item, casamento.lida, id(casamento.lida) in conferencia.corrigidas)
         if conferencia.nao_encontradas:
-            fora = self._grupo("No e-mail, mas sem honorário igual no sistema",
-                               len(conferencia.nao_encontradas))
+            fora = self._grupo("No e-mail, mas sem honorário igual no sistema — selecione e "
+                               "clique em Corrigir", len(conferencia.nao_encontradas))
             for lida in conferencia.nao_encontradas:
-                self._linha(
-                    fora, FORA,
-                    f"{lida.codigo} – {lida.cliente}" if lida.codigo else lida.cliente,
-                    lida.competencia, formatar_data(lida.vencimento),
-                    formatar_moeda(lida.valor) if lida.valor is not None else "",
-                    "  ".join(lida.notas),
-                )
+                self._marcar(self._linha_do_email(fora, FORA, lida), lida)
+        if conferencia.ignoradas:
+            ignoradas = self._grupo("Ignoradas por você", len(conferencia.ignoradas))
+            for lida in conferencia.ignoradas:
+                self._marcar(self._linha_do_email(ignoradas, IGNORADA, lida), lida, True)
         incompletas = conferencia.leitura.incompletas
         if incompletas:
             grupo = self._grupo("No e-mail sem vencimento ou valor — confira no e-mail",
@@ -279,7 +309,18 @@ class AbaConferencia(QWidget):
         return [item.data(0, PAPEL_HONORARIO) for item in self.arvore.selectedItems()
                 if item.data(0, PAPEL_GRUPO) == grupo and item.data(0, PAPEL_HONORARIO)]
 
+    def _linha_selecionada(self):
+        """(linha do e-mail, foi corrigida à mão) do item selecionado, se for um só."""
+        itens = self.arvore.selectedItems()
+        if len(itens) != 1 or itens[0].data(0, PAPEL_LIDA) is None:
+            return None, False
+        return itens[0].data(0, PAPEL_LIDA), bool(itens[0].data(0, PAPEL_CORRIGIDA))
+
     def _atualizar_botoes(self) -> None:
+        lida, corrigida = self._linha_selecionada()
+        pode = self.painel.mensagem is not None
+        self.botao_corrigir.setEnabled(pode and lida is not None)
+        self.botao_desfazer.setVisible(pode and corrigida)
         continuam = self._selecionados(CONTINUA)
         self.botao_retorno.setEnabled(
             bool(continuam) and len({h.cliente_id for h in continuam}) == 1
@@ -295,6 +336,25 @@ class AbaConferencia(QWidget):
             self.arvore.clearSelection()
             item.setSelected(True)
             self.anotar_retorno()
+        elif grupo in (FORA, IGNORADA) and item.data(0, PAPEL_LIDA) is not None:
+            self.arvore.clearSelection()
+            item.setSelected(True)
+            self.corrigir()
+
+    def corrigir(self) -> None:
+        from ..dialogos.corrigir_linha import DialogoCorrigirLinha
+
+        lida, _ = self._linha_selecionada()
+        if lida is None:
+            return
+        dialogo = DialogoCorrigirLinha(self.contexto, lida, self)
+        if dialogo.exec() and dialogo.escolha is not None:
+            self.painel.corrigir_linha(lida, dialogo.escolha)
+
+    def desfazer_correcao(self) -> None:
+        lida, corrigida = self._linha_selecionada()
+        if lida is not None and corrigida:
+            self.painel.corrigir_linha(lida, None)
 
     def _pagar_selecionado(self) -> None:
         [honorario] = self._selecionados(SAIU)
@@ -712,6 +772,19 @@ class PainelEmailCobrancas(QWidget):
         self.responder.aviso.setText(texto)
         self.conferencia_aba.resumo.setText(f"{texto}  ·  {self.conferencia_aba.resumo.text()}")
 
+    def corrigir_linha(self, lida, escolha: int | None) -> None:
+        """Guarda a correção da linha neste e-mail (None desfaz) e confere de novo."""
+        if self.mensagem is None:
+            return
+        caixa_email.corrigir(self.contexto.sessao, self.mensagem,
+                             servico.chave_da_linha(lida), escolha)
+        self.contexto.salvar()
+        self.reconferir()
+        texto = ("✓ Correção desfeita." if escolha is None else
+                 "✓ Linha ignorada." if escolha == 0 else
+                 "✓ Linha associada ao honorário. Quem ficou sem par entra em \"saíram\".")
+        self.status_resposta(texto)
+
     def reconferir(self) -> None:
         """Confere a lista do e-mail aberto e refaz a resposta (depois de uma baixa)."""
         self.contexto.atualizar()
@@ -721,7 +794,8 @@ class PainelEmailCobrancas(QWidget):
             leitura = servico.ler(recebido.texto)
             if leitura.linhas or leitura.incompletas:
                 self.conferencia = servico.conferir(
-                    self.contexto.sessao, leitura, self.contexto.data_referencia
+                    self.contexto.sessao, leitura, self.contexto.data_referencia,
+                    caixa_email.correcoes(self.mensagem),
                 )
         self.conferencia_aba.mostrar(self.conferencia)
         saiu = len(self.conferencia.sairam) if self.conferencia is not None else 0
@@ -797,11 +871,14 @@ class PainelEmailCobrancas(QWidget):
         if self.mensagem is None or self.enviando:
             return
         resposta = self.responder.resposta()
-        copia = f"\nCópia: {resposta.cc}" if resposta.cc else ""
+        resumo = [("Para", resposta.para or "(ninguém)")]
+        if resposta.cc:
+            resumo.append(("Cópia", resposta.cc))
+        resumo.append(("Assunto", resposta.assunto))
         if not widgets.confirmar(
-            self, f"Enviar a resposta para {resposta.para or '(ninguém)'}?{copia}",
-            "Enviar resposta",
+            self, "Enviar a resposta ao financeiro?", "Enviar resposta",
             "O e-mail do financeiro vai citado embaixo. Depois de enviado não dá para desfazer.",
+            acao="Enviar", resumo=resumo,
         ):
             return
         try:

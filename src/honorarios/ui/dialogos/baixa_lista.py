@@ -157,13 +157,24 @@ class DialogoBaixaLista(QDialog):
         if not marcados:
             return
         total = sum((item.valor for item in marcados), start=ZERO)
+        clientes = len({item.honorario.cliente_id for item in marcados})
+        plural = "honorário" if len(marcados) == 1 else "honorários"
         if not widgets.confirmar(
             self,
-            f"Dar baixa em {len(marcados)} honorário(s), total {formatar_moeda(total)}, "
-            f"pagos em {formatar_data(self.data.valor())}?",
+            f"Confirmar o pagamento de {len(marcados)} {plural}?",
             "Dar baixa",
-            "Cada um fica como pago, com a observação de que saiu da lista do financeiro. "
-            "Se precisar, dá para estornar depois no histórico do honorário.",
+            "Cada um passa para Pagos, com a observação \"saiu da lista do financeiro\". "
+            "Se algo estiver errado, dá para estornar no histórico do honorário.",
+            acao=f"Dar baixa em {len(marcados)}",
+            resumo=[
+                ("Clientes", f"{clientes}"),
+                ("Total recebido", formatar_moeda(total)),
+                ("Pago em", formatar_data(self.data.valor())),
+                ("Valor", "com juros até a data" if self.com_juros.isChecked()
+                 else "só o valor original (juros abonados)"),
+                ("Forma", self.forma.valor().rotulo),
+            ],
+            tipo="pagamento",
         ):
             return
 

@@ -507,6 +507,8 @@ class EmailMensagem(Base):
     enviada: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     lida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     respondida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # correções da conferência feitas à mão: {chave da linha: id do honorário, 0 = ignorar}
+    correcoes: Mapped[str] = mapped_column(Text, default="", nullable=False)
     criada_em: Mapped[datetime] = _criado_em()
 
     @property

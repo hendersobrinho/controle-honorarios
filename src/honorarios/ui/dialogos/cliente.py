@@ -67,8 +67,9 @@ class DialogoCliente(QDialog):
             vazio="Em branco: cobra em nome próprio",
         )
         self.empresa.setToolTip(
-            "Quando a pessoa física paga os honorários por uma empresa, a cobrança "
-            "pode sair junto com a da empresa."
+            "O que a empresa paga já cobre esta pessoa: a geração da competência não "
+            "cria honorário para ela. Se um dia precisar, lance um honorário à mão — "
+            "e a cobrança dele pode sair junto com a da empresa."
         )
         formulario.addRow("Paga pela empresa:", self.empresa)
         self.observacoes = QPlainTextEdit()
