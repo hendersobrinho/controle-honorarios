@@ -32,7 +32,7 @@ from .paineis.importar import PainelImportar
 from .paineis.painel import PainelResumo
 from .paineis.rankings import PainelRankings
 from .paineis.relatorios import PainelRelatorios
-from .paineis.tipos import PainelTipos
+from .paineis.tipos_e_envio import PainelTiposEEnvio
 from .paineis.vencimentos import PainelVencimentos
 
 
@@ -105,7 +105,7 @@ class JanelaPrincipal(QMainWindow):
                 PainelAcompanhamento,
                 PainelEmailCobrancas,
             )),
-            ("CADASTROS", (PainelClientes, PainelHonorarios, PainelTipos)),
+            ("CADASTROS", (PainelClientes, PainelHonorarios, PainelTiposEEnvio)),
             ("GESTÃO", (
                 PainelResumo,
                 PainelRankings,
@@ -387,7 +387,8 @@ class JanelaPrincipal(QMainWindow):
         cliente = notificacao.cliente
         # "A vencer"/"Atrasados"/"Pagos" são abas de Vencimentos
         aba = notificacao.tela if notificacao.tela in ABAS_DE_VENCIMENTOS else None
-        item = self.itens_de_tela.get(PainelVencimentos.titulo if aba else notificacao.tela)
+        tela = NOMES_ANTIGOS.get(notificacao.tela, notificacao.tela)
+        item = self.itens_de_tela.get(PainelVencimentos.titulo if aba else tela)
         if item is None:
             return
         painel = self.tela(self.linhas_de_tela[self.navegacao.row(item)])
@@ -437,6 +438,8 @@ class JanelaPrincipal(QMainWindow):
 
 INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000   # meia hora
 ABAS_DE_VENCIMENTOS = ("A vencer", "Atrasados", "Pagos")
+# notificações guardadas antes de a tela mudar de nome
+NOMES_ANTIGOS = {"E-mail": "Gerenciador de e-mail", "E-mail de cobranças": "Gerenciador de e-mail"}
 
 
 class TelaAdiada(QWidget):

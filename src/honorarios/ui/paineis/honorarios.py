@@ -13,7 +13,14 @@ from datetime import date
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QMenu, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QMenu,
+    QPushButton,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ...dominio.enums import StatusPagamento, TipoPessoa
 from ...dominio.valores import ZERO, formatar_data, formatar_moeda, hoje, somar_meses
@@ -24,7 +31,7 @@ from ...servicos.honorarios import Filtro, LinhaHonorario
 from ..comum import cores, tema, widgets
 from ..comum.campos import CampoBusca
 from ..comum.cartoes import Acao, DadosCartao, DataCartao, PainelDeCartoes, SecaoCartoes
-from ..comum.filtros import BarraDeFiltros, FiltroData, FiltroLiga, FiltroOpcoes
+from ..comum.filtros import BarraDeFiltros, FiltroData, FiltroOpcoes
 from ..contexto import Contexto
 from ..dialogos.cobrar import DialogoCobrar
 from ..dialogos.ficha import DialogoFicha
@@ -338,12 +345,13 @@ class _PainelDeHonorarios(QWidget):
         self.linhas = self._consultar()
         secoes = [
             SecaoCartoes(
-                titulo=rotulo,
-                itens=itens,
+                titulo=grupo[0],
+                itens=grupo[1],
                 construtor=self._cartao,
-                total=formatar_moeda(servico.total_de(itens)),
+                total=formatar_moeda(servico.total_de(grupo[1])),
+                mostrar_titulo=grupo[2] if len(grupo) > 2 else True,
             )
-            for rotulo, itens in self._agrupar(self.linhas)
+            for grupo in self._agrupar(self.linhas)
         ]
         self.lista.definir_secoes(secoes)
         self._atualizar_resumo()
@@ -553,19 +561,6 @@ class PainelAtrasados(_PainelDeHonorarios):
         ]
 
     def _montar_filtros(self, filtros: BarraDeFiltros) -> None:
-        self.faixa = filtros.adicionar(FiltroOpcoes("Atraso", [
-            ("qualquer" if rotulo == "Qualquer atraso" else rotulo, (minimo, maximo))
-            for rotulo, minimo, maximo in FAIXAS_ATRASO
-        ]))
-        self.faixa.currentIndexChanged.connect(lambda *_: self.recarregar())
-
-        self.nunca_cobrado = filtros.adicionar(FiltroLiga("Nunca cobrado"))
-        self.nunca_cobrado.toggled.connect(lambda *_: self.recarregar())
-
-        self.agrupamento = self._agrupamento(
-            [("Faixa de atraso", "faixa"), ("Grupo", "grupo"), ("Empresa", "empresa")]
-        )
-
         self.data_referencia = filtros.adicionar(
             FiltroData("Juros até", self.contexto.data_referencia)
         )
@@ -577,24 +572,13 @@ class PainelAtrasados(_PainelDeHonorarios):
         self.recarregar()
 
     def _consultar(self) -> list[LinhaHonorario]:
-        minimo, maximo = self.faixa.currentData()
         return servico.consultar(
             self.contexto.sessao,
-            self._filtro_base(
-                status=StatusPagamento.EM_ABERTO,
-                atraso_minimo=minimo,
-                atraso_maximo=maximo,
-                nunca_cobrado=self.nunca_cobrado.isChecked(),
-            ),
+            self._filtro_base(status=StatusPagamento.EM_ABERTO, atraso_minimo=1),
         )
 
     def _agrupar(self, linhas):
-        modo = self.agrupamento.currentData()
-        if modo == "grupo":
-            return servico.agrupar_por_grupo(linhas)
-        if modo == "empresa":
-            return servico.agrupar_por_cliente(linhas)
-        return servico.agrupar_por_faixa_de_atraso(linhas)
+        return servico.agrupar_por_empresa(linhas)
 
     def _acoes_do_cartao(self, linha):
         acoes = super()._acoes_do_cartao(linha)
@@ -670,9 +654,7 @@ class PainelAVencer(_PainelDeHonorarios):
         ]
 
     def _montar_filtros(self, filtros: BarraDeFiltros) -> None:
-        self.agrupamento = self._agrupamento(
-            [("Vencimento", "vencimento"), ("Empresa", "empresa")]
-        )
+        pass
 
     def _consultar(self) -> list[LinhaHonorario]:
         return servico.consultar(
@@ -681,13 +663,7 @@ class PainelAVencer(_PainelDeHonorarios):
         )
 
     def _agrupar(self, linhas):
-        if self.agrupamento.currentData() == "empresa":
-            return servico.agrupar_por_cliente(linhas)
-        return servico.agrupar_por_proximidade(
-            linhas,
-            self.contexto.data_referencia,
-            self.contexto.config_int("dias_vence_em_breve", 5),
-        )
+        return servico.agrupar_por_empresa(linhas)
 
     def _acoes_do_cartao(self, linha):
         acoes = super()._acoes_do_cartao(linha)
@@ -701,21 +677,12 @@ class PainelAVencer(_PainelDeHonorarios):
 # ---------------------------------------------------------------------- pagos
 
 
-PERIODOS_PAGOS = (
-    ("Mês atual", 0),
-    ("Últimos 3 meses", 3),
-    ("Últimos 6 meses", 6),
-    ("Últimos 12 meses", 12),
-    ("Tudo", None),
-)
-
-
 class PainelPagos(_PainelDeHonorarios):
-    """Registro dos honorários quitados, recortado por período."""
+    """Registro dos honorários quitados, uma competência por vez."""
 
     titulo = "Pagos"
     subtitulo = "Registro dos honorários quitados"
-    vazio = "Nenhum pagamento nesse período."
+    vazio = "Nenhum honorário desta competência foi pago."
 
     def _botoes_do_cabecalho(self):
         return [("Ficha da empresa", self._ficha, False, "Ctrl+F")]
@@ -727,34 +694,72 @@ class PainelPagos(_PainelDeHonorarios):
         ]
 
     def _montar_filtros(self, filtros: BarraDeFiltros) -> None:
-        self.periodo = filtros.adicionar(FiltroOpcoes("Período", list(PERIODOS_PAGOS), padrao=1))
-        self.periodo.setCurrentIndex(1)
-        self.periodo.currentIndexChanged.connect(lambda *_: self.recarregar())
-        self.agrupamento = self._agrupamento(
-            [("Mês do pagamento", "mes"), ("Empresa", "empresa")]
-        )
-
-    def _desde(self) -> date | None:
-        meses = self.periodo.currentData()
-        if meses is None:
-            return None
+        # um mês de competência por vez: com milhares de pagos, abrir tudo pesa (e o
+        # histórico completo de cada empresa está na ficha dela)
         referencia = self.contexto.data_referencia
-        primeiro = date(referencia.year, referencia.month, 1)
-        if meses == 0:
-            return primeiro
-        return somar_meses(primeiro, -(meses - 1)).replace(day=1)
+        meses = [m for m in servico.meses_com_pagos(self.contexto.sessao)
+                 if m <= (referencia.year, referencia.month)]
+        self.ano, self.mes = meses[0] if meses else (referencia.year, referencia.month)
+        navegacao = QWidget()
+        linha = QHBoxLayout(navegacao)
+        linha.setContentsMargins(0, 0, 8, 0)
+        linha.setSpacing(4)
+        self.anterior = QPushButton("◀")
+        self.anterior.setObjectName("navegaMes")
+        self.anterior.setToolTip("Competência anterior")
+        self.anterior.clicked.connect(lambda: self.ir_para_competencia(*self._deslocar(-1)))
+        self.botao_mes = QToolButton()
+        self.botao_mes.setObjectName("botaoMes")
+        self.botao_mes.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.botao_mes.setToolTip("Escolher a competência")
+        self.proximo = QPushButton("▶")
+        self.proximo.setObjectName("navegaMes")
+        self.proximo.setToolTip("Próxima competência")
+        self.proximo.clicked.connect(lambda: self.ir_para_competencia(*self._deslocar(1)))
+        for widget in (self.anterior, self.botao_mes, self.proximo):
+            linha.addWidget(widget)
+        filtros.adicionar_controle(navegacao)
+
+    def _deslocar(self, meses: int) -> tuple[int, int]:
+        destino = somar_meses(date(self.ano, self.mes, 1), meses)
+        return destino.year, destino.month
+
+    def ir_para_competencia(self, ano: int, mes: int) -> None:
+        self.ano, self.mes = ano, mes
+        self.recarregar()
+
+    def _montar_menu_de_meses(self) -> None:
+        """Um submenu por ano; as competências com pagos ficam marcadas com •."""
+        com_pagos = set(servico.meses_com_pagos(self.contexto.sessao))
+        referencia = self.contexto.data_referencia
+        anos = {ano for ano, _ in com_pagos} | {referencia.year}
+        menu = QMenu(self)
+        for ano in sorted(anos, reverse=True):
+            submenu = menu.addMenu(str(ano))
+            for mes in range(1, 13):
+                marca = "  •" if (ano, mes) in com_pagos else ""
+                acao = submenu.addAction(f"{mes:02d}/{ano}{marca}")
+                acao.setCheckable(True)
+                acao.setChecked((ano, mes) == (self.ano, self.mes))
+                acao.triggered.connect(
+                    lambda _=False, a=ano, m=mes: self.ir_para_competencia(a, m))
+        self.botao_mes.setMenu(menu)
+
+    def recarregar(self) -> None:
+        self.botao_mes.setText(f"Competência {self.mes:02d}/{self.ano}  ▾")
+        self._montar_menu_de_meses()
+        super().recarregar()
 
     def _consultar(self) -> list[LinhaHonorario]:
-        # o recorte de período vai para a consulta: o que está fora nem é lido
+        # só a competência escolhida vai para a consulta: o resto nem é lido
         return servico.consultar(
             self.contexto.sessao,
-            self._filtro_base(status=StatusPagamento.PAGO, pago_de=self._desde()),
+            self._filtro_base(status=StatusPagamento.PAGO,
+                              competencia_mes=(self.ano, self.mes)),
         )
 
     def _agrupar(self, linhas):
-        if self.agrupamento.currentData() == "empresa":
-            return servico.agrupar_por_cliente(linhas)
-        return servico.agrupar_por_mes_pagamento(linhas)
+        return servico.agrupar_por_empresa(linhas)
 
     def _cartao(self, linha: LinhaHonorario) -> DadosCartao:
         return cartao_de_pago(linha, self._acoes_do_cartao(linha) + self._acao_agradecer(linha))
@@ -773,7 +778,7 @@ class PainelImpostoRenda(_PainelDeHonorarios):
     ano do IR (IRPF 2026, 2025…) é o recorte natural em vez do período.
     """
 
-    titulo = "Imposto de Renda"
+    titulo = "Clientes de IR"
     subtitulo = "Clientes que só têm honorário de Imposto de Renda"
     vazio = "Nenhum honorário de Imposto de Renda com esses filtros."
     clientes_so_ir = True

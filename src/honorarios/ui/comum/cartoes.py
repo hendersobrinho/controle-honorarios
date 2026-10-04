@@ -91,6 +91,7 @@ class SecaoCartoes:
     construtor: Callable[[Any], DadosCartao] | None = None
     subtitulo: str = ""
     total: str = ""
+    mostrar_titulo: bool = True   # False: os cartões entram sem o cabeçalho da seção
 
     def cartao(self, item: Any) -> DadosCartao:
         if self.construtor is None:
@@ -346,7 +347,8 @@ class PainelDeCartoes(QScrollArea):
         for secao in self._secoes:
             if not secao.quantidade:
                 continue
-            self._layout.addWidget(self._cabecalho(secao))
+            if secao.mostrar_titulo:
+                self._layout.addWidget(self._cabecalho(secao))
             limite = min(self._limites.get(secao.titulo, self._limite_secao), max(0, restante))
             # o orçamento desconta o que foi desenhado de fato, não o limite da
             # seção: seções pequenas não podem consumir o espaço das seguintes

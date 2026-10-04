@@ -55,7 +55,6 @@ from ...servicos import caixa_email
 from ...servicos import email_cobrancas as servico
 from ..comum import segundo_plano, widgets
 from ..contexto import Contexto
-from ..dialogos.pagamento import DialogoPagamento
 
 PAPEL_MENSAGEM = Qt.ItemDataRole.UserRole + 1
 FUNDO_EMAIL = "QTextBrowser, QTextEdit { background: #ffffff; color: #1c2430; border: none; }"
@@ -185,11 +184,7 @@ class AbaConferencia(QWidget):
         self.botao_retorno = QPushButton("Anotar retorno…")
         self.botao_retorno.setObjectName("primario")
         self.botao_retorno.clicked.connect(self.anotar_retorno)
-        self.botao_pagar = QPushButton("Confirmar pagamento…")
-        self.botao_pagar.setObjectName("cartaoPagamento")
-        self.botao_pagar.clicked.connect(self._pagar_selecionado)
         rodape.addWidget(self.botao_retorno)
-        rodape.addWidget(self.botao_pagar)
         layout.addLayout(rodape)
         self._atualizar_botoes()
 
@@ -325,13 +320,11 @@ class AbaConferencia(QWidget):
         self.botao_retorno.setEnabled(
             bool(continuam) and len({h.cliente_id for h in continuam}) == 1
         )
-        self.botao_pagar.setEnabled(len(self._selecionados(SAIU)) == 1
-                                    and len(self.arvore.selectedItems()) == 1)
 
     def _duplo_clique(self, item: QTreeWidgetItem) -> None:
         grupo = item.data(0, PAPEL_GRUPO)
-        if grupo == SAIU:
-            self._pagar(item.data(0, PAPEL_HONORARIO))
+        if grupo == SAIU:   # quem saiu da lista: a janela de baixa
+            self.painel.abrir_baixa()
         elif grupo == CONTINUA:
             self.arvore.clearSelection()
             item.setSelected(True)
@@ -355,14 +348,6 @@ class AbaConferencia(QWidget):
         lida, corrigida = self._linha_selecionada()
         if lida is not None and corrigida:
             self.painel.corrigir_linha(lida, None)
-
-    def _pagar_selecionado(self) -> None:
-        [honorario] = self._selecionados(SAIU)
-        self._pagar(honorario)
-
-    def _pagar(self, honorario) -> None:
-        if DialogoPagamento(self.contexto, honorario, self).exec():
-            self.painel.reconferir()
 
     def anotar_retorno(self) -> None:
         from ..dialogos.retorno import DialogoRetorno
@@ -404,22 +389,15 @@ class AbaResponder(QWidget):
         self.aviso = widgets.rotulo_fraco("")
         self.aviso.setWordWrap(True)
         barra.addWidget(self.aviso, 1)
-        self.botao_refazer = QPushButton("Desfazer minhas edições")
-        self.botao_refazer.setToolTip(
-            "Volta a resposta para o texto que o sistema montou (lista do financeiro sem "
-            "quem pagou + os retornos anotados), descartando o que você escreveu"
-        )
-        self.botao_refazer.clicked.connect(self.painel.montar_resposta)
         self.botao_copiar = QPushButton("Copiar")
         self.botao_copiar.setToolTip("Copia com a formatação, para colar no Outlook")
         self.botao_copiar.clicked.connect(self.copiar)
         self.botao_rascunho = QPushButton("Salvar rascunho…")
         self.botao_rascunho.clicked.connect(lambda: self.salvar_rascunho())
-        self.botao_enviar = QPushButton("Enviar resposta")
+        self.botao_enviar = QPushButton("Enviar")
         self.botao_enviar.setObjectName("primario")
         self.botao_enviar.clicked.connect(self.painel.enviar)
-        for botao in (self.botao_refazer, self.botao_copiar, self.botao_rascunho,
-                      self.botao_enviar):
+        for botao in (self.botao_copiar, self.botao_rascunho, self.botao_enviar):
             barra.addWidget(botao)
         layout.addLayout(barra)
 
@@ -427,10 +405,8 @@ class AbaResponder(QWidget):
         self.editor.setAcceptRichText(True)
         self.editor.setStyleSheet(FUNDO_EMAIL)
         layout.addWidget(self.editor, 1)
-        layout.addWidget(widgets.rotulo_fraco(
-            "Dá para escrever no texto antes de enviar. O e-mail do financeiro vai citado "
-            "embaixo, como no Outlook."
-        ))
+        self.rodape = widgets.rotulo_fraco("")
+        layout.addWidget(self.rodape)
 
     def preencher(self, email: servico.EmailCobrancas | None, pode_enviar: bool,
                   aviso: str = "") -> None:
@@ -442,10 +418,16 @@ class AbaResponder(QWidget):
         self.editor.setHtml(self.html_gerado)
         self.editor.document().setModified(False)
         for campo in (self.para, self.cc, self.assunto, self.editor, self.botao_copiar,
-                      self.botao_rascunho, self.botao_refazer):
+                      self.botao_rascunho):
             campo.setEnabled(email is not None)
         self.botao_enviar.setEnabled(email is not None and pode_enviar)
         self.aviso.setText(aviso)
+        novo = self.painel.mensagem is None
+        self.rodape.setText(
+            "Dá para escrever no texto antes de enviar. "
+            + ("Vai como e-mail novo, com o assunto da conversa." if novo else
+               "O e-mail do financeiro vai citado embaixo, como no Outlook.")
+        )
 
     def corpo_html(self) -> str:
         """O que foi gerado, ou o texto editado (com a formatação do editor)."""
@@ -492,7 +474,7 @@ class AbaResponder(QWidget):
 
 # ------------------------------------------------------------------ tela
 class PainelEmailCobrancas(QWidget):
-    titulo = "E-mail"
+    titulo = "Gerenciador de e-mail"
     chegaram = Signal(int)   # e-mails novos baixados (para a janela avisar)
     recarregado = Signal()   # houve baixa: a janela atualiza os contadores
 
@@ -505,14 +487,23 @@ class PainelEmailCobrancas(QWidget):
         self.verificando = False
         self.enviando = False
         self.janela_baixa = None
+        self.modo_sistema = False   # e-mail novo pelo sistema (sem o do financeiro)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
         self.cabecalho = widgets.Cabecalho(
-            "E-mail", "A conversa \"Clientes c/Honorários vencidos\" com o financeiro"
+            "Gerenciador de e-mail",
+            "A conversa \"Clientes c/Honorários vencidos\" com o financeiro",
         )
         self.situacao = widgets.rotulo_fraco("")
         self.cabecalho.acoes.addWidget(self.situacao)
+        self.botao_novo = self.cabecalho.adicionar_botao(
+            "Novo e-mail pelo sistema", self.montar_pelo_sistema
+        )
+        self.botao_novo.setToolTip(
+            "Monta o e-mail com os vencidos de hoje e as anotações das cobranças, já "
+            "endereçado ao financeiro — para quando não há e-mail dele para responder"
+        )
         self.botao_verificar = self.cabecalho.adicionar_botao(
             "Verificar caixa", lambda: self.verificar(), primario=True
         )
@@ -524,8 +515,6 @@ class PainelEmailCobrancas(QWidget):
         menu.addAction("Abrir e-mail salvo no computador (.eml, PDF)…",
                        lambda: self.abrir_arquivo())
         menu.addAction("Colar o texto de um e-mail…", self.colar_texto)
-        menu.addAction("Gerar a lista dos vencidos sem o e-mail do financeiro",
-                       self.montar_pelo_sistema)
         menu.addSeparator()
         menu.addAction("Conta de e-mail…", self.configurar_conta)
         self.menu_acoes.setMenu(menu)
@@ -612,9 +601,13 @@ class PainelEmailCobrancas(QWidget):
         self.assunto.setObjectName("assuntoEmail")
         self.assunto.setWordWrap(True)
         topo.addWidget(self.assunto, 1)
-        self.botao_responder = QPushButton("Responder")
+        self.botao_responder = QPushButton("Montar resposta")
         self.botao_responder.setObjectName("primario")
-        self.botao_responder.clicked.connect(lambda: self.abas.setCurrentWidget(self.responder))
+        self.botao_responder.setToolTip(
+            "Monta a resposta com o que está no sistema agora: a lista do financeiro sem "
+            "quem pagou, com as cobranças e os retornos anotados"
+        )
+        self.botao_responder.clicked.connect(self.montar_e_abrir_resposta)
         topo.addWidget(self.botao_responder, 0, Qt.AlignmentFlag.AlignTop)
         cartao_layout.addLayout(topo)
         self.de = QLabel()
@@ -693,7 +686,7 @@ class PainelEmailCobrancas(QWidget):
             "Nenhum e-mail recebido ainda.\n\nClique em Verificar caixa, ou abra um e-mail "
             "salvo pelo menu Ações."
         )
-        if self.mensagem is None and self.conferencia is None:
+        if self.mensagem is None and self.conferencia is None and not self.modo_sistema:
             self.direita.setCurrentIndex(0)
 
     def _trocar_caixa(self) -> None:
@@ -717,6 +710,7 @@ class PainelEmailCobrancas(QWidget):
 
     def abrir_mensagem(self, mensagem) -> None:
         self.mensagem = mensagem
+        self.modo_sistema = False
         primeira_vez = not mensagem.lida
         if primeira_vez:
             caixa_email.marcar_lido(self.contexto.sessao, mensagem)
@@ -803,7 +797,23 @@ class PainelEmailCobrancas(QWidget):
                              else "Conferir com o sistema")
         self.montar_resposta()
 
+    def montar_e_abrir_resposta(self) -> None:
+        """O botão "Montar resposta": refaz com os dados de agora e abre a aba."""
+        if self.responder.editor.document().isModified() and not widgets.confirmar(
+            self, "Montar a resposta de novo?", "Montar resposta",
+            "O texto é refeito com o que está no sistema agora, e o que você escreveu nele "
+            "se perde.", acao="Montar de novo",
+        ):
+            return
+        if self.mensagem is None:
+            self.montar_pelo_sistema()
+            return
+        self.reconferir()
+        self.abas.setCurrentWidget(self.responder)
+
     def montar_resposta(self) -> None:
+        if self.mensagem is None and self.modo_sistema:
+            return   # o e-mail novo pelo sistema tem a sua montagem
         if self.mensagem is None or self.conferencia is None:
             self.responder.preencher(None, False)
             return
@@ -868,7 +878,8 @@ class PainelEmailCobrancas(QWidget):
         self.botao_verificar.setEnabled(True)
 
     def enviar(self) -> None:
-        if self.mensagem is None or self.enviando:
+        novo = self.mensagem is None and self.modo_sistema
+        if (self.mensagem is None and not novo) or self.enviando:
             return
         resposta = self.responder.resposta()
         resumo = [("Para", resposta.para or "(ninguém)")]
@@ -876,7 +887,9 @@ class PainelEmailCobrancas(QWidget):
             resumo.append(("Cópia", resposta.cc))
         resumo.append(("Assunto", resposta.assunto))
         if not widgets.confirmar(
-            self, "Enviar a resposta ao financeiro?", "Enviar resposta",
+            self, "Enviar o e-mail ao financeiro?" if novo else
+            "Enviar a resposta ao financeiro?", "Enviar",
+            "Depois de enviado não dá para desfazer." if novo else
             "O e-mail do financeiro vai citado embaixo. Depois de enviado não dá para desfazer.",
             acao="Enviar", resumo=resumo,
         ):
@@ -885,6 +898,9 @@ class PainelEmailCobrancas(QWidget):
             caixa = caixa_email.abrir_caixa(self.contexto.sessao)
         except Exception as falha:  # noqa: BLE001
             widgets.aviso(self, str(falha))
+            return
+        if novo:
+            self._enviar_novo(caixa, resposta)
             return
         original = self.mensagem
         self.enviando = True
@@ -906,9 +922,28 @@ class PainelEmailCobrancas(QWidget):
         copia = caixa_email.original_de(original)   # a thread não toca no banco
         self.executor(lambda: caixa.responder(copia, resposta), fim, falhou)
 
+    def _enviar_novo(self, caixa, resposta) -> None:
+        conta = caixa_email.conta(self.contexto.sessao).provedor
+        self.enviando = True
+        self.responder.botao_enviar.setEnabled(False)
+        self.responder.botao_enviar.setText("Enviando…")
+
+        def fim(enviada: caixa_email.MensagemBaixada):
+            self._fim_do_envio()
+            caixa_email.registrar_nova_enviada(self.contexto.sessao, conta, enviada)
+            self.contexto.salvar()
+            self.recarregar()
+            self.responder.aviso.setText("✓ E-mail enviado (está em Enviados por você).")
+
+        def falhou(falha: Exception):
+            self._fim_do_envio()
+            widgets.erro(self, str(falha))
+
+        self.executor(lambda: caixa.enviar_novo(resposta), fim, falhou)
+
     def _fim_do_envio(self) -> None:
         self.enviando = False
-        self.responder.botao_enviar.setText("Enviar resposta")
+        self.responder.botao_enviar.setText("Enviar")
         self.responder.botao_enviar.setEnabled(True)
 
     def abrir_arquivo(self, caminho: str | None = None) -> None:
@@ -954,19 +989,32 @@ class PainelEmailCobrancas(QWidget):
         self.abas.setCurrentWidget(self.conferencia_aba)
 
     def montar_pelo_sistema(self) -> None:
-        """Sem o e-mail do financeiro: a lista dos vencidos, para copiar."""
+        """Sem o e-mail do financeiro: um e-mail novo com os vencidos e as anotações,
+        já endereçado a ele (Configurações, ou quem mandou o último e-mail)."""
         self.mensagem = None
         self.conferencia = None
+        self.modo_sistema = True
+        self.lista.blockSignals(True)
         self.lista.clearSelection()
-        self.assunto.setText("Lista montada pelo sistema")
+        self.lista.setCurrentItem(None)
+        self.lista.blockSignals(False)
+        sessao = self.contexto.sessao
+        self.contexto.atualizar()
+        email = servico.montar(sessao, self.contexto.data_referencia)
+        email.assunto = servico.remetente(sessao).assunto     # e-mail novo, sem "RE:"
+        if not email.para:
+            email.para = caixa_email.ultimo_remetente(sessao)
+        self.assunto.setText("Novo e-mail pelo sistema")
         self.de.setText("<b>Vencidos até hoje</b>, com as anotações das cobranças")
-        self.destinatarios.setText("")
-        email = servico.montar(self.contexto.sessao, self.contexto.data_referencia)
+        self.destinatarios.setText(f"Para: {email.para}" if email.para else
+                                   "Configure o e-mail do financeiro em Configurações")
         self.corpo.setHtml(servico.html(email))
         self.conferencia_aba.mostrar(None)
         self.direita.setCurrentIndex(1)
-        self.responder.preencher(email, False, "Sem o e-mail do financeiro não dá para "
-                                               "responder daqui: copie ou salve o rascunho.")
+        conta = caixa_email.conta(sessao)
+        aviso = ("" if conta.configurada else
+                 "Sem conta de e-mail configurada: copie ou salve o rascunho.")
+        self.responder.preencher(email, conta.configurada, aviso)
         self.abas.setTabEnabled(1, False)
         self.abas.setTabEnabled(2, True)
         self.botao_responder.setVisible(True)

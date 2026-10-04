@@ -42,16 +42,15 @@ def linhas_do(sessao, cliente):
 # ------------------------------------------------------------- cobrança geral
 
 
-def test_atrasados_agrupa_por_faixa_de_atraso(qtbot, contexto, cliente_com_debito):
+def test_atrasados_da_empresa_juntos_com_o_total(qtbot, contexto, cliente_com_debito):
     from honorarios.ui.paineis.honorarios import PainelAtrasados
 
     painel = PainelAtrasados(contexto)
     qtbot.addWidget(painel)
-    # dívida mais antiga primeiro: 41 dias e depois 10 dias
-    assert painel.lista.titulos() == ["31 a 60 dias", "1 a 30 dias"]
-    assert len(painel.lista.itens) == 2
-    assert painel.lista.secoes[0].total == "R$ 541,00"    # 500 + 41 de juros
-    assert painel.lista.secoes[1].total == "R$ 1.010,00"  # 1000 + 10 de juros
+    # dois da mesma empresa: um grupo, a dívida mais antiga primeiro (41 e 10 dias)
+    assert painel.lista.titulos() == ["900 – EMPRESA EXEMPLO LTDA"]
+    assert [i.atualizacao.dias_atraso for i in painel.lista.itens] == [41, 10]
+    assert painel.lista.secoes[0].total == "R$ 1.551,00"  # 541 + 1.010 com juros
     assert "2 honorário(s)" in painel.resumo.text()
 
 
@@ -99,23 +98,13 @@ def test_pago_sai_de_atrasados_e_vai_para_pagos(qtbot, contexto, cliente_com_deb
 
     pagos = PainelPagos(contexto)
     qtbot.addWidget(pagos)
+    pagos.ir_para_competencia(linha.honorario.competencia_ano, linha.honorario.competencia_mes)
     assert len(pagos.lista.itens) == 1
-    assert pagos.lista.titulos() == ["Set/2026"]
+    assert not pagos.lista.secoes[0].mostrar_titulo      # um só da empresa: sem grupo
     cartao = pagos.lista.secoes[0].cartoes[0]
     assert cartao.valor_rotulo == "Recebido"
     assert cartao.situacao.startswith("Pago com")          # pagou com atraso
     assert [acao.texto for acao in cartao.acoes] == ["Histórico", "Agradecimento"]
-
-
-def test_filtro_de_faixa_de_atraso(qtbot, contexto, cliente_com_debito):
-    from honorarios.ui.paineis.honorarios import PainelAtrasados
-
-    painel = PainelAtrasados(contexto)
-    qtbot.addWidget(painel)
-    painel.faixa.setCurrentIndex(2)  # 31 a 60 dias
-    itens = painel.lista.itens
-    assert len(itens) == 1
-    assert itens[0].atualizacao.dias_atraso == 41
 
 
 def test_atrasados_agrupados_por_empresa(qtbot, contexto, cliente_com_debito):
@@ -123,7 +112,6 @@ def test_atrasados_agrupados_por_empresa(qtbot, contexto, cliente_com_debito):
 
     painel = PainelAtrasados(contexto)
     qtbot.addWidget(painel)
-    painel.agrupamento.setCurrentIndex(2)  # Empresa
     assert painel.lista.titulos()[0].startswith("900 – EMPRESA EXEMPLO")
 
 
@@ -146,11 +134,7 @@ def test_a_vencer_mostra_so_o_que_esta_no_prazo(qtbot, contexto, cliente_com_deb
 
     painel = PainelAVencer(contexto)
     qtbot.addWidget(painel)
-    assert painel.lista.titulos() == [
-        "Vence hoje",
-        "Vence nos próximos 5 dias",
-        "Vence mais adiante",
-    ]
+    assert len(painel.lista.itens) == 3
     assert all(item.atualizacao.dias_atraso == 0 for item in painel.lista.itens)
     cartao = painel.lista.secoes[0].cartoes[0]
     assert cartao.situacao == "Vence hoje"
@@ -355,6 +339,9 @@ def test_dialogo_cliente_salva_e_valida(qtbot, contexto, monkeypatch):
 
     avisos: list[str] = []
     monkeypatch.setattr(widgets, "aviso", lambda parent, texto, *a, **k: avisos.append(texto))
+    perguntas: list[str] = []
+    monkeypatch.setattr(widgets, "confirmar", lambda _p, texto, *a, **k: perguntas.append(texto)
+                        or True)
 
     dialogo = DialogoCliente(contexto)
     qtbot.addWidget(dialogo)
@@ -364,6 +351,7 @@ def test_dialogo_cliente_salva_e_valida(qtbot, contexto, monkeypatch):
     dialogo.juros.definir(Decimal("0.54"))
     dialogo._salvar()
     assert avisos and "CPF/CNPJ inválido" in avisos[0]
+    assert perguntas == []                        # com erro nos dados, nem pergunta
 
     dialogo.documento.definir(fabricas.CNPJ_FICTICIO)
     dialogo._nova_linha()
@@ -378,6 +366,74 @@ def test_dialogo_cliente_salva_e_valida(qtbot, contexto, monkeypatch):
     assert criado is not None
     assert criado.contato_principal.nome_tratamento == "Fulano"
     assert clientes.juros_atual(criado) == Decimal("0.54")
+    assert perguntas == ["Salvar o cliente sem honorário recorrente?"]
+
+
+def test_cadastro_do_cliente_ja_cria_o_honorario_recorrente(qtbot, contexto, monkeypatch):
+    from honorarios.dominio.enums import Periodicidade
+    from honorarios.servicos import clientes, contratos
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.dialogos.cliente import DialogoCliente
+
+    perguntas: list[str] = []
+    monkeypatch.setattr(widgets, "confirmar", lambda _p, texto, *a, **k: perguntas.append(texto)
+                        or False)
+    dialogo = DialogoCliente(contexto)
+    qtbot.addWidget(dialogo)
+    assert dialogo.abas.tabText(2) == "Honorário recorrente"
+    dialogo.codigo.setText("778")
+    dialogo.nome.setText("EMPRESA COM MENSAL LTDA")
+    dialogo.juros.definir(Decimal("1.00"))
+    # sem honorário: pergunta; recusando, vai para a aba e nada é gravado
+    dialogo._salvar()
+    assert perguntas == ["Salvar o cliente sem honorário recorrente?"]
+    assert dialogo.abas.currentIndex() == 2
+    assert clientes.por_codigo(contexto.sessao, "778") is None
+
+    formulario = dialogo.formulario_honorario
+    formulario.tipo.setCurrentIndex(1)
+    formulario.valor.definir(Decimal("850.00"))
+    formulario.dia.setValue(8)
+    dialogo._salvar()
+    criado = clientes.por_codigo(contexto.sessao, "778")
+    [contrato] = contratos.listar(contexto.sessao, cliente_id=criado.id)
+    assert contrato.valor == Decimal("850.00") and contrato.dia_vencimento == 8
+    assert contrato.periodicidade is Periodicidade.MENSAL
+    assert len(perguntas) == 1                       # com honorário não pergunta
+
+    # o cliente já cadastrado mostra os honorários recorrentes dele
+    existente = DialogoCliente(contexto, criado)
+    qtbot.addWidget(existente)
+    assert existente.tabela_contratos.rowCount() == 1
+    assert existente.botao_novo_contrato.isEnabled()
+
+
+def test_paga_pela_empresa_salva_sem_honorario(qtbot, contexto, monkeypatch):
+    from honorarios.dominio.enums import TipoPessoa
+    from honorarios.servicos import clientes, contratos
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.dialogos.cliente import DialogoCliente
+
+    empresa = fabricas.cliente(contexto.sessao, codigo="780", nome="EMPRESA PAGADORA LTDA",
+                               documento="")
+    perguntas: list[str] = []
+    monkeypatch.setattr(widgets, "confirmar", lambda _p, texto, *a, **k: perguntas.append(texto)
+                        or True)
+    dialogo = DialogoCliente(contexto)
+    qtbot.addWidget(dialogo)
+    dialogo.codigo.setText("781")
+    dialogo.nome.setText("SOCIO DA PAGADORA")
+    dialogo.tipo.definir(TipoPessoa.PF)
+    dialogo.juros.definir(Decimal("1.00"))
+    dialogo.empresa.definir(empresa.id)
+    dialogo._ajustar_honorario()
+    assert not dialogo.formulario_honorario.isEnabled()
+    assert "Paga pela empresa" in dialogo.aviso_honorario.text()
+    dialogo._salvar()
+    pessoa = clientes.por_codigo(contexto.sessao, "781")
+    assert pessoa is not None and pessoa.empresa_id == empresa.id
+    assert perguntas == []                           # não precisa perguntar
+    assert contratos.listar(contexto.sessao, cliente_id=pessoa.id) == []
 
 
 def test_ficha_reune_pendentes_pagos_e_linha_do_tempo(qtbot, contexto, cliente_com_debito):
@@ -449,9 +505,9 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
     assert janela.telas.count() == 12
     assert len(janela.linhas_de_tela) == 12
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
-    assert "E-mail" in titulos
+    assert "Gerenciador de e-mail" in titulos
     assert "Cobranças enviadas" in titulos and "Ranking dos atrasados" in titulos
-    assert "Imposto de Renda" in titulos and "Grupos e tipos" in titulos
+    assert "Clientes de IR" in titulos and "Tipos e formas de envio" in titulos
     # recorrentes e avulsos viraram abas de uma tela só
     assert "Honorários" in titulos
     assert "Honorários recorrentes" not in titulos and "Honorários avulsos" not in titulos
@@ -627,7 +683,7 @@ def test_mostrar_mais_amplia_a_secao(qtbot):
     assert lista.desenhados == 10
 
 
-def test_periodo_na_tela_de_pagos(qtbot, contexto, cliente_com_debito):
+def test_pagos_uma_competencia_por_vez(qtbot, contexto, cliente_com_debito):
     from honorarios.servicos import pagamentos
     from honorarios.ui.paineis.honorarios import PainelPagos
 
@@ -642,9 +698,20 @@ def test_periodo_na_tela_de_pagos(qtbot, contexto, cliente_com_debito):
 
     painel = PainelPagos(contexto)
     qtbot.addWidget(painel)
-    assert painel.lista.itens == []                   # fora dos últimos 3 meses
-    painel.periodo.setCurrentIndex(4)                 # Tudo
+    honorario = linha.honorario
+    competencia = (honorario.competencia_ano, honorario.competencia_mes)
+    # abre na competência mais recente com pagos
+    assert (painel.ano, painel.mes) == competencia
+    assert painel.botao_mes.text().startswith(f"Competência {competencia[1]:02d}/")
     assert len(painel.lista.itens) == 1
+    painel.anterior.click()                           # a anterior não tem pagos
+    assert painel.lista.itens == []
+    painel.proximo.click()
+    assert len(painel.lista.itens) == 1
+    # o menu marca as competências com pagos
+    textos = [a.text() for m in painel.botao_mes.menu().actions() if m.menu()
+              for a in m.menu().actions()]
+    assert f"{competencia[1]:02d}/{competencia[0]}  •" in textos
 
 
 # ----------------------------------------------- suspensão e vínculo na tela
@@ -1383,15 +1450,9 @@ def test_topo_da_cobranca_enxuto_com_chips(qtbot, contexto, cliente_com_debito):
     assert acoes["Atualizar"] == "F5"
     assert "Renegociar selecionados" in acoes and "Exportar lista" in acoes
 
-    # filtro fora do padrão: o chip destaca e "Limpar filtros" aparece; limpar volta tudo
-    assert not painel.filtros.limpar.isVisible()
-    painel.faixa.setCurrentIndex(2)
-    painel.nunca_cobrado.setChecked(True)
-    assert painel.faixa.property("ativo") and painel.filtros.limpar.isVisible()
-    assert painel.faixa.text().startswith("Atraso: 31 a 60 dias")
-    painel.filtros.limpar.click()
-    assert painel.faixa.currentIndex() == 0 and not painel.nunca_cobrado.isChecked()
-    assert not painel.filtros.limpar.isVisible()
+    # sem os filtros de faixa, "nunca cobrado" e agrupar: a lista é sempre por empresa
+    assert not hasattr(painel, "faixa") and not hasattr(painel, "nunca_cobrado")
+    assert not hasattr(painel, "agrupamento")
 
 
 def test_janela_tem_logo_e_progresso(qtbot, contexto):
@@ -1623,6 +1684,16 @@ class CaixaDeMentira:
             data=original.recebido_em, html=resposta.html, texto=resposta.texto,
         )
 
+    def enviar_novo(self, resposta):
+        from honorarios.servicos import caixa_email
+
+        self.respostas.append((None, resposta))
+        return caixa_email.MensagemBaixada(
+            message_id="<novo@exemplo.com.br>", assunto=resposta.assunto,
+            de="cobranca@exemplo.com.br", para=resposta.para, cc=resposta.cc,
+            data=date(2026, 9, 30), html=resposta.html, texto=resposta.texto,
+        )
+
 
 def test_caixa_de_email_verificar_conferir_e_responder(
     qtbot, contexto, cliente_com_debito, monkeypatch
@@ -1692,6 +1763,28 @@ def test_caixa_de_email_verificar_conferir_e_responder(
     painel.verificar()
     assert painel.lista.count() == 1 and chegaram == [1]
 
+    # "Montar resposta" refaz com os dados de agora; com texto editado, pergunta antes
+    painel.lista.setCurrentRow(0)
+    painel.responder.editor.insertPlainText("rascunho meu ")
+    perguntas.clear()
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: perguntas.append(a[1]) or False)
+    painel.botao_responder.click()
+    assert perguntas == ["Montar a resposta de novo?"]
+    assert "rascunho meu" in painel.responder.editor.toPlainText()   # recusou: ficou
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    painel.botao_responder.click()
+    assert "rascunho meu" not in painel.responder.editor.toPlainText()
+    assert painel.abas.currentWidget() is painel.responder
+
+    # e-mail novo pelo sistema: já para quem mandou o último e-mail, e envia daqui
+    painel.botao_novo.click()
+    assert painel.responder.para.text() == "Financeiro <financeiro@exemplo.com.br>"
+    assert painel.responder.botao_enviar.isEnabled()
+    painel.responder.botao_enviar.click()
+    novo, resposta = caixa.respostas[-1]
+    assert novo is None and resposta.assunto == "Clientes c/Honorários vencidos"
+    assert painel.botao_enviados.text() == "Enviados por você (2)"
+
 
 def test_caixa_de_email_sem_conta(qtbot, contexto, cliente_com_debito, tmp_path):
     from honorarios.ui.comum import segundo_plano
@@ -1719,10 +1812,15 @@ def test_caixa_de_email_sem_conta(qtbot, contexto, cliente_com_debito, tmp_path)
     painel.responder.salvar_rascunho(str(destino))
     assert b"In-Reply-To: <lista@exemplo.com.br>" in destino.read_bytes()
 
-    painel.montar_pelo_sistema()
-    assert "Montada pelo sistema".lower() in painel.assunto.text().lower() or \
-        painel.assunto.text() == "Lista montada pelo sistema"
+    # o botão do topo: e-mail novo, já endereçado a quem mandou o último e-mail
+    painel.botao_novo.click()
+    assert painel.assunto.text() == "Novo e-mail pelo sistema"
     assert "19/09/2026" in painel.responder.editor.toPlainText()
+    assert painel.responder.assunto.text() == "Clientes c/Honorários vencidos"   # sem "RE:"
+    assert painel.responder.para.isEnabled()
+    assert not painel.responder.botao_enviar.isEnabled()      # sem conta: copiar/rascunho
+    painel.recarregar()                                       # continua na tela
+    assert painel.direita.currentIndex() == 1
 
 
 def test_dialogo_conta_de_email(qtbot, contexto, cofre, monkeypatch):
@@ -1934,3 +2032,74 @@ def test_voltar_para_o_meu_fundo(qtbot, contexto, tmp_path, monkeypatch):
     voltar.click()
     assert not imagem_cobranca.usa_modelo(contexto.sessao)
     assert imagem_cobranca.caminho_fundo(contexto.sessao) == imagem_cobranca.fundo_guardado()
+
+
+def test_vencimentos_pelo_numero_da_empresa(qtbot, contexto):
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
+
+    zeta = fabricas.cliente(contexto.sessao, codigo="101", nome="ZETA LTDA", documento="")
+    alfa = fabricas.cliente(contexto.sessao, codigo="909", nome="ALFA LTDA", documento="")
+    sozinha = fabricas.cliente(contexto.sessao, codigo="1000", nome="AAA LTDA", documento="")
+    fabricas.honorario(contexto.sessao, sozinha, valor="50.00", vencimento=date(2026, 9, 1),
+                       competencia=Competencia(2026, 8))
+    for cliente in (zeta, alfa):
+        for vencimento in (date(2026, 9, 10), date(2026, 8, 10)):
+            fabricas.honorario(contexto.sessao, cliente, valor="100.00", vencimento=vencimento,
+                               competencia=Competencia(2026, vencimento.month - 1))
+    painel = PainelAtrasados(contexto)
+    qtbot.addWidget(painel)
+    # pelo número, do menor para o maior ("1000" depois de "909", não antes)
+    assert painel.lista.titulos() == ["101 – ZETA LTDA", "909 – ALFA LTDA", "1000 – AAA LTDA"]
+    # só quem tem mais de um honorário ganha o título de grupo
+    assert [s.mostrar_titulo for s in painel.lista.secoes] == [True, True, False]
+    # dentro da empresa, do vencimento mais antigo para o mais novo
+    itens = painel.lista.itens_da_secao("909 – ALFA LTDA")
+    assert [linha.honorario.vencimento for linha in itens] == [date(2026, 8, 10),
+                                                               date(2026, 9, 10)]
+
+
+def test_formas_de_envio_junto_dos_tipos(qtbot, contexto, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    from honorarios.servicos import tipos
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.paineis.tipos_e_envio import PainelTiposEEnvio
+
+    painel = PainelTiposEEnvio(contexto)
+    qtbot.addWidget(painel)
+    assert [painel.abas.tabText(i) for i in range(2)] == ["Grupos e tipos", "Formas de envio"]
+    painel.abas.setCurrentWidget(painel.formas)
+    formas = painel.formas
+    antes = formas.modelo.rowCount()
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Correio", True)))
+    formas._nova_forma()
+    assert formas.modelo.rowCount() == antes + 1
+    # renomear para um nome que já existe: aviso claro, nada muda
+    existente = tipos.listar_formas(contexto.sessao, somente_ativas=False)[0].nome
+    correio = next(f for f in tipos.listar_formas(contexto.sessao) if f.nome == "Correio")
+    formas.tabela.selectRow(formas.modelo.itens.index(correio))
+    avisos = []
+    monkeypatch.setattr(widgets, "aviso", lambda _p, texto, *a: avisos.append(texto))
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: (existente, True)))
+    formas._renomear()
+    assert avisos and "Já existe" in avisos[0]
+    assert correio.nome == "Correio"
+    # "Em uso" conta contratos e honorários com a forma
+    cliente = fabricas.cliente(contexto.sessao)
+    honorario = fabricas.honorario(contexto.sessao, cliente, valor="10.00",
+                                   vencimento=date(2026, 9, 1))
+    honorario.forma_envio_id = correio.id
+    contexto.salvar()
+    formas.recarregar()
+    assert formas._texto_uso(correio) == "0 contrato(s) · 1 honorário(s)"
+
+
+def test_configuracoes_sem_formas_de_envio(qtbot, contexto):
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    painel = PainelConfiguracoes(contexto)
+    qtbot.addWidget(painel)
+    from PySide6.QtWidgets import QTabWidget
+
+    abas = painel.findChild(QTabWidget)
+    assert "Formas de envio" not in [abas.tabText(i) for i in range(abas.count())]

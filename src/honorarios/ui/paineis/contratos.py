@@ -45,12 +45,12 @@ class PainelContratos(QWidget):
         layout.setSpacing(10)
         self.cabecalho = widgets.Cabecalho(
             "Honorários recorrentes",
-            "Contratos que geram os honorários de cada competência",
+            "Os honorários que se repetem — o cadastro é feito no cliente (aba Honorário "
+            "recorrente); aqui se gera a competência, reajusta e suspende",
         )
         self.cabecalho.adicionar_botao(
             "Gerar competência", self._gerar, primario=True, atalho="Ctrl+G"
         )
-        self.cabecalho.adicionar_botao("Novo contrato", self._novo, atalho="Ctrl+N")
         self.cabecalho.adicionar_botao("Editar", self._editar)
         self.cabecalho.adicionar_botao("Reajustar", self._reajustar)
         self.cabecalho.adicionar_botao("Atualizar", self.recarregar, atalho="F5")
@@ -142,10 +142,6 @@ class PainelContratos(QWidget):
         return contrato
 
     # ------------------------------------------------------------------ ações
-    def _novo(self) -> None:
-        if DialogoContrato(self.contexto, parent=self).exec():
-            self.recarregar()
-
     def _editar(self) -> None:
         contrato = self._selecionado()
         if contrato and DialogoContrato(self.contexto, contrato, parent=self).exec():

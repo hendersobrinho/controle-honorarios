@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QTableView,
     QVBoxLayout,
+    QWidget,
 )
 
 from ...dominio.enums import MeioCobranca, Periodicidade
@@ -41,23 +42,15 @@ from ..comum.tabelas import (
 from ..contexto import Contexto
 
 
-class DialogoContrato(QDialog):
-    def __init__(self, contexto: Contexto, contrato=None, parent=None) -> None:
-        super().__init__(parent)
-        self.contexto = contexto
-        self.contrato = contrato
-        self.setWindowTitle("Editar contrato" if contrato else "Novo contrato recorrente")
-        self.resize(600, 560)
-        self._montar()
-        if contrato:
-            self._carregar()
+class FormularioContrato(QWidget):
+    """Os campos do honorário recorrente (sem o cliente): usados na janela de
+    contrato e no cadastro do cliente."""
 
-    def _montar(self) -> None:
-        sessao = self.contexto.sessao
-        layout = QVBoxLayout(self)
-        formulario = QFormLayout()
-        self.cliente = CampoCliente(sessao)
-        formulario.addRow("Cliente:", self.cliente)
+    def __init__(self, contexto: Contexto, parent=None) -> None:
+        super().__init__(parent)
+        sessao = contexto.sessao
+        formulario = QFormLayout(self)
+        formulario.setContentsMargins(0, 0, 0, 0)
         self.tipo = ComboRegistros(
             [
                 tipo
@@ -77,6 +70,7 @@ class DialogoContrato(QDialog):
         self.dia = QSpinBox()
         self.dia.setRange(1, 31)
         self.dia.setValue(10)
+        self.dia.setToolTip("Caindo em sábado, domingo ou feriado, vai para o próximo dia útil")
         formulario.addRow("Dia do vencimento:", self.dia)
         self.meses_vencimento = QSpinBox()
         self.meses_vencimento.setRange(0, 6)
@@ -101,33 +95,14 @@ class DialogoContrato(QDialog):
         self.observacoes = QPlainTextEdit()
         self.observacoes.setMaximumHeight(70)
         formulario.addRow("Observações:", self.observacoes)
-        layout.addLayout(formulario)
 
-        self.nota = widgets.rotulo_fraco(
-            "Mudança de valor é reajuste e passa pelo botão Reajustar, "
-            "para guardar o histórico e valer só daqui para frente."
-        )
-        layout.addWidget(self.nota)
-        layout.addStretch(1)
+    def preenchido(self) -> bool:
+        return self.tipo.valor() is not None
 
-        acoes = QHBoxLayout()
-        acoes.addStretch(1)
-        cancelar = widgets.QPushButton("Cancelar")
-        cancelar.clicked.connect(self.reject)
-        salvar = widgets.QPushButton("Salvar")
-        salvar.setObjectName("primario")
-        salvar.clicked.connect(self._salvar)
-        acoes.addWidget(cancelar)
-        acoes.addWidget(salvar)
-        layout.addLayout(acoes)
-
-    def _carregar(self) -> None:
-        contrato = self.contrato
-        self.cliente.definir(contrato.cliente_id)
-        self.cliente.setEnabled(False)
+    def carregar(self, contrato) -> None:
         self.tipo.definir(contrato.tipo_id)
         self.valor.definir(contrato.valor)
-        self.valor.setEnabled(False)
+        self.valor.setEnabled(False)   # mudança de valor é reajuste
         self.periodicidade.definir(contrato.periodicidade)
         self.dia.setValue(contrato.dia_vencimento)
         self.meses_vencimento.setValue(contrato.meses_vencimento)
@@ -139,18 +114,12 @@ class DialogoContrato(QDialog):
         self.suspenso.setChecked(contrato.suspenso)
         self.observacoes.setPlainText(contrato.observacoes)
 
-    def _salvar(self) -> None:
-        if self.cliente.valor() is None or self.tipo.valor() is None:
-            widgets.aviso(self, "Selecione o cliente e o tipo de honorário.")
-            return
-        dados = servico.DadosContrato(
-            cliente_id=self.cliente.valor(),
+    def dados(self, cliente_id: int, contrato=None) -> servico.DadosContrato:
+        return servico.DadosContrato(
+            cliente_id=cliente_id,
             tipo_id=self.tipo.valor(),
-            valor=(
-                self.valor.valor()
-                if self.contrato is None
-                else Decimal(str(self.contrato.valor))
-            ),
+            valor=(self.valor.valor() if contrato is None
+                   else Decimal(str(contrato.valor))),
             periodicidade=self.periodicidade.valor(),
             dia_vencimento=self.dia.value(),
             meses_vencimento=self.meses_vencimento.value(),
@@ -162,6 +131,54 @@ class DialogoContrato(QDialog):
             suspenso=self.suspenso.isChecked(),
             observacoes=self.observacoes.toPlainText(),
         )
+
+
+class DialogoContrato(QDialog):
+    def __init__(self, contexto: Contexto, contrato=None, parent=None,
+                 cliente_id: int | None = None) -> None:
+        """``cliente_id``: novo contrato já para esse cliente (do cadastro dele)."""
+        super().__init__(parent)
+        self.contexto = contexto
+        self.contrato = contrato
+        self.setWindowTitle("Editar honorário recorrente" if contrato
+                            else "Novo honorário recorrente")
+        self.resize(600, 560)
+        layout = QVBoxLayout(self)
+        topo = QFormLayout()
+        self.cliente = CampoCliente(contexto.sessao)
+        topo.addRow("Cliente:", self.cliente)
+        layout.addLayout(topo)
+        self.formulario = FormularioContrato(contexto)
+        layout.addWidget(self.formulario)
+        self.nota = widgets.rotulo_fraco(
+            "Mudança de valor é reajuste e passa pelo botão Reajustar, "
+            "para guardar o histórico e valer só daqui para frente."
+        )
+        layout.addWidget(self.nota)
+        layout.addStretch(1)
+        acoes = QHBoxLayout()
+        acoes.addStretch(1)
+        cancelar = widgets.QPushButton("Cancelar")
+        cancelar.clicked.connect(self.reject)
+        salvar = widgets.QPushButton("Salvar")
+        salvar.setObjectName("primario")
+        salvar.clicked.connect(self._salvar)
+        acoes.addWidget(cancelar)
+        acoes.addWidget(salvar)
+        layout.addLayout(acoes)
+        if contrato:
+            self.cliente.definir(contrato.cliente_id)
+            self.cliente.setEnabled(False)
+            self.formulario.carregar(contrato)
+        elif cliente_id is not None:
+            self.cliente.definir(cliente_id)
+            self.cliente.setEnabled(False)
+
+    def _salvar(self) -> None:
+        if self.cliente.valor() is None or not self.formulario.preenchido():
+            widgets.aviso(self, "Selecione o cliente e o tipo de honorário.")
+            return
+        dados = self.formulario.dados(self.cliente.valor(), self.contrato)
 
         def acao():
             if self.contrato is None:

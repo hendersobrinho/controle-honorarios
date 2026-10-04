@@ -474,6 +474,13 @@ class CaixaImap:
         return None
 
     def responder(self, original: Original, resposta: Resposta) -> MensagemBaixada:
+        return self._enviar(resposta, original)
+
+    def enviar_novo(self, resposta: Resposta) -> MensagemBaixada:
+        """E-mail novo (sem o do financeiro para responder)."""
+        return self._enviar(resposta, None)
+
+    def _enviar(self, resposta: Resposta, original: Original | None) -> MensagemBaixada:
         mensagem = EmailMessage()
         dominio = self.conta.endereco.split("@")[-1] or "honorarios"
         mensagem["Message-ID"] = make_msgid(domain=dominio)
@@ -484,10 +491,14 @@ class CaixaImap:
             mensagem["Cc"] = ", ".join(servico_email.endereco_legivel(*par)
                                        for par in _lista_de_enderecos(resposta.cc))
         mensagem["Subject"] = resposta.assunto
-        mensagem["In-Reply-To"] = original.message_id
-        mensagem["References"] = f"{original.referencias} {original.message_id}".strip()
-        mensagem.set_content(resposta.texto + _citacao_texto(original))
-        mensagem.add_alternative(resposta.html + _citacao_html(original), subtype="html")
+        if original is not None:
+            mensagem["In-Reply-To"] = original.message_id
+            mensagem["References"] = f"{original.referencias} {original.message_id}".strip()
+            mensagem.set_content(resposta.texto + _citacao_texto(original))
+            mensagem.add_alternative(resposta.html + _citacao_html(original), subtype="html")
+        else:
+            mensagem.set_content(resposta.texto)
+            mensagem.add_alternative(resposta.html, subtype="html")
         if not _lista_de_enderecos(resposta.para):
             raise ErroDeValidacao("Informe para quem vai a resposta.")
         try:
@@ -687,6 +698,30 @@ class CaixaMicrosoft:
         return [m for m in mensagens if m.message_id not in ja_tenho] + \
             [m for m in mensagens if m.message_id in ja_tenho]
 
+    def enviar_novo(self, resposta: Resposta) -> MensagemBaixada:
+        """E-mail novo (sem o do financeiro para responder)."""
+        if not _lista_de_enderecos(resposta.para):
+            raise ErroDeValidacao("Informe para quem vai o e-mail.")
+        retorno = _http("POST", f"{GRAPH}/me/sendMail", token=self._acesso(), corpo={
+            "message": {
+                "subject": resposta.assunto,
+                "toRecipients": _destinatarios_graph(resposta.para),
+                "ccRecipients": _destinatarios_graph(resposta.cc),
+                "body": {"contentType": "HTML", "content": resposta.html},
+            },
+            "saveToSentItems": True,
+        })
+        if "error" in retorno:
+            detalhe = retorno["error"]
+            mensagem = detalhe.get("message", "") if isinstance(detalhe, dict) else detalhe
+            raise ErroDeNegocio(f"A Microsoft não enviou o e-mail: {mensagem}")
+        dominio = self.conta.endereco.split("@")[-1] or "honorarios"
+        return MensagemBaixada(
+            message_id=make_msgid(domain=dominio), assunto=resposta.assunto,
+            de=self.conta.endereco, para=resposta.para, cc=resposta.cc, data=agora_utc(),
+            html=resposta.html, texto=resposta.texto,
+        )
+
     def responder(self, original: Original, resposta: Resposta) -> MensagemBaixada:
         if not original.ref_provedor:
             raise ErroDeNegocio("Este e-mail não veio da conta Microsoft: copie a resposta.")
@@ -806,7 +841,7 @@ def _notificar(sessao: Session, registro: EmailMensagem) -> None:
     sessao.add(Notificacao(
         chave=chave, tipo=servico_notificacoes.EMAIL,
         titulo=f"Chegou e-mail de {nome}: {registro.assunto}",
-        texto="Confira a lista e responda pela tela E-mail",
+        texto="Confira a lista e responda pelo Gerenciador de e-mail",
         tela=servico_notificacoes.TELAS[servico_notificacoes.EMAIL],
     ))
     sessao.flush()
@@ -859,6 +894,24 @@ def marcar_lido(sessao: Session, mensagem: EmailMensagem) -> None:
     if mensagem.lida_em is None and not mensagem.enviada:
         mensagem.lida_em = agora_utc()
         sessao.flush()
+
+
+def registrar_nova_enviada(sessao: Session, conta_chave: str,
+                           enviada: MensagemBaixada) -> EmailMensagem:
+    """E-mail novo enviado daqui (sem o do financeiro): entra em Enviados."""
+    registro = _registro(conta_chave, enviada, enviada=True)
+    sessao.add(registro)
+    sessao.flush()
+    return registro
+
+
+def ultimo_remetente(sessao: Session) -> str:
+    """Quem mandou o último e-mail da conversa (o financeiro), para endereçar."""
+    return sessao.scalar(
+        select(EmailMensagem.de).where(EmailMensagem.enviada.is_(False),
+                                       EmailMensagem.conta != ARQUIVO)
+        .order_by(EmailMensagem.recebido_em.desc()).limit(1)
+    ) or ""
 
 
 def registrar_enviada(sessao: Session, original: EmailMensagem,

@@ -92,8 +92,12 @@ def test_meses_de_referencia_explicitos(sessao):
 def test_dia_31_em_mes_curto(sessao):
     cliente = fabricas.cliente(sessao)
     fabricas.contrato(sessao, cliente, dia=31)
+    # 31 em fevereiro recua para 28/02 — em 2026 é sábado: vai para segunda, 02/03
     previa = contratos.previa_geracao(sessao, Competencia(2026, 1))
-    assert previa[0].vencimento == date(2026, 2, 28)
+    assert previa[0].vencimento == date(2026, 3, 2)
+    # mês de 30 dias que termina em dia útil: fica no último dia (30/04/2027, sexta)
+    previa = contratos.previa_geracao(sessao, Competencia(2027, 3))
+    assert previa[0].vencimento == date(2027, 4, 30)
 
 
 def test_item_desmarcado_nao_e_gerado(sessao):
@@ -157,3 +161,13 @@ def test_contrato_duplicado_do_mesmo_tipo(sessao):
 def test_competencia_sem_mes_e_recusada(sessao):
     with pytest.raises(ErroDeValidacao, match="mm/aaaa"):
         contratos.previa_geracao(sessao, Competencia(2026))
+
+
+def test_vencimento_no_fim_de_semana_vai_para_o_dia_util(sessao):
+    from honorarios.dominio.valores import Competencia
+    from honorarios.servicos import contratos
+
+    fabricas.contrato(sessao, fabricas.cliente(sessao), dia=10)
+    # competência 09/2026 vence em 10/2026 (1 mês depois): 10/10 é sábado e 12/10 feriado
+    [item] = contratos.previa_geracao(sessao, Competencia(2026, 9))
+    assert item.vencimento == date(2026, 10, 13)

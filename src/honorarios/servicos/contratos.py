@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..dominio.enums import MeioCobranca, Periodicidade, StatusPagamento
+from ..dominio.feriados import proximo_dia_util
 from ..dominio.valores import ZERO, Competencia, agora_utc, dia_do_mes, dinheiro, hoje
 from ..infra.modelos import Cliente, Contrato, ContratoHistorico, TipoHonorario
 from . import honorarios as servico_honorarios
@@ -231,10 +232,11 @@ def previa_geracao(
     primeiro_dia = date(competencia.ano, competencia.mes, 1)
     itens: list[ItemPrevia] = []
     for contrato in sessao.scalars(consulta).unique().all():
-        vencimento = dia_do_mes(
+        # sábado, domingo ou feriado: vai para o próximo dia útil
+        vencimento = proximo_dia_util(dia_do_mes(
             *_mes_vencimento(competencia, contrato.meses_vencimento),
             contrato.dia_vencimento,
-        )
+        ))
         item = ItemPrevia(
             contrato=contrato,
             competencia=competencia,

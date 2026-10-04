@@ -58,25 +58,25 @@ Os testes de interface usam `pytest-qt` e rodam sem servidor gráfico
 
 | Tela | Para que serve |
 |---|---|
-| **Vencimentos → A vencer** (1ª aba) | Em aberto e dentro do prazo: vence hoje, nos próximos dias e mais adiante. Daqui sai o lembrete antes do vencimento |
-| **Vencimentos → Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, agrupados por faixa de atraso (a dívida mais antiga primeiro), com cobrar, editar (valor, vencimento, descrição), **Confirmar pagamento** (botão verde em cada cartão em aberto, também em A vencer e Imposto de Renda), cobrança em lote e renegociação |
-| **Vencimentos → Pagos** | Registro dos quitados, por mês do pagamento, com seletor de período (padrão: últimos 3 meses). Mostra se pagou em dia ou com atraso, os juros cobrados e o abono |
-| **Imposto de Renda** | Cobrança própria dos clientes que só fazem IR com o escritório: em aberto (atrasados e a vencer) ou pagos, com filtro por ano do IR. Esses clientes não aparecem em Atrasados, A vencer e Pagos |
+| **Vencimentos → A vencer** (1ª aba) | Em aberto e dentro do prazo, pelo número da empresa (agrupada quando tem mais de um). Daqui sai o lembrete antes do vencimento |
+| **Vencimentos → Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, pelo número da empresa (do menor para o maior; empresa com mais de um honorário fica agrupada, com o total), com cobrar, editar (valor, vencimento, descrição), **Confirmar pagamento** (botão verde em cada cartão em aberto, também em A vencer e Imposto de Renda), cobrança em lote e renegociação |
+| **Vencimentos → Pagos** | Os quitados, **uma competência por vez** (◀ ▶ e o menu com as competências que têm pagos; abre na mais recente). O histórico completo de cada empresa fica na ficha dela. Mostra se pagou em dia ou com atraso, os juros cobrados e o abono |
+| **Clientes de IR** | Cobrança própria dos clientes que só fazem IR com o escritório: em aberto (atrasados e a vencer) ou pagos, com filtro por ano do IR. Esses clientes não aparecem em Atrasados, A vencer e Pagos |
 | **Cobranças enviadas** | Cada mensagem enviada e o que o cliente respondeu, com período e agrupamento à escolha. É aqui que a resposta é anotada |
-| **Clientes** | Abas **Ativos**, **Imposto de Renda** (quem só tem honorário de IR) e **Inativos**; PF \| PJ \| Todos e busca sem acento/pontuação; ficha completa da empresa. Dívida e atraso não aparecem aqui (têm telas próprias). Aqui também se suspende e retoma a cobrança de um cliente |
-| **Honorários** | Três abas. **Mês a mês**: tudo o que foi emitido no mês (recorrente ou avulso), com ◀ ▶ e um menu para ir direto a qualquer mês, os totais (emitido, pago, em aberto, cancelados), filtros de origem e situação, e o aviso de contratos que ainda não geraram a competência — "Gerar competência" já abre no mês da tela. **Recorrentes**: contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia. **Avulsos**: lançar, corrigir e cancelar serviços que não vêm de contrato (IRPF, alteração contratual, atas…) e consultar o histórico por período, pagos ou não, com a situação de cada um. A cobrança desses honorários fica em Atrasados e A vencer |
+| **Clientes** | Abas **Ativos**, **Imposto de Renda** (quem só tem honorário de IR) e **Inativos**; PF \| PJ \| Todos e busca sem acento/pontuação; ficha completa da empresa. Dívida e atraso não aparecem aqui (têm telas próprias). Aqui também se suspende e retoma a cobrança de um cliente. O cadastro tem as abas **Dados**, **Contatos** e **Honorário recorrente**: no cliente novo, o honorário mensal (ou trimestral…) é cadastrado junto; quem tem "Paga pela empresa" salva sem honorário; sem honorário e sem empresa pagadora, o sistema pergunta antes (cliente só de IR ou de avulsos). No cliente já cadastrado, a aba lista os recorrentes dele, com novo, editar, reajustar e suspender |
+| **Honorários** | A gestão dos honorários, em três abas (o recorrente se cadastra no cliente). **Mês a mês**: tudo o que foi emitido no mês (recorrente ou avulso), com ◀ ▶ e um menu para ir direto a qualquer mês, os totais (emitido, pago, em aberto, cancelados), filtros de origem e situação, e o aviso de contratos que ainda não geraram a competência — "Gerar competência" já abre no mês da tela. **Recorrentes**: contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia. **Avulsos**: lançar, corrigir e cancelar serviços que não vêm de contrato (IRPF, alteração contratual, atas…) e consultar o histórico por período, pagos ou não, com a situação de cada um. A cobrança desses honorários fica em Atrasados e A vencer |
 | **Painel** | O ano em números e gráficos: emitido × quitado por mês de competência (com a opção de ver em tabela), o que entrou no caixa por mês, de onde vem o faturamento (grupo e PF/PJ) e frases com o que os números dizem, comparando com o ano anterior quando há base. **Exportar PDF…** gera o relatório no mesmo visual da análise de juros (fundo da cobrança, gráficos e tabela mês a mês). Atraso e devedores ficam no Ranking dos atrasados |
 | **Ranking dos atrasados** | Pódio de quem mais deve em dinheiro, quem deve há mais tempo, quem junta mais boletos e quem mais foi cobrado — dois gráficos por aba; clicar num nome abre a ficha. A aba **Análise de juros** lista os clientes que pagaram e mostra, para cada um, original + juros = pago, o trabalho que deu para receber em gráfico (ele × a média dos clientes: atrasos, dias em atraso, cobranças, juros por cobrança), a linha do tempo do atraso de cada honorário com as cobranças feitas, um gráfico dos cenários, honorário por honorário, uma explicação em frases e cenários de taxa (+10% a dobrar, sem abono, valor testado) com o efeito de cada cenário honorário por honorário; **Exportar PDF…** gera o relatório da análise do cliente (documento interno) para compartilhar; o primeiro item é a visão geral de todos |
 | **Relatórios e exportação** | Planilha Excel da lista filtrada e extrato de débitos em PDF |
 | **Importar planilha** | Lê a planilha antiga, mostra prévia e relatório de erros, e só grava depois da confirmação |
-| **Grupos e tipos** | Grupos à esquerda (a ordem é a das seções nas telas), tipos do grupo à direita, cada um mostrando a frase como sai na cobrança e quanto é usado. O cadastro do tipo mostra a prévia da mensagem enquanto se digita |
-| **Configurações** | PIX, modelos de mensagem, formas de envio e backup |
+| **Tipos e formas de envio** | Aba **Grupos e tipos**: grupos à esquerda (a ordem é a das seções nas telas), tipos do grupo à direita, cada um mostrando a frase como sai na cobrança e quanto é usado. O cadastro do tipo mostra a prévia da mensagem enquanto se digita. Aba **Formas de envio**: cadastrar, renomear e ativar/desativar, com quantos contratos e honorários usam cada uma |
+| **Configurações** | PIX, modelos de mensagem, imagem da cobrança, e-mail e backup |
 
 A navegação é agrupada por momento do trabalho:
 
 - **Cobrança**: **Vencimentos** (abas A vencer, Atrasados e Pagos, com a
-  quantidade em aberto em cada aba; o número no menu é o de atrasados), Imposto
-  de Renda, Cobranças enviadas e E-mail (com o número de e-mails não lidos).
+  quantidade em aberto em cada aba; o número no menu é o de atrasados), Clientes
+  de IR, Cobranças enviadas e Gerenciador de e-mail (com o número de e-mails não lidos).
 - **Cadastros**.
 - **Gestão**.
 
@@ -157,7 +157,7 @@ tela Mês a mês avisa o que falta.
 
 O financeiro manda o e-mail **"Clientes c/Honorários vencidos"** com a lista de
 quem está em aberto, e quem cobra responde com o andamento. A tela **E-mail de
-cobranças** — no menu, só **E-mail** — é uma caixa de e-mail só dessa conversa.
+cobranças** — no menu, **Gerenciador de e-mail** — é uma caixa de e-mail só dessa conversa.
 
 **A tela**
 - À esquerda, duas listas separadas: **Recebidos** (o que o financeiro mandou,
@@ -193,13 +193,19 @@ cobranças** — no menu, só **E-mail** — é uma caixa de e-mail só dessa co
   - **Sua resposta**: a resposta pronta. Ela mantém a lista do financeiro, sem
     quem saiu, com as anotações das cobranças. Para, Cc e assunto vêm
     preenchidos ("Responder a todos"). Dá para escrever no texto antes de
-    enviar; **Desfazer minhas edições** volta ao texto que o sistema montou.
+    enviar.
     **Enviar resposta** pede confirmação e envia pela sua conta, na
     mesma conversa, com o e-mail do financeiro citado embaixo. Também há
     **Copiar** e **Salvar rascunho**.
+- **Montar resposta** (no cabeçalho do e-mail aberto, em destaque) refaz a
+  resposta com o que está no sistema agora, com as baixas e os retornos anotados,
+  e abre a aba. Se você já tinha escrito no texto, o sistema pergunta antes.
+- **Novo e-mail pelo sistema** (no topo) monta um e-mail novo com os vencidos de
+  hoje e as anotações das cobranças, para quando não há e-mail do financeiro para
+  responder. Ele já vem endereçado ao e-mail do financeiro das Configurações, ou
+  a quem mandou o último e-mail da conversa, e é enviado daqui.
 - Sem conta configurada, o menu **Ações** abre um e-mail de arquivo (.eml, PDF
-  impresso do Outlook, .txt), aceita o texto colado ou monta a lista pelo
-  sistema.
+  impresso do Outlook, .txt) ou aceita o texto colado.
 
 **O dia a dia**
 1. Chega a lista do financeiro: notificação e etiqueta *Nova*.

@@ -30,7 +30,7 @@ EMAIL = "email"       # chegou e-mail do financeiro na pasta da conversa
 # telas para onde cada aviso leva
 TELAS = {VENCE_HOJE: "A vencer", NAO_PAGO: "Atrasados", PROMESSA: "Atrasados",
          ACORDO: "Atrasados", GERACAO: "Honorários",
-         EMAIL: "E-mail"}
+         EMAIL: "Gerenciador de e-mail"}
 
 # "não foi pago na data" avisa o que venceu nestes últimos dias: abrindo o sistema
 # depois de um feriado, aparece o que venceu enquanto ele estava fechado

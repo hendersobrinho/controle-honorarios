@@ -176,6 +176,13 @@ def _aplicar_contatos(
             contato.principal = False
 
 
+def validar(sessao: Session, dados: DadosCliente, cliente_id: int | None = None) -> None:
+    """Confere os dados antes de gravar (para a tela perguntar o resto só depois)."""
+    _validar(sessao, dados, cliente_id)
+    if cliente_id is None and dados.juros_dia is None:
+        raise ErroDeValidacao("Informe o juros por dia (R$) do cliente.", "juros_dia")
+
+
 def criar(sessao: Session, dados: DadosCliente) -> Cliente:
     documento = _validar(sessao, dados)
     if dados.juros_dia is None:

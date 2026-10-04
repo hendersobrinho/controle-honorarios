@@ -223,6 +223,11 @@ class BarraDeFiltros(QWidget):
         chip.alterou.connect(self._conferir)
         return chip
 
+    def adicionar_controle(self, widget: QWidget) -> QWidget:
+        """Um controle que não é chip (ex.: ◀ mês ▶): entra antes dos chips."""
+        self._layout.insertWidget(0, widget)
+        return widget
+
     def limpar_todos(self) -> None:
         for chip in self.chips:
             if not chip.isHidden():

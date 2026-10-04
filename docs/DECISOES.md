@@ -444,6 +444,15 @@ Por isso vale igual para a geração manual e para a automática, e o Mês a mê
 não conta essas pessoas como "faltando". Lançar honorário à mão para ela
 continua possível.
 
+### Vencimento no próximo dia útil
+
+O vencimento gerado pelo contrato que cai em sábado, domingo ou feriado vai para
+o próximo dia útil, e o juros só conta a partir dele. Contam os feriados
+nacionais (inclusive Carnaval, Sexta-feira Santa e Corpus Christi, calculados
+pela Páscoa), Nossa Senhora da Penha (ES) e 23 de maio (Vila Velha), em
+`dominio/feriados.py`. Honorários já gerados não mudam, e o vencimento digitado
+à mão (avulso, edição) fica como foi digitado.
+
 ## Decisões técnicas
 
 ### SQLAlchemy 2.0 + Alembic

@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
@@ -68,7 +67,6 @@ class PainelConfiguracoes(QWidget):
         abas.addTab(self._aba_recebedor(), "Recebedor e PIX")
         abas.addTab(self._aba_modelos(), "Modelos de mensagem")
         abas.addTab(self._aba_imagem(), "Imagem da cobrança")
-        abas.addTab(self._aba_listas(), "Formas de envio")
         abas.addTab(self._aba_backup(), "Backup")
         layout.addWidget(abas, 1)
 
@@ -418,31 +416,6 @@ class PainelConfiguracoes(QWidget):
         )
         return pagina
 
-    # ------------------------------------------------------- formas de envio
-    def _aba_listas(self) -> QWidget:
-        pagina = QWidget()
-        layout = QVBoxLayout(pagina)
-        botoes = QHBoxLayout()
-        nova = widgets.QPushButton("Nova forma de envio")
-        nova.clicked.connect(self._nova_forma)
-        desativar = widgets.QPushButton("Ativar / desativar")
-        desativar.clicked.connect(self._alternar_forma)
-        botoes.addWidget(nova)
-        botoes.addWidget(desativar)
-        botoes.addStretch(1)
-        layout.addLayout(botoes)
-        self.modelo_formas = ModeloTabela(
-            [
-                Coluna("Forma de envio", lambda f: f.nome),
-                Coluna("Situação", lambda f: "Ativa" if f.ativo else "Inativa",
-                       alinhamento=Qt.AlignmentFlag.AlignCenter),
-            ]
-        )
-        self.tabela_formas = preparar_tabela(QTableView(), esticar=0)
-        self.tabela_formas.setModel(self.modelo_formas)
-        layout.addWidget(self.tabela_formas, 1)
-        return pagina
-
     # --------------------------------------------------------------- backup
     def _aba_backup(self) -> QWidget:
         pagina = QWidget()
@@ -526,10 +499,8 @@ class PainelConfiguracoes(QWidget):
         self.conta_email.setText(caixa_email.conta(sessao).descricao)
         self.backup_manter.setValue(servico.obter_int(sessao, "backup_manter", 20))
         self._carregar_modelo()
-        self.modelo_formas.definir_itens(servico_tipos.listar_formas(sessao, somente_ativas=False))
         self.modelo_backups.definir_itens(servico_backup.listar())
         for tabela, modelo in (
-            (self.tabela_formas, self.modelo_formas),
             (self.tabela_backups, self.modelo_backups),
         ):
             ajustar_colunas(tabela, modelo.colunas)
@@ -635,35 +606,6 @@ class PainelConfiguracoes(QWidget):
         from ..dialogos.conta_email import DialogoContaEmail
 
         if DialogoContaEmail(self.contexto, self).exec():
-            self.recarregar()
-
-    def _nova_forma(self) -> None:
-        nome, confirmou = QInputDialog.getText(
-            self, "Nova forma de envio", "Nome da forma de envio:"
-        )
-        if not confirmou or not nome.strip():
-            return
-
-        def acao():
-            servico_tipos.criar_forma(self.contexto.sessao, nome)
-            self.contexto.salvar()
-
-        deu_certo, _ = widgets.executar(self, acao)
-        if deu_certo:
-            self.recarregar()
-
-    def _alternar_forma(self) -> None:
-        forma = item_atual(self.tabela_formas)
-        if forma is None:
-            widgets.aviso(self, "Selecione uma forma de envio.")
-            return
-
-        def acao():
-            forma.ativo = not forma.ativo
-            self.contexto.salvar()
-
-        deu_certo, _ = widgets.executar(self, acao)
-        if deu_certo:
             self.recarregar()
 
     def _gerar_backup(self) -> None:

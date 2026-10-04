@@ -251,7 +251,7 @@ def test_guardar_sem_repetir_e_avisar(sessao):
     [nova] = servico.guardar(sessao, servico.GMAIL, baixadas)
     assert not nova.lida and servico.nao_lidos(sessao) == 1
     [aviso] = notificacoes.listar(sessao)
-    assert aviso.tipo == notificacoes.EMAIL and aviso.tela == "E-mail"
+    assert aviso.tipo == notificacoes.EMAIL and aviso.tela == "Gerenciador de e-mail"
     assert "Financeiro" in aviso.titulo
     # de novo, com outra referência no provedor: não repete, só atualiza
     baixadas[0].ref_provedor = "9"
@@ -307,3 +307,43 @@ def test_correcoes_ficam_guardadas_no_email(sessao):
     assert servico.correcoes(mensagem) == {"linha-1": 42, "linha-2": 0}
     servico.corrigir(sessao, mensagem, "linha-1", None)              # desfazer
     assert servico.correcoes(mensagem) == {"linha-2": 0}
+
+
+def test_email_novo_sem_resposta(monkeypatch, conta_gmail):
+    enviados = []
+
+    class SmtpDeMentira:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *erro):
+            return False
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, *a):
+            pass
+
+        def send_message(self, mensagem):
+            enviados.append(mensagem)
+
+    monkeypatch.setattr(servico.smtplib, "SMTP", SmtpDeMentira)
+    resposta = servico.Resposta(para="financeiro@exemplo.com.br", cc="", assunto=ASSUNTO,
+                                html="<p>lista</p>", texto="lista")
+    servico.CaixaImap(conta_gmail, "senha-de-app").enviar_novo(resposta)
+    [mensagem] = enviados
+    assert mensagem["In-Reply-To"] is None and mensagem["Subject"] == ASSUNTO
+
+    chamadas = []
+    monkeypatch.setattr(servico, "_http", lambda metodo, url, **k: chamadas.append((url, k)) or {})
+    caixa = servico.CaixaMicrosoft(servico.ContaEmail(
+        provedor=servico.MICROSOFT, endereco="cobranca@exemplo.com.br", ms_cliente="app"))
+    monkeypatch.setattr(caixa, "_acesso", lambda: "token")
+    caixa.enviar_novo(resposta)
+    url, argumentos = chamadas[-1]
+    assert url.endswith("/me/sendMail")
+    assert argumentos["corpo"]["message"]["subject"] == ASSUNTO

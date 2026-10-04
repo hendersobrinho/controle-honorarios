@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import and_, func, or_, select
@@ -18,7 +18,15 @@ from ..dominio.enums import (
     StatusPagamento,
     TipoPessoa,
 )
-from ..dominio.valores import ZERO, Competencia, agora_utc, dinheiro, hoje, somar_meses
+from ..dominio.valores import (
+    ZERO,
+    Competencia,
+    agora_utc,
+    dinheiro,
+    hoje,
+    normalizar_busca,
+    somar_meses,
+)
 from ..infra.modelos import (
     Cliente,
     Cobranca,
@@ -100,6 +108,8 @@ class Filtro:
     pago_de: date | None = None
     pago_ate: date | None = None
     competencia_ano: int | None = None
+    # um mês de competência (ano, mês); sem mês na competência, vale o do vencimento
+    competencia_mes: tuple[int, int] | None = None
     atraso_minimo: int | None = None
     atraso_maximo: int | None = None
     nunca_cobrado: bool = False
@@ -385,6 +395,14 @@ def consultar(sessao: Session, filtro: Filtro) -> list[LinhaHonorario]:
         )
     if filtro.competencia_ano:
         consulta = consulta.where(Honorario.competencia_ano == filtro.competencia_ano)
+    if filtro.competencia_mes:
+        ano, mes = filtro.competencia_mes
+        inicio = date(ano, mes, 1)
+        fim = somar_meses(inicio, 1) - timedelta(days=1)
+        consulta = consulta.where(or_(
+            and_(Honorario.competencia_ano == ano, Honorario.competencia_mes == mes),
+            and_(Honorario.competencia_mes.is_(None), Honorario.vencimento.between(inicio, fim)),
+        ))
     if filtro.termo:
         from ..dominio.valores import normalizar_busca
 
@@ -483,18 +501,48 @@ def agrupar_por_grupo(
     return saida
 
 
+def _ordem_do_codigo(codigo: str) -> tuple:
+    """Pelo número: "99" antes de "302" (comparar como texto poria "1000" antes de "302")."""
+    codigo = (codigo or "").strip()
+    return (0, int(codigo), "") if codigo.isdigit() else (1, 0, codigo)
+
+
+def agrupar_por_empresa(
+    linhas: Sequence[LinhaHonorario],
+) -> list[tuple[str, list[LinhaHonorario], bool]]:
+    """Pelo número da empresa, do menor para o maior. Quem tem mais de um honorário
+    vira uma seção com título ("302 – NOME"); quem tem um só entra direto, sem
+    título. Dentro da empresa, do vencimento mais antigo para o mais novo."""
+    grupos: dict[int, list[LinhaHonorario]] = {}
+    for linha in linhas:
+        grupos.setdefault(linha.cliente.id, []).append(linha)
+    ordem = sorted(grupos.values(), key=lambda itens: (
+        _ordem_do_codigo(itens[0].cliente.codigo), normalizar_busca(itens[0].cliente.nome)))
+    saida = []
+    for itens in ordem:
+        itens.sort(key=lambda linha: linha.honorario.vencimento)
+        cliente = itens[0].cliente
+        saida.append((f"{cliente.codigo} – {cliente.nome}", itens, len(itens) > 1))
+    return saida
+
+
 def agrupar_por_cliente(
     linhas: Sequence[LinhaHonorario],
 ) -> list[tuple[str, list[LinhaHonorario]]]:
-    grupos: dict[str, list[LinhaHonorario]] = {}
+    """Uma seção por empresa ("302 – NOME"), em ordem alfabética do nome; dentro
+    dela, do vencimento mais antigo para o mais novo."""
+    from ..dominio.valores import normalizar_busca
+
+    grupos: dict[int, list[LinhaHonorario]] = {}
     for linha in linhas:
-        rotulo = f"{linha.cliente.codigo} – {linha.cliente.nome}"
-        grupos.setdefault(rotulo, []).append(linha)
+        grupos.setdefault(linha.cliente.id, []).append(linha)
+    ordem = sorted(grupos.values(), key=lambda itens: (
+        normalizar_busca(itens[0].cliente.nome), itens[0].cliente.codigo))
     saida = []
-    for rotulo in sorted(grupos):
-        itens = grupos[rotulo]
-        itens.sort(key=lambda linha: linha.atualizacao.dias_atraso, reverse=True)
-        saida.append((rotulo, itens))
+    for itens in ordem:
+        itens.sort(key=lambda linha: linha.honorario.vencimento)
+        cliente = itens[0].cliente
+        saida.append((f"{cliente.codigo} – {cliente.nome}", itens))
     return saida
 
 
@@ -630,6 +678,17 @@ def do_mes(
     ]
     linhas.sort(key=lambda linha: (linha.cliente.nome, linha.honorario.vencimento))
     return linhas
+
+
+def meses_com_pagos(sessao: Session) -> list[tuple[int, int]]:
+    """Os meses de competência com honorário pago, do mais recente ao mais antigo."""
+    meses = set()
+    for ano, mes, vencimento in sessao.execute(
+        select(Honorario.competencia_ano, Honorario.competencia_mes, Honorario.vencimento)
+        .where(Honorario.status == StatusPagamento.PAGO)
+    ):
+        meses.add((ano, mes) if ano and mes else (vencimento.year, vencimento.month))
+    return sorted(meses, reverse=True)
 
 
 def meses_com_lancamento(sessao: Session) -> list[tuple[int, int]]:
