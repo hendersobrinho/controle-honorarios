@@ -10,7 +10,7 @@ A planilha calcula, na prática, `juros/dia ≈ valor do boleto × 0,0667%`
 194 de 206 linhas caem em ±0,005 p.p. disso. Mesmo assim, **o sistema usa um
 valor fixo por cliente**, com histórico de vigência, conforme decidido em
 29/09/2026. As 12 linhas em que o juros ficou desatualizado em relação ao valor
-(AMINON, JKL, RONALDH, VANDA, LEONARDO) entram no relatório de importação como
+(5 clientes) entram no relatório de importação como
 aviso, para correção manual.
 
 ### Dias anteriores à primeira vigência usam a primeira taxa

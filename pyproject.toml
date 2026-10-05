@@ -1,6 +1,6 @@
 [project]
 name = "honorarios"
-version = "0.1.0"
+version = "1.0.0"
 description = "Controle de honorários, juros de atraso e cobrança por WhatsApp"
 requires-python = ">=3.12"
 dependencies = [

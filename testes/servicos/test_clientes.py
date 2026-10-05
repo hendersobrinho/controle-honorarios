@@ -82,8 +82,8 @@ def test_juros_negativo_recusado(sessao):
 
 
 def test_listar_com_busca_sem_acento_e_pontuacao(sessao):
-    fabricas.cliente(sessao, nome="GASTROCENTER VITÓRIA CLÍNICA", codigo="307")
-    assert len(clientes.listar(sessao, termo="gastrocenter vitoria")) == 1
+    fabricas.cliente(sessao, nome="CLÍNICA SAÚDE VITÓRIA", codigo="307")
+    assert len(clientes.listar(sessao, termo="clinica saude vitoria")) == 1
     assert len(clientes.listar(sessao, termo="307")) == 1
     assert len(clientes.listar(sessao, termo="11.222.333")) == 1
     assert len(clientes.listar(sessao, termo="inexistente")) == 0

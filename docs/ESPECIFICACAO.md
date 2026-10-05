@@ -1,7 +1,15 @@
-# Especificação — Controle de Honorários e Cobrança
+# Especificação — Financeiro Métodos 1.0.0
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
+
+| | |
+|---|---|
+| **Programa** | Financeiro Métodos |
+| **Versão** | 1.0.0 (outubro de 2026) |
+| **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
+| **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
+| **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
 
 ## 1. O que a planilha tinha (levantamento de 29/09/2026)
 
@@ -24,9 +32,8 @@ vencido), `juros = ROUND(dias × juros_dia; 2)`, `total = valor + juros`,
 - Competência em quatro formatos: texto `MM/AAAA` (206), data (1), serial do
   Excel `46174` (1), nome de serviço `ATA DE SOCIOS` (1) e vazia (3).
 - 1 linha sem código, 5 sem CPF/CNPJ, 3 sem vencimento, 2 sem valor, 3 sem juros.
-- Mesmo nome com códigos diferentes (ex.: WILIAM HONORIO DE CASTRO: 845 e 547).
-- Juros/dia divergente entre linhas do mesmo cliente (AMINON, GASTROCENTER,
-  VANDA, WILIAM).
+- Mesmo nome com códigos diferentes.
+- Juros/dia divergente entre linhas do mesmo cliente (4 clientes).
 - Cobranças como texto livre na coluna Observações: 15 linhas preenchidas, 48
   linhas de texto, 47 no formato `dd/mm/aaaa - texto`.
 
@@ -78,11 +85,17 @@ valor_original, **saldo_aberto**, status, situação de envio, total_congelado) 
 `pagamento` (dias_atraso, juros_devidos, juros_cobrados, desconto,
 justificativa, total — tudo congelado) · `cobranca_lote` (uma mensagem) +
 `cobranca` (uma por honorário, com resultado, promessa e valor no momento) ·
-`renegociacao` + `renegociacao_item` · `modelo_mensagem` · `configuracao` ·
-`forma_envio` · `importacao` + `importacao_erro` · `log_alteracao`.
+`renegociacao` + `renegociacao_item` · `acordo_valor` (oferta com prazo, da
+imagem da cobrança) · `modelo_mensagem` · `configuracao` · `forma_envio` ·
+`notificacao` · `email_mensagem` (os e-mails da pasta Cobranças, com as
+correções de linha) · `importacao` + `importacao_erro` · `log_alteracao`.
 
 Índice único parcial em `(cliente, tipo, competencia_chave)` ignorando
-cancelados: é o que impede a geração de competência duplicar.
+cancelados: é o que impede a geração de competência duplicar. Os índices
+parciais valem no SQLite e no PostgreSQL, e a suíte de testes roda nos dois.
+
+As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado na
+última versão; banco existente é atualizado ao abrir.
 
 ## 5. Fases entregues
 
@@ -94,8 +107,15 @@ cancelados: é o que impede a geração de competência duplicar.
 | 3 | Cobrança geral, ficha da empresa, fluxo "Cobrar" com WhatsApp | concluída |
 | 4 | Cobrança em sequência de várias empresas, importação da planilha, backup (as filas do dia e de envio saíram depois, a pedido) | concluída |
 | 5 | Painel, exportação Excel/PDF, renegociação, reajuste em massa | concluída |
+| 6 | Telas por situação (A vencer, Atrasados, Pagos por competência), rankings, análise de juros, Clientes de IR | concluída |
+| 7 | Imagem da cobrança com Pix e acordo, comprovante "Pagamento confirmado", notificações | concluída |
+| 8 | Gerenciador de e-mail (Outlook/Microsoft 365 e Gmail): conferência da lista, baixa dos que saíram, correção de linhas, resposta | concluída |
+| 9 | Honorário recorrente no cadastro do cliente, "Paga pela empresa", geração automática, próximo dia útil | concluída |
+| 10 | PostgreSQL do escritório, primeiro uso, backup/restauração, instalador do Windows — **versão 1.0.0** | concluída |
 
 ## 6. O que continua fora do sistema
 
 Emissão de boleto, baixa automática por banco e envio automático de mensagem.
-O sistema registra, calcula e prepara o texto; o envio é sempre manual.
+O sistema registra, calcula e prepara o texto. O WhatsApp é sempre enviado à
+mão, e o e-mail de resposta ao financeiro só sai depois da confirmação de quem
+usa o sistema. Nenhuma baixa vem do e-mail sem confirmação.

@@ -117,7 +117,7 @@ def test_formatar_documento():
 
 def test_normalizar_busca_ignora_acento_e_pontuacao():
     assert normalizar_busca("Alteração Contratual Ltda.") == "alteracao contratual ltda"
-    assert normalizar_busca("GASTROCENTER VITÓRIA") == "gastrocenter vitoria"
+    assert normalizar_busca("CLÍNICA SAÚDE VITÓRIA") == "clinica saude vitoria"
 
 
 def test_normalizar_telefone_coloca_ddi():

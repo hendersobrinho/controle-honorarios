@@ -17,7 +17,7 @@ O script faz duas etapas:
 1. O PyInstaller, com `instalador\financeiro_metodos.spec`, gera o programa em
    `dist\FinanceiroMetodos`.
 2. O Inno Setup, com `instalador\financeiro_metodos.iss`, gera
-   `instalador\saida\Instalador_Financeiro_Metodos_<versão>.exe`.
+   `instalador\saida\Instalador_Financeiro_Metodos_<versão>.exe` (hoje, `..._1.0.0.exe`).
 
 **Ícones.** `src/honorarios/recursos/icone.svg` é o ícone do programa (área de
 trabalho, janela, barra de tarefas) e `instalador/instalador.png`, o do

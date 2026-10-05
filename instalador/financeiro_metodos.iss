@@ -8,7 +8,7 @@
 ; primeiro uso e continuam lá ao desinstalar ou atualizar.
 
 #define Nome "Financeiro Métodos"
-#define Versao "0.1.0"
+#define Versao "1.0.0"
 #define Empresa "Métodos Serviços Contábeis"
 #define Executavel "FinanceiroMetodos.exe"
 
