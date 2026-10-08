@@ -1,6 +1,6 @@
 [project]
 name = "honorarios"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Controle de honorários, juros de atraso e cobrança por WhatsApp"
 requires-python = ">=3.12"
 dependencies = [
@@ -31,6 +31,9 @@ honorarios = "honorarios.app:main"
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = { attr = "honorarios.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

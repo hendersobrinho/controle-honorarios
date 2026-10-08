@@ -4,11 +4,16 @@
 ; que cria dist\FinanceiroMetodos. Depois compile este arquivo no Inno Setup
 ; (ou: iscc instalador\financeiro_metodos.iss). O instalador sai em instalador\saida.
 ;
+; A versão vem de src\honorarios\__init__.py: o gerar_instalador.bat a passa
+; com /DVersao=... O valor abaixo só vale ao compilar este arquivo à mão.
+;
 ; Os dados (banco, backups) NÃO ficam na pasta do programa: são escolhidos no
 ; primeiro uso e continuam lá ao desinstalar ou atualizar.
 
 #define Nome "Financeiro Métodos"
-#define Versao "1.0.0"
+#ifndef Versao
+  #define Versao "1.0.0"
+#endif
 #define Empresa "Métodos Serviços Contábeis"
 #define Executavel "FinanceiroMetodos.exe"
 
@@ -19,6 +24,10 @@ AppName={#Nome}
 AppVersion={#Versao}
 AppVerName={#Nome} {#Versao}
 AppPublisher={#Empresa}
+VersionInfoVersion={#Versao}
+VersionInfoProductVersion={#Versao}
+VersionInfoCompany={#Empresa}
+VersionInfoDescription=Instalador do {#Nome}
 DefaultDirName={autopf}\{#Nome}
 DefaultGroupName={#Nome}
 DisableProgramGroupPage=yes

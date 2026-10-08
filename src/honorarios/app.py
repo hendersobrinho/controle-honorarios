@@ -6,6 +6,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from . import __version__
 from .config import registro
 from .config.caminhos import caminho_banco
 from .dominio.valores import hoje
@@ -69,6 +70,7 @@ def main(argumentos: list[str] | None = None) -> int:
     aplicativo = QApplication(argumentos if argumentos is not None else sys.argv)
     aplicativo.setApplicationName("Financeiro Métodos")
     aplicativo.setOrganizationName("Métodos Serviços Contábeis")
+    aplicativo.setApplicationVersion(__version__)
     from .ui.comum.notificacoes import icone_da_marca
 
     aplicativo.setWindowIcon(icone_da_marca())

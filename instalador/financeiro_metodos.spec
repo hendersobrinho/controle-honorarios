@@ -7,12 +7,52 @@ A pasta gerada é o que o Inno Setup (financeiro_metodos.iss) empacota. Rode no
 Windows, dentro do ambiente virtual com o projeto instalado (pip install -e .).
 """
 
+import re
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 RAIZ = Path(SPECPATH).parent
 PACOTE = RAIZ / "src" / "honorarios"
+
+# a versão do programa, lida do pacote (src/honorarios/__init__.py)
+VERSAO = re.search(
+    r'__version__\s*=\s*"([^"]+)"', (PACOTE / "__init__.py").read_text(encoding="utf-8")
+).group(1)
+NUMEROS = tuple(int(n) for n in (VERSAO.split(".") + ["0"] * 4)[:4])
+
+# o que o Windows mostra em Propriedades → Detalhes do FinanceiroMetodos.exe
+# (o módulo só existe no PyInstaller do Windows)
+INFO_VERSAO = None
+if sys.platform == "win32":
+    from PyInstaller.utils.win32.versioninfo import (
+        FixedFileInfo,
+        StringFileInfo,
+        StringStruct,
+        StringTable,
+        VarFileInfo,
+        VarStruct,
+        VSVersionInfo,
+    )
+
+    INFO_VERSAO = VSVersionInfo(
+        ffi=FixedFileInfo(filevers=NUMEROS, prodvers=NUMEROS),
+        kids=[
+            StringFileInfo([
+                StringTable("041604B0", [
+                    StringStruct("CompanyName", "Métodos Serviços Contábeis"),
+                    StringStruct("FileDescription", "Financeiro Métodos"),
+                    StringStruct("FileVersion", VERSAO),
+                    StringStruct("InternalName", "FinanceiroMetodos"),
+                    StringStruct("OriginalFilename", "FinanceiroMetodos.exe"),
+                    StringStruct("ProductName", "Financeiro Métodos"),
+                    StringStruct("ProductVersion", VERSAO),
+                ])
+            ]),
+            VarFileInfo([VarStruct("Translation", [0x0416, 1200])]),
+        ],
+    )
 
 dados = [
     # logo, ícone e fundo modelo da imagem de cobrança
@@ -50,6 +90,7 @@ exe = EXE(
     exclude_binaries=True,
     name="FinanceiroMetodos",
     icon=str(RAIZ / "instalador" / "financeiro_metodos.ico"),
+    version=INFO_VERSAO,
     console=False,          # programa de janela: sem a tela preta do console
     upx=False,
 )

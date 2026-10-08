@@ -59,8 +59,9 @@ desses arquivos ao servidor numa transação só, e antes faz um backup do estad
 atual. Para cópias do servidor em si, o `pg_dump` agendado no computador do
 banco continua sendo o recomendado.
 
-**Atualizar.** Suba a `version` no `pyproject.toml` e no `#define Versao` do
-`.iss`, gere de novo e rode o instalador por cima. O `AppId` fixo faz o Windows
+**Atualizar.** Suba o `__version__` em `src/honorarios/__init__.py` (é o único
+lugar: o `pyproject.toml`, o .exe e o instalador leem de lá), gere de novo e rode
+o instalador por cima. O `AppId` fixo faz o Windows
 reconhecer a instalação anterior.
 
 ## Desenvolvimento
