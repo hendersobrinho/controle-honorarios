@@ -93,8 +93,15 @@ class DialogoHonorario(QDialog):
         salvar = widgets.QPushButton("Salvar")
         salvar.setObjectName("primario")
         salvar.setShortcut("Ctrl+S")
-        salvar.clicked.connect(self._salvar)
+        salvar.clicked.connect(lambda: self._salvar())
         acoes.addWidget(cancelar)
+        if self.honorario is None or self.honorario.status.cobravel:
+            # cobrar daqui mesmo, sem ir até Atrasados ou A vencer
+            salvar_cobrar = widgets.QPushButton("Salvar e cobrar")
+            salvar_cobrar.setShortcut("Ctrl+B")
+            salvar_cobrar.setToolTip("Salva e já abre a mensagem de cobrança (Ctrl+B)")
+            salvar_cobrar.clicked.connect(lambda: self._salvar(cobrar=True))
+            acoes.addWidget(salvar_cobrar)
         acoes.addWidget(salvar)
         layout.addLayout(acoes)
         self._ajustar_competencia()
@@ -158,7 +165,7 @@ class DialogoHonorario(QDialog):
             observacoes=self.observacoes.toPlainText(),
         )
 
-    def _salvar(self) -> None:
+    def _salvar(self, cobrar: bool = False) -> None:
         if self.cliente.valor() is None:
             widgets.aviso(self, "Selecione o cliente.")
             return
@@ -179,3 +186,7 @@ class DialogoHonorario(QDialog):
             self.contexto.desfazer()
             return
         self.accept()
+        if cobrar:
+            from .cobrar import cobrar_honorarios
+
+            cobrar_honorarios(self.parentWidget(), self.contexto, [self.honorario])

@@ -789,6 +789,48 @@ def test_cobrar_avisa_e_recusa_cliente_com_cobranca_suspensa(
     assert servico_cobrancas.historico_do_cliente(contexto.sessao, cliente_com_debito.id) == []
 
 
+def test_avulso_salvo_ja_abre_a_cobranca_so_dele(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from honorarios.ui.dialogos import cobrar
+    from honorarios.ui.dialogos.honorario import DialogoHonorario
+
+    abertos: list = []
+    monkeypatch.setattr(
+        cobrar.DialogoCobrar, "exec", lambda self: abertos.append(self.modelo.itens) or 0
+    )
+    dialogo = DialogoHonorario(contexto, cliente=cliente_com_debito)
+    qtbot.addWidget(dialogo)
+    dialogo.tipo.definir(fabricas.tipo_avulso(contexto.sessao).id)
+    dialogo.descricao.setText("Mudança de sócio")
+    dialogo.valor.definir(Decimal("350.00"))
+    dialogo._salvar(cobrar=True)
+
+    # só o avulso recém-lançado, não as outras pendências do cliente
+    assert len(abertos) == 1
+    assert [linha.honorario.id for linha in abertos[0]] == [dialogo.honorario.id]
+
+
+def test_painel_de_avulsos_cobra_o_selecionado(qtbot, contexto, cliente_com_debito, monkeypatch):
+    from honorarios.ui.dialogos import cobrar
+    from honorarios.ui.paineis.avulsos import PainelAvulsos
+
+    avulso = fabricas.honorario(
+        contexto.sessao, cliente_com_debito, valor="350.00", competencia=Competencia(),
+        tipo=fabricas.tipo_avulso(contexto.sessao), descricao="Mudança de sócio",
+    )
+    abertos: list = []
+    monkeypatch.setattr(
+        cobrar.DialogoCobrar, "exec", lambda self: abertos.append(self.modelo.itens) or 0
+    )
+    painel = PainelAvulsos(contexto)
+    qtbot.addWidget(painel)
+    painel.tabela.selectRow(0)
+    painel._cobrar()
+
+    assert [linha.honorario.id for linha in abertos[0]] == [avulso.id]
+
+
 def test_lista_de_clientes_mostra_suspensao_e_vinculo(qtbot, contexto, empresa_com_vinculado):
     from honorarios.servicos import clientes
     from honorarios.ui.paineis.clientes import PainelClientes
@@ -1336,7 +1378,7 @@ def test_fundo_vira_papel_a4_sem_deformar(qtbot):
 # ---------------------------------------------------- avulsos e editar no cartão
 
 
-def test_avulsos_e_historico_sem_cobrar_nem_pagar(qtbot, contexto, cliente_com_debito):
+def test_avulsos_e_historico_cobram_mas_nao_pagam(qtbot, contexto, cliente_com_debito):
     from PySide6.QtWidgets import QPushButton
 
     from honorarios.servicos import pagamentos
@@ -1361,7 +1403,8 @@ def test_avulsos_e_historico_sem_cobrar_nem_pagar(qtbot, contexto, cliente_com_d
     qtbot.addWidget(painel)
     textos = [b.text() for b in painel.findChildren(QPushButton)]
     assert "Lançar avulso" in textos and "Editar" in textos and "Cancelar…" in textos
-    assert "Cobrar" not in textos and "Registrar pagamento" not in textos
+    # cobra daqui mesmo; a baixa continua em Atrasados e A vencer
+    assert "Cobrar" in textos and "Registrar pagamento" not in textos
 
     # pagos continuam no histórico, com a data do pagamento; mais recente primeiro
     itens = painel.modelo.itens

@@ -382,3 +382,30 @@ class DialogoCobrar(QDialog):
             return
         self.registrou = True
         self.accept()
+
+
+def cobrar_honorarios(parent, contexto: Contexto, honorarios) -> bool:
+    """Abre o "Cobrar" com estes honorários (de um cliente só); True se registrou.
+
+    Serve às telas que lançam ou listam honorários soltos — o avulso recém-lançado,
+    por exemplo — sem precisar ir até Atrasados ou A vencer para cobrar.
+    """
+    honorarios = [h for h in honorarios if h.status.cobravel]
+    if not honorarios:
+        widgets.aviso(parent, "Só dá para cobrar honorário em aberto.")
+        return False
+    cliente = honorarios[0].cliente
+    ids = {h.id for h in honorarios}
+    linhas = [
+        linha
+        for linha in cobrancas.linhas_em_aberto_do_cliente(
+            contexto.sessao, cliente.id, contexto.data_referencia
+        )
+        if linha.honorario.id in ids
+    ]
+    if not linhas:
+        widgets.aviso(parent, "Só dá para cobrar honorário em aberto.")
+        return False
+    dialogo = DialogoCobrar(contexto, cliente, linhas, parent)
+    dialogo.exec()
+    return dialogo.registrou

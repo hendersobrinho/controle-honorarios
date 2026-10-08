@@ -1,8 +1,9 @@
 """Honorários avulsos: lançar, corrigir e consultar (IRPF, alteração contratual…).
 
 É o histórico dos avulsos lançados, pagos ou não, como "Honorários recorrentes"
-é o lugar dos contratos. Cobrar e registrar pagamento ficam nas telas de cobrança
-(Atrasados, A vencer, Imposto de Renda), onde o avulso entra assim que é lançado.
+é o lugar dos contratos. Dá para cobrar daqui mesmo (ou já no lançamento, com
+"Salvar e cobrar"); o avulso também entra nas telas de cobrança (Atrasados,
+A vencer, Imposto de Renda) assim que é lançado, e a baixa fica nelas.
 """
 
 from __future__ import annotations
@@ -81,12 +82,13 @@ class PainelAvulsos(QWidget):
         layout.setSpacing(10)
         self.cabecalho = widgets.Cabecalho(
             "Honorários avulsos",
-            "Serviços que não vêm de contrato: lance e corrija aqui; a cobrança fica "
-            "em Atrasados e A vencer",
+            "Serviços que não vêm de contrato: lance, corrija e cobre aqui; a baixa "
+            "fica em Atrasados e A vencer",
         )
         self.cabecalho.adicionar_botao(
             "Lançar avulso", self._novo, primario=True, atalho="Ctrl+N"
         )
+        self.cabecalho.adicionar_botao("Cobrar", self._cobrar, atalho="Ctrl+B")
         self.cabecalho.adicionar_botao("Editar", self._editar)
         self.cabecalho.adicionar_botao("Cancelar…", self._cancelar)
         self.cabecalho.adicionar_botao("Atualizar", self.recarregar, atalho="F5")
@@ -181,7 +183,7 @@ class PainelAvulsos(QWidget):
         self.resumo.setText(
             f"{len(linhas)} lançamento(s) · {len(abertos)} em aberto "
             f"({formatar_moeda(servico.total_de(abertos))}) · {len(pagos)} pago(s). "
-            "Para cobrar ou dar baixa, use Atrasados e A vencer."
+            "Para dar baixa, use Atrasados e A vencer."
         )
 
     def _selecionada(self):
@@ -199,6 +201,13 @@ class PainelAvulsos(QWidget):
         if linha and DialogoHonorario(
             self.contexto, honorario=linha.honorario, parent=self
         ).exec():
+            self.recarregar()
+
+    def _cobrar(self) -> None:
+        from ..dialogos.cobrar import cobrar_honorarios
+
+        linha = self._selecionada()
+        if linha and cobrar_honorarios(self, self.contexto, [linha.honorario]):
             self.recarregar()
 
     def _cancelar(self) -> None:
