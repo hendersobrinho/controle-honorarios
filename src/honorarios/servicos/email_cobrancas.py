@@ -536,6 +536,7 @@ _SO_VALOR = re.compile(r"^\d{1,3}(?:[.,]?\d{3})*[.,]\d{2}$")
 _SO_COMPETENCIA_NUMERO = re.compile(r"^\d{1,2}/\d{4}$")
 _CABECALHOS = {"cliente", "competência", "competencia", "vencimento", "valor"}
 _SO_COMPETENCIA = re.compile(r"^(\d{1,2}/\d{4}|[A-Za-zÀ-ú]+)$")
+_TERMINA_EM_DATA = re.compile(r"\S\s+\d{2}/\d{2}/\d{4}$")
 
 
 def _cabeca(linha: str) -> bool:
@@ -559,6 +560,13 @@ def _reagrupar(linhas: list[str]) -> list[str]:
                 and _SO_DATA.match(linhas[i + 2]) and _SO_VALOR.match(linhas[i + 3])):
             saida.append("\t".join(linhas[i:i + 4]))
             i += 4
+            continue
+        # a linha quebrada pelo e-mail: cliente, competência e vencimento numa linha
+        # e o valor sozinho na de baixo
+        if (i + 1 < n and _TERMINA_EM_DATA.search(atual) and _SO_VALOR.match(linhas[i + 1])
+                and not _colunas(atual)):
+            saida.append(f"{atual}\t{linhas[i + 1]}")
+            i += 2
             continue
         # N linhas "nome competência", depois N vencimentos e N valores
         k = 0

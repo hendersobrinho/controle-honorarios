@@ -332,6 +332,32 @@ def test_le_colunas_em_linhas_separadas():
     ]
 
 
+QUEBRADO_PELO_EMAIL = (
+    "Cobranças de 06/10/2026\r\n\r\n"
+    "Cliente                   Competência                     Vencimento\r\n Valor\r\n\r\n"
+    "Alfa Móveis Ltda.         Venda de imóvel                 20/08/2026\r\n 680,00\r\n\r\n"
+    "Beta Representações       02/2026                         16/03/2026\r\n 1.507,80\r\n"
+    "Beta Representações       03/2026                         16/04/2026\r\n 1.507,80\r\n"
+    "Total do Débito: 3.015,60\r\n"
+    "25/09: Falou com o financeiro, vai pagar uma parte até o dia 10 e o resto\r\n"
+    "parcelado.\r\n"
+)
+
+
+def test_le_o_valor_quebrado_na_linha_de_baixo():
+    """O Gmail quebra a linha comprida: o valor cai sozinho na linha seguinte."""
+    leitura = servico.ler(QUEBRADO_PELO_EMAIL)
+    assert [(x.cliente, x.competencia, x.vencimento, x.valor) for x in leitura.linhas] == [
+        ("Alfa Móveis Ltda.", "Venda de imóvel", date(2026, 8, 20), Decimal("680.00")),
+        ("Beta Representações", "02/2026", date(2026, 3, 16), Decimal("1507.80")),
+        ("Beta Representações", "03/2026", date(2026, 4, 16), Decimal("1507.80")),
+    ]
+    assert leitura.linhas[-1].notas == [
+        "25/09: Falou com o financeiro, vai pagar uma parte até o dia 10 e o resto parcelado."
+    ]
+    assert not leitura.incompletas
+
+
 def test_incompletas_voltam_na_resposta(sessao, carteira):
     conferencia = servico.conferir(sessao, servico.ler(COPIADO_DO_PDF), HOJE)
     corpo = servico.texto(servico.responder(sessao, conferencia, HOJE))
