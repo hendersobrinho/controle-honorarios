@@ -347,3 +347,58 @@ def test_email_novo_sem_resposta(monkeypatch, conta_gmail):
     url, argumentos = chamadas[-1]
     assert url.endswith("/me/sendMail")
     assert argumentos["corpo"]["message"]["subject"] == ASSUNTO
+
+
+PNG = b"\x89PNG\r\n\x1a\nassinatura"
+
+
+def test_assinatura_vai_embutida_pelo_cid(monkeypatch, sessao, conta_gmail):
+    servico.gravar_assinatura(sessao, PNG)
+    assert servico.assinatura(sessao) == PNG
+    enviados = []
+
+    class SmtpDeMentira:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *erro):
+            return False
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, *a):
+            pass
+
+        def send_message(self, mensagem):
+            enviados.append(mensagem)
+
+    monkeypatch.setattr(servico.smtplib, "SMTP", SmtpDeMentira)
+    resposta = servico.Resposta(para="financeiro@exemplo.com.br", cc="", assunto=ASSUNTO,
+                                html="<html><body><p>lista</p></body></html>", texto="lista",
+                                assinatura=PNG)
+    enviada = servico.CaixaImap(conta_gmail, "senha-de-app").enviar_novo(resposta)
+    [mensagem] = enviados
+    html = mensagem.get_body(("html",)).get_content()
+    [imagem] = [p for p in mensagem.walk() if p.get_content_type() == "image/png"]
+    cid = imagem["Content-ID"].strip("<>")
+    assert f'src="cid:{cid}"' in html and html.index("cid:") < html.index("</body>")
+    assert imagem.get_content() == PNG
+    assert "data:image/png;base64," in enviada.html   # o sistema mostra sem o anexo
+
+    chamadas = []
+    monkeypatch.setattr(servico, "_http", lambda metodo, url, **k: chamadas.append(k) or {})
+    caixa = servico.CaixaMicrosoft(servico.ContaEmail(
+        provedor=servico.MICROSOFT, endereco="cobranca@exemplo.com.br", ms_cliente="app"))
+    monkeypatch.setattr(caixa, "_acesso", lambda: "token")
+    caixa.enviar_novo(resposta)
+    mensagem_graph = chamadas[-1]["corpo"]["message"]
+    [anexo] = mensagem_graph["attachments"]
+    assert anexo["isInline"] and anexo["contentId"] == servico.CID_GRAPH
+    assert f"cid:{servico.CID_GRAPH}" in mensagem_graph["body"]["content"]
+
+    servico.gravar_assinatura(sessao, b"")
+    assert servico.assinatura(sessao) == b""

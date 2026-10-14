@@ -76,6 +76,7 @@ SMTP_PORTA = "email_smtp_porta"
 MS_CLIENTE = "email_ms_cliente"
 MS_LOCATARIO = "email_ms_locatario"
 ULTIMA_VERIFICACAO = "email_ultima_verificacao"
+ASSINATURA = "email_assinatura"   # imagem PNG em base64, posta no fim do que se envia
 
 SERVICO_COFRE = "honorarios-email"
 
@@ -139,6 +140,20 @@ def gravar_conta(sessao: Session, dados: ContaEmail) -> None:
     configuracoes.gravar(sessao, SMTP_PORTA, str(dados.smtp_porta))
     configuracoes.gravar(sessao, MS_CLIENTE, dados.ms_cliente.strip())
     configuracoes.gravar(sessao, MS_LOCATARIO, dados.ms_locatario.strip() or "organizations")
+
+
+def assinatura(sessao: Session) -> bytes:
+    """A imagem de assinatura (PNG), ou vazio se não houver."""
+    guardada = configuracoes.obter(sessao, ASSINATURA)
+    try:
+        return base64.b64decode(guardada) if guardada else b""
+    except ValueError:
+        return b""
+
+
+def gravar_assinatura(sessao: Session, imagem: bytes) -> None:
+    """Grava a imagem (PNG); vazio tira a assinatura."""
+    configuracoes.gravar(sessao, ASSINATURA, base64.b64encode(imagem).decode() if imagem else "")
 
 
 # ------------------------------------------------------------- o cofre
@@ -308,6 +323,26 @@ class Resposta:
     assunto: str
     html: str
     texto: str
+    assinatura: bytes = b""   # PNG posto embaixo do texto, antes da citação
+
+
+def _com_assinatura(html: str, origem: str) -> str:
+    """Põe a imagem no fim do corpo (dentro do <body>, se o HTML tiver um)."""
+    bloco = f'<p><img src="{origem}" alt="Assinatura"></p>'
+    fim = html.lower().rfind("</body>")
+    return html[:fim] + bloco + html[fim:] if fim >= 0 else html + bloco
+
+
+def _corpos(resposta: Resposta, cid: str) -> tuple[str, str]:
+    """O HTML que vai (a assinatura pelo ``cid``) e o que fica guardado (com a imagem dentro).
+
+    O ``cid`` é o jeito que Outlook e Gmail mostram; o sistema mostra a imagem embutida.
+    """
+    if not resposta.assinatura:
+        return resposta.html, resposta.html
+    embutida = "data:image/png;base64," + base64.b64encode(resposta.assinatura).decode()
+    return (_com_assinatura(resposta.html, f"cid:{cid}"),
+            _com_assinatura(resposta.html, embutida))
 
 
 def _lista_de_enderecos(texto_enderecos: str) -> list[tuple[str, str]]:
@@ -491,14 +526,21 @@ class CaixaImap:
             mensagem["Cc"] = ", ".join(servico_email.endereco_legivel(*par)
                                        for par in _lista_de_enderecos(resposta.cc))
         mensagem["Subject"] = resposta.assunto
+        cid = make_msgid("assinatura", domain=dominio)[1:-1]
+        html, html_guardado = _corpos(resposta, cid)
         if original is not None:
             mensagem["In-Reply-To"] = original.message_id
             mensagem["References"] = f"{original.referencias} {original.message_id}".strip()
             mensagem.set_content(resposta.texto + _citacao_texto(original))
-            mensagem.add_alternative(resposta.html + _citacao_html(original), subtype="html")
+            mensagem.add_alternative(html + _citacao_html(original), subtype="html")
         else:
             mensagem.set_content(resposta.texto)
-            mensagem.add_alternative(resposta.html, subtype="html")
+            mensagem.add_alternative(html, subtype="html")
+        if resposta.assinatura:
+            mensagem.get_body(("html",)).add_related(
+                resposta.assinatura, "image", "png", cid=f"<{cid}>",
+                disposition="inline", filename="assinatura.png",
+            )
         if not _lista_de_enderecos(resposta.para):
             raise ErroDeValidacao("Informe para quem vai a resposta.")
         try:
@@ -511,7 +553,10 @@ class CaixaImap:
                 from falha
         except (OSError, smtplib.SMTPException) as falha:
             raise ErroDeNegocio(f"Não consegui enviar a resposta: {falha}") from falha
-        return de_mime(bytes(mensagem))
+        enviada = de_mime(bytes(mensagem))
+        if resposta.assinatura:
+            enviada.html = html_guardado + (_citacao_html(original) if original else "")
+        return enviada
 
 
 # ------------------------------------------------------- Microsoft Graph
@@ -702,12 +747,14 @@ class CaixaMicrosoft:
         """E-mail novo (sem o do financeiro para responder)."""
         if not _lista_de_enderecos(resposta.para):
             raise ErroDeValidacao("Informe para quem vai o e-mail.")
+        html, html_guardado = _corpos(resposta, CID_GRAPH)
         retorno = _http("POST", f"{GRAPH}/me/sendMail", token=self._acesso(), corpo={
             "message": {
                 "subject": resposta.assunto,
                 "toRecipients": _destinatarios_graph(resposta.para),
                 "ccRecipients": _destinatarios_graph(resposta.cc),
-                "body": {"contentType": "HTML", "content": resposta.html},
+                "body": {"contentType": "HTML", "content": html},
+                "attachments": _anexos_graph(resposta),
             },
             "saveToSentItems": True,
         })
@@ -719,7 +766,7 @@ class CaixaMicrosoft:
         return MensagemBaixada(
             message_id=make_msgid(domain=dominio), assunto=resposta.assunto,
             de=self.conta.endereco, para=resposta.para, cc=resposta.cc, data=agora_utc(),
-            html=resposta.html, texto=resposta.texto,
+            html=html_guardado, texto=resposta.texto,
         )
 
     def responder(self, original: Original, resposta: Resposta) -> MensagemBaixada:
@@ -727,14 +774,16 @@ class CaixaMicrosoft:
             raise ErroDeNegocio("Este e-mail não veio da conta Microsoft: copie a resposta.")
         if not _lista_de_enderecos(resposta.para):
             raise ErroDeValidacao("Informe para quem vai a resposta.")
-        html = resposta.html + _citacao_html(original)
+        html, html_guardado = _corpos(resposta, CID_GRAPH)
+        citacao = _citacao_html(original)
         retorno = _http(
             "POST", f"{GRAPH}/me/messages/{original.ref_provedor}/replyAll",
             token=self._acesso(),
             corpo={"message": {
                 "toRecipients": _destinatarios_graph(resposta.para),
                 "ccRecipients": _destinatarios_graph(resposta.cc),
-                "body": {"contentType": "HTML", "content": html},
+                "body": {"contentType": "HTML", "content": html + citacao},
+                "attachments": _anexos_graph(resposta),
             }},
         )
         if "error" in retorno:
@@ -745,9 +794,24 @@ class CaixaMicrosoft:
         return MensagemBaixada(
             message_id=make_msgid(domain=dominio), assunto=resposta.assunto,
             de=self.conta.endereco, para=resposta.para, cc=resposta.cc, data=agora_utc(),
-            html=html, texto=resposta.texto, in_reply_to=original.message_id,
+            html=html_guardado + citacao, texto=resposta.texto,
+            in_reply_to=original.message_id,
             conversa=original.conversa,
         )
+
+
+CID_GRAPH = "assinatura"
+
+
+def _anexos_graph(resposta: Resposta) -> list[dict]:
+    """A assinatura como anexo embutido (o HTML aponta para ela pelo ``cid``)."""
+    if not resposta.assinatura:
+        return []
+    return [{
+        "@odata.type": "#microsoft.graph.fileAttachment", "name": "assinatura.png",
+        "contentType": "image/png", "contentBytes": base64.b64encode(resposta.assinatura).decode(),
+        "isInline": True, "contentId": CID_GRAPH,
+    }]
 
 
 def _de_graph(item: dict) -> MensagemBaixada:

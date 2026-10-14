@@ -25,6 +25,7 @@ from PySide6.QtCore import QMimeData, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -389,6 +390,12 @@ class AbaResponder(QWidget):
         self.aviso = widgets.rotulo_fraco("")
         self.aviso.setWordWrap(True)
         barra.addWidget(self.aviso, 1)
+        self.com_assinatura = QCheckBox("Assinatura")
+        self.com_assinatura.setToolTip(
+            "Põe a imagem de assinatura (Conta de e-mail) no fim do e-mail enviado")
+        self.com_assinatura.setChecked(True)
+        barra.addWidget(self.com_assinatura)
+        self.imagem_assinatura = b""
         self.botao_copiar = QPushButton("Copiar")
         self.botao_copiar.setToolTip("Copia com a formatação, para colar no Outlook")
         self.botao_copiar.clicked.connect(self.copiar)
@@ -421,6 +428,8 @@ class AbaResponder(QWidget):
                       self.botao_rascunho):
             campo.setEnabled(email is not None)
         self.botao_enviar.setEnabled(email is not None and pode_enviar)
+        self.imagem_assinatura = caixa_email.assinatura(self.painel.contexto.sessao)
+        self.com_assinatura.setVisible(bool(self.imagem_assinatura) and pode_enviar)
         self.aviso.setText(aviso)
         novo = self.painel.mensagem is None
         self.rodape.setText(
@@ -440,6 +449,7 @@ class AbaResponder(QWidget):
             para=self.para.text().strip(), cc=self.cc.text().strip(),
             assunto=self.assunto.text().strip(), html=self.corpo_html(),
             texto=self.editor.toPlainText(),
+            assinatura=self.imagem_assinatura if self.com_assinatura.isChecked() else b"",
         )
 
     def copiar(self) -> None:

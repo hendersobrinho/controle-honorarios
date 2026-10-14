@@ -2,17 +2,19 @@
 
 Um provedor por vez — Gmail, Microsoft 365 (Outlook) ou outro (IMAP/SMTP) —, o
 seu e-mail e a pasta que a regra preenche. A senha de app e a autorização da
-Microsoft vão para o cofre de senhas do sistema, não para o banco.
+Microsoft vão para o cofre de senhas do sistema, não para o banco. A imagem de
+assinatura, posta no fim do que se envia, fica no banco (vale em qualquer PC).
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -50,6 +52,23 @@ AJUDA_IMAP = (
 
 
 LARGURA_ROTULO = 170
+LARGURA_ASSINATURA = 600   # maior que isso, a imagem é reduzida (e-mail não precisa de mais)
+ALTURA_PREVIA = 90
+
+
+def png_da_assinatura(caminho: str) -> bytes:
+    """Abre a imagem, reduz se for larga demais e devolve em PNG."""
+    imagem = QImage(caminho)
+    if imagem.isNull():
+        raise servico.ErroDeValidacao("Não consegui abrir essa imagem.")
+    if imagem.width() > LARGURA_ASSINATURA:
+        imagem = imagem.scaledToWidth(LARGURA_ASSINATURA,
+                                      Qt.TransformationMode.SmoothTransformation)
+    dados = QByteArray()
+    buffer = QBuffer(dados)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    imagem.save(buffer, "PNG")
+    return bytes(dados)
 
 
 def _rotulo(texto: str) -> QLabel:
@@ -162,6 +181,7 @@ class DialogoContaEmail(QDialog):
         self.paginas.addWidget(self._pagina_microsoft(atual))
         self.paginas.addWidget(self._pagina_imap(atual))
         layout.addWidget(self.paginas)
+        layout.addLayout(self._assinatura())
 
         self.resultado = QLabel("")
         self.resultado.setWordWrap(True)
@@ -181,6 +201,50 @@ class DialogoContaEmail(QDialog):
         layout.addWidget(botoes)
         self.provedor.currentIndexChanged.connect(self._trocar_pagina)
         self._trocar_pagina()
+
+    # ---------------------------------------------------------- assinatura
+    def _assinatura(self) -> QFormLayout:
+        self.imagem_assinatura = servico.assinatura(self.contexto.sessao)
+        self.previa_assinatura = QLabel()
+        self.previa_assinatura.setObjectName("previaAssinatura")
+        self.botao_assinatura = QPushButton("Escolher imagem…")
+        self.botao_assinatura.clicked.connect(self._escolher_assinatura)
+        self.botao_sem_assinatura = QPushButton("Remover")
+        self.botao_sem_assinatura.clicked.connect(lambda: self._mostrar_assinatura(b""))
+        linha = QHBoxLayout()
+        linha.addWidget(self.previa_assinatura, 1)
+        linha.addWidget(self.botao_assinatura)
+        linha.addWidget(self.botao_sem_assinatura)
+        formulario = QFormLayout()
+        formulario.setHorizontalSpacing(12)
+        formulario.addRow(_rotulo("Assinatura (imagem):"), linha)
+        self._mostrar_assinatura(self.imagem_assinatura)
+        return formulario
+
+    def _mostrar_assinatura(self, imagem: bytes) -> None:
+        self.imagem_assinatura = imagem
+        self.botao_sem_assinatura.setEnabled(bool(imagem))
+        if not imagem:
+            self.previa_assinatura.setPixmap(QPixmap())
+            self.previa_assinatura.setText("Sem assinatura")
+            return
+        figura = QPixmap()
+        figura.loadFromData(imagem)
+        if figura.height() > ALTURA_PREVIA:
+            figura = figura.scaledToHeight(ALTURA_PREVIA,
+                                           Qt.TransformationMode.SmoothTransformation)
+        self.previa_assinatura.setPixmap(figura)
+
+    def _escolher_assinatura(self) -> None:
+        caminho, _ = QFileDialog.getOpenFileName(
+            self, "Imagem da assinatura", "",
+            "Imagens (*.png *.jpg *.jpeg *.gif *.bmp);;Todos os arquivos (*)",
+        )
+        if not caminho:
+            return
+        deu_certo, imagem = widgets.executar(self, lambda: png_da_assinatura(caminho))
+        if deu_certo:
+            self._mostrar_assinatura(imagem)
 
     # ------------------------------------------------------------ páginas
     def _ajuda(self, html: str) -> QLabel:
@@ -358,6 +422,7 @@ class DialogoContaEmail(QDialog):
 
         def acao():
             servico.gravar_conta(self.contexto.sessao, dados)
+            servico.gravar_assinatura(self.contexto.sessao, self.imagem_assinatura)
             senha = self._senha_digitada()
             if senha and dados.provedor in (servico.GMAIL, servico.IMAP):
                 servico.guardar_segredo(servico.chave_senha(dados.endereco), senha)
