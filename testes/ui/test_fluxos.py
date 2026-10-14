@@ -1307,18 +1307,24 @@ def test_cobrar_gera_imagem_dos_honorarios_marcados(
     botoes["2/2 · Copiar chave Pix"].click()
     assert QGuiApplication.clipboard().text() == aberto.dados.campos["chave_pix"]
     assert "Copiar Pix copia e cola" not in botoes            # o QR é o PNG do banco
-    # "pagar até" muda só o prazo; "valores atualizados em" muda o valor
+    # o juros vai até o "pagar até"
     total_antes = aberto.dados.campos["total"]
     from datetime import timedelta
-    base = aberto.atualizado_em.valor()
+    base = aberto.vencimento.valor()
+    assert not aberto.linha_atualizado.isVisibleTo(aberto)
     aberto.vencimento.definir(base + timedelta(days=10))
     assert aberto.dados.campos["vencimento"] == formatar_data(base + timedelta(days=10))
-    assert aberto.dados.campos["total"] == total_antes
-    aberto.atualizado_em.definir(base + timedelta(days=5))
+    assert aberto.dados.campos["data"] == formatar_data(base + timedelta(days=10))
     assert aberto.dados.campos["total"] != total_antes
 
-    # guardar como acordo: registrado quando a imagem é copiada
+    # guardar como acordo: o juros congela em "valores atualizados em"
     aberto.acordo.setChecked(True)
+    assert aberto.linha_atualizado.isVisibleTo(aberto)
+    assert aberto.dados.campos["total"] == total_antes
+    assert aberto.dados.campos["vencimento"] == formatar_data(base + timedelta(days=10))
+    aberto.atualizado_em.definir(base + timedelta(days=5))
+    assert aberto.dados.campos["total"] != total_antes
+    # registrado quando a imagem é copiada
     aberto.copiar()
     assert "Acordo guardado" in aberto.aviso.text()
     assert all(linha.honorario.acordos for linha in linhas_do(contexto.sessao, cliente_com_debito))

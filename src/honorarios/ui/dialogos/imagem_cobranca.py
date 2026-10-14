@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from ...config.caminhos import pasta_exportacoes
@@ -29,9 +30,10 @@ from ..comum.imagem_cobranca import renderizar, renderizar_agradecimento
 class DialogoImagemCobranca(QDialog):
     """Prévia da imagem.
 
-    Com ``gerar``, há duas datas: "Valores atualizados em" (a data do cálculo) e
-    "Pagar até" (até quando o valor vale). Com ``registrar_acordo``, a oferta pode
-    ser guardada como acordo: pagando dentro do prazo, a baixa sugere esse valor.
+    Com ``gerar``, a imagem tem o "Pagar até" e o juros é calculado até ele. Com
+    ``registrar_acordo``, a oferta pode ser guardada como acordo: aí aparece a data
+    "Valores atualizados em" (o juros congelado nela) e, pagando dentro do prazo, a
+    baixa sugere esse valor.
     """
 
     def __init__(self, contexto, dados: servico.DadosImagem, nome_arquivo: str,
@@ -65,27 +67,33 @@ class DialogoImagemCobranca(QDialog):
         layout = QVBoxLayout(self)
         if self.gerar is not None:
             linha = QHBoxLayout()
-            linha.addWidget(QLabel("Valores atualizados em:"))
-            self.atualizado_em = CampoData(vencimento)
-            self.atualizado_em.setToolTip("O juros da imagem é calculado até esta data")
-            self.atualizado_em.dateChanged.connect(lambda *_: self._refazer())
-            linha.addWidget(self.atualizado_em)
-            linha.addSpacing(12)
             linha.addWidget(QLabel("Pagar até:"))
             self.vencimento = CampoData(vencimento)
-            self.vencimento.setToolTip("Até quando o valor da imagem vale")
+            self.vencimento.setToolTip("O juros da imagem é calculado até esta data")
             self.vencimento.dateChanged.connect(lambda *_: self._refazer())
             linha.addWidget(self.vencimento)
-            linha.addStretch(1)
-            layout.addLayout(linha)
+            linha.addSpacing(12)
             self.acordo = QCheckBox("Guardar como acordo")
             self.acordo.setToolTip(
-                "Pagando até a data, a baixa sugere este valor (o juros congelado). "
+                "Congela o juros numa data: pagando até o prazo, a baixa sugere este valor. "
                 "Depois do prazo, o juros volta a correr desde o vencimento original."
             )
             self.acordo.setVisible(self.registrar_acordo is not None)
-            self.acordo.toggled.connect(lambda *_: self._explicar_acordo())
-            layout.addWidget(self.acordo)
+            self.acordo.toggled.connect(lambda *_: self._alternar_acordo())
+            linha.addWidget(self.acordo)
+            # só no acordo: a data em que o juros fica congelado
+            self.linha_atualizado = QWidget()
+            linha_atualizado = QHBoxLayout(self.linha_atualizado)
+            linha_atualizado.setContentsMargins(12, 0, 0, 0)
+            linha_atualizado.addWidget(QLabel("Valores atualizados em:"))
+            self.atualizado_em = CampoData(vencimento)
+            self.atualizado_em.setToolTip("O juros do acordo fica congelado nesta data")
+            self.atualizado_em.dateChanged.connect(lambda *_: self._refazer())
+            linha_atualizado.addWidget(self.atualizado_em)
+            self.linha_atualizado.setVisible(False)
+            linha.addWidget(self.linha_atualizado)
+            linha.addStretch(1)
+            layout.addLayout(linha)
             self.explicacao_acordo = widgets.rotulo_fraco("")
             layout.addWidget(self.explicacao_acordo)
             self._explicar_acordo()
@@ -161,10 +169,20 @@ class DialogoImagemCobranca(QDialog):
             f"{self.caminho_fundo.name}. Copiar não registra a cobrança."
         )
 
+    def _base(self) -> date:
+        """A data do juros: a do acordo, se marcado; senão, o próprio "pagar até"."""
+        if self.acordo.isChecked():
+            return self.atualizado_em.valor()
+        return self.vencimento.valor()
+
+    def _alternar_acordo(self) -> None:
+        self.linha_atualizado.setVisible(self.acordo.isChecked())
+        self._refazer()
+
     def _explicar_acordo(self) -> None:
         if not hasattr(self, "explicacao_acordo"):
             return
-        base, ate = self.atualizado_em.valor(), self.vencimento.valor()
+        base, ate = self._base(), self.vencimento.valor()
         if self.acordo.isChecked():
             texto = (
                 f"Acordo: {self.dados.campos.get('total', '')} (valores de "
@@ -174,9 +192,9 @@ class DialogoImagemCobranca(QDialog):
             )
         else:
             texto = (
-                "A imagem mostra o valor de "
-                f"{formatar_data(base)} com \"pagar até {formatar_data(ate)}\". Marque "
-                "\"Guardar como acordo\" para a baixa respeitar esse valor dentro do prazo."
+                f"A imagem mostra o valor com juros até {formatar_data(ate)}. Marque "
+                "\"Guardar como acordo\" para congelar o juros numa data e a baixa "
+                "respeitar esse valor dentro do prazo."
             )
         self.explicacao_acordo.setText(texto)
 
@@ -196,7 +214,7 @@ class DialogoImagemCobranca(QDialog):
 
     def _refazer(self) -> None:
         """Uma data mudou: refaz os dados e a imagem."""
-        atualizado_em, vencimento = self.atualizado_em.valor(), self.vencimento.valor()
+        atualizado_em, vencimento = self._base(), self.vencimento.valor()
         if vencimento < atualizado_em:
             # pagar até não pode vir antes da data dos valores: acompanha
             self.vencimento.blockSignals(True)
