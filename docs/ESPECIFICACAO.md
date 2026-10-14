@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.0.0
+# Especificação — Financeiro Métodos 1.0.1
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.0.0 (outubro de 2026) |
+| **Versão** | 1.0.1 (outubro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -112,6 +112,7 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 8 | Gerenciador de e-mail (Outlook/Microsoft 365 e Gmail): conferência da lista, baixa dos que saíram, correção de linhas, resposta | concluída |
 | 9 | Honorário recorrente no cadastro do cliente, "Paga pela empresa", geração automática, próximo dia útil | concluída |
 | 10 | PostgreSQL do escritório, primeiro uso, backup/restauração, instalador do Windows — **versão 1.0.0** | concluída |
+| 11 | Assinatura em imagem no e-mail ao financeiro; juros da imagem da cobrança até o "Pagar até" — **versão 1.0.1** | concluída |
 
 ## 6. O que continua fora do sistema
 

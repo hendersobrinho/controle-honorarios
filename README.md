@@ -9,7 +9,7 @@
 Registra honorários, calcula o juros de atraso dia a dia, prepara a cobrança pronta para
 o WhatsApp e acompanha a conversa de cobrança por e-mail com o financeiro.
 
-![Versão 1.0.0](https://img.shields.io/badge/vers%C3%A3o-1.0.0-F9B259)
+![Versão 1.0.1](https://img.shields.io/badge/vers%C3%A3o-1.0.1-F9B259)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-203461?logo=python&logoColor=white)
 ![PySide6](https://img.shields.io/badge/PySide6-Qt%206-4BBDCD?logo=qt&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-banco%20do%20escrit%C3%B3rio-203461?logo=postgresql&logoColor=white)
@@ -157,7 +157,7 @@ O instalador **Financeiro Métodos** cria o atalho na área de trabalho e no men
    .venv\Scripts\pip install -e .[empacotar]
    instalador\gerar_instalador.bat
    ```
-   O resultado sai em `instalador\saida\Instalador_Financeiro_Metodos_1.0.0.exe`.
+   O resultado sai em `instalador\saida\Instalador_Financeiro_Metodos_1.0.1.exe`.
 2. **No computador do banco**, uma vez: instale o PostgreSQL, crie um usuário para o
    sistema e libere a rede do escritório (`listen_addresses`, `pg_hba.conf` e a porta 5432).
 3. **Na primeira abertura** de cada computador, informe o servidor, a porta, o banco, o

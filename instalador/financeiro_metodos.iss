@@ -12,7 +12,7 @@
 
 #define Nome "Financeiro Métodos"
 #ifndef Versao
-  #define Versao "1.0.0"
+  #define Versao "1.0.1"
 #endif
 #define Empresa "Métodos Serviços Contábeis"
 #define Executavel "FinanceiroMetodos.exe"
