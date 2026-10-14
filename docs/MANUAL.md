@@ -199,9 +199,13 @@ marcar como lido na caixa.
 *Outro provedor:* informe os servidores IMAP (leitura) e SMTP (envio) e a senha.
 
 *Assinatura:* em **Assinatura (imagem)**, **Escolher imagem…** põe a imagem
-(PNG, JPG…) no fim de todo e-mail enviado ao financeiro. Ela fica no banco e
-vale em qualquer computador. Na aba Responder, a caixa **Assinatura** tira a
-imagem só daquele envio.
+(PNG, JPG…) no fim do que o sistema envia ao financeiro pelo **Enviar**. Ela
+fica no banco e vale em qualquer computador, e dá para salvá-la antes de
+configurar a conta. Imagens grandes são reduzidas (até 600 × 200 px); se mesmo
+assim passarem de 300 KB, o sistema pede outra. Na aba Responder, desmarcar a
+caixa **Assinatura** tira a imagem só daquele envio: no próximo e-mail ela volta
+marcada. **Copiar** e **Salvar rascunho** saem sem a imagem, porque o Outlook
+já põe a sua própria assinatura.
 
 A senha de app e a autorização da Microsoft ficam no **cofre de senhas do
 sistema** (Gerenciador de Credenciais no Windows), nunca no banco. Os e-mails
@@ -254,8 +258,9 @@ honorários marcados — um ou vários — sobre o fundo SVG do escritório, com
 QR code do Pix e o CNPJ/CPF do cliente. Na prévia, o valor tem juros até a
 data de **Pagar até**. Marcando **Guardar como acordo**, aparece também
 **Valores atualizados em**: o juros fica congelado nessa data e o valor vale
-até o Pagar até. A oferta é registrada ao copiar/salvar a imagem: pagando dentro do prazo, a baixa já sugere o valor
-combinado (a diferença de juros entra como abono justificado); passado o prazo,
+até o Pagar até (essa data não pode passar do Pagar até). A oferta é
+registrada ao copiar/salvar a imagem: pagando dentro do prazo, a baixa já
+sugere o valor combinado (a diferença de juros entra como abono justificado); passado o prazo,
 o acordo deixa de valer e o juros volta a correr desde o vencimento original.
 O cartão do honorário mostra "Acordo até dd/mm" enquanto ele vale. **Copiar imagem** põe no clipboard para colar no WhatsApp;
 **Copiar chave Pix** copia a chave para mandar como texto logo depois;

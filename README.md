@@ -157,7 +157,7 @@ O instalador **Financeiro Métodos** cria o atalho na área de trabalho e no men
    .venv\Scripts\pip install -e .[empacotar]
    instalador\gerar_instalador.bat
    ```
-   O resultado sai em `instalador\saida\Instalador_Financeiro_Metodos_1.0.1.exe`.
+   O resultado sai em `instalador\saida\Instalador_Financeiro_Metodos_<versão>.exe`.
 2. **No computador do banco**, uma vez: instale o PostgreSQL, crie um usuário para o
    sistema e libere a rede do escritório (`listen_addresses`, `pg_hba.conf` e a porta 5432).
 3. **Na primeira abertura** de cada computador, informe o servidor, a porta, o banco, o

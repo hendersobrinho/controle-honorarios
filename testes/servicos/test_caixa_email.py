@@ -397,8 +397,10 @@ def test_assinatura_vai_embutida_pelo_cid(monkeypatch, sessao, conta_gmail):
     caixa.enviar_novo(resposta)
     mensagem_graph = chamadas[-1]["corpo"]["message"]
     [anexo] = mensagem_graph["attachments"]
-    assert anexo["isInline"] and anexo["contentId"] == servico.CID_GRAPH
-    assert f"cid:{servico.CID_GRAPH}" in mensagem_graph["body"]["content"]
+    assert anexo["isInline"] and anexo["contentId"].startswith("assinatura-")
+    assert f'cid:{anexo["contentId"]}' in mensagem_graph["body"]["content"]
+    caixa.enviar_novo(resposta)   # cada envio com o seu cid (a citação pode ter outro)
+    assert chamadas[-1]["corpo"]["message"]["attachments"][0]["contentId"] != anexo["contentId"]
 
     servico.gravar_assinatura(sessao, b"")
     assert servico.assinatura(sessao) == b""

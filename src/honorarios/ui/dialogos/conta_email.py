@@ -53,21 +53,29 @@ AJUDA_IMAP = (
 
 LARGURA_ROTULO = 170
 LARGURA_ASSINATURA = 600   # maior que isso, a imagem é reduzida (e-mail não precisa de mais)
+ALTURA_ASSINATURA = 200
+TAMANHO_ASSINATURA = 300 * 1024   # vai em todo envio e fica em cada e-mail guardado
 ALTURA_PREVIA = 90
 
 
 def png_da_assinatura(caminho: str) -> bytes:
-    """Abre a imagem, reduz se for larga demais e devolve em PNG."""
+    """Abre a imagem, reduz se for grande demais e devolve em PNG."""
     imagem = QImage(caminho)
     if imagem.isNull():
         raise servico.ErroDeValidacao("Não consegui abrir essa imagem.")
-    if imagem.width() > LARGURA_ASSINATURA:
-        imagem = imagem.scaledToWidth(LARGURA_ASSINATURA,
-                                      Qt.TransformationMode.SmoothTransformation)
+    if imagem.width() > LARGURA_ASSINATURA or imagem.height() > ALTURA_ASSINATURA:
+        imagem = imagem.scaled(LARGURA_ASSINATURA, ALTURA_ASSINATURA,
+                               Qt.AspectRatioMode.KeepAspectRatio,
+                               Qt.TransformationMode.SmoothTransformation)
     dados = QByteArray()
     buffer = QBuffer(dados)
     buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    imagem.save(buffer, "PNG")
+    if not imagem.save(buffer, "PNG") or dados.isEmpty():
+        raise servico.ErroDeValidacao("Não consegui converter essa imagem para PNG.")
+    if dados.size() > TAMANHO_ASSINATURA:
+        raise servico.ErroDeValidacao(
+            "Essa imagem fica pesada demais para ir em todo e-mail (mais de 300 KB). "
+            "Use uma imagem mais simples, como um recorte da assinatura com fundo liso.")
     return bytes(dados)
 
 
@@ -417,7 +425,18 @@ class DialogoContaEmail(QDialog):
     def _salvar(self) -> None:
         dados = self._conta_do_formulario()
         if not dados.endereco:
-            widgets.aviso(self, "Informe o seu e-mail.")
+            # sem conta ainda, dá para guardar só a assinatura
+            if self.imagem_assinatura == servico.assinatura(self.contexto.sessao):
+                widgets.aviso(self, "Informe o seu e-mail.")
+                return
+
+            def so_assinatura():
+                servico.gravar_assinatura(self.contexto.sessao, self.imagem_assinatura)
+                self.contexto.salvar()
+
+            deu_certo, _ = widgets.executar(self, so_assinatura)
+            if deu_certo:
+                self.accept()
             return
 
         def acao():

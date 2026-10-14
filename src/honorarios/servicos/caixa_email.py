@@ -33,6 +33,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from email import policy
@@ -747,14 +748,15 @@ class CaixaMicrosoft:
         """E-mail novo (sem o do financeiro para responder)."""
         if not _lista_de_enderecos(resposta.para):
             raise ErroDeValidacao("Informe para quem vai o e-mail.")
-        html, html_guardado = _corpos(resposta, CID_GRAPH)
+        cid = _cid_graph()
+        html, html_guardado = _corpos(resposta, cid)
         retorno = _http("POST", f"{GRAPH}/me/sendMail", token=self._acesso(), corpo={
             "message": {
                 "subject": resposta.assunto,
                 "toRecipients": _destinatarios_graph(resposta.para),
                 "ccRecipients": _destinatarios_graph(resposta.cc),
                 "body": {"contentType": "HTML", "content": html},
-                "attachments": _anexos_graph(resposta),
+                "attachments": _anexos_graph(resposta, cid),
             },
             "saveToSentItems": True,
         })
@@ -774,7 +776,8 @@ class CaixaMicrosoft:
             raise ErroDeNegocio("Este e-mail não veio da conta Microsoft: copie a resposta.")
         if not _lista_de_enderecos(resposta.para):
             raise ErroDeValidacao("Informe para quem vai a resposta.")
-        html, html_guardado = _corpos(resposta, CID_GRAPH)
+        cid = _cid_graph()
+        html, html_guardado = _corpos(resposta, cid)
         citacao = _citacao_html(original)
         retorno = _http(
             "POST", f"{GRAPH}/me/messages/{original.ref_provedor}/replyAll",
@@ -783,7 +786,7 @@ class CaixaMicrosoft:
                 "toRecipients": _destinatarios_graph(resposta.para),
                 "ccRecipients": _destinatarios_graph(resposta.cc),
                 "body": {"contentType": "HTML", "content": html + citacao},
-                "attachments": _anexos_graph(resposta),
+                "attachments": _anexos_graph(resposta, cid),
             }},
         )
         if "error" in retorno:
@@ -800,17 +803,19 @@ class CaixaMicrosoft:
         )
 
 
-CID_GRAPH = "assinatura"
+def _cid_graph() -> str:
+    """Um ``cid`` por envio: a citação de um e-mail anterior pode apontar para outro."""
+    return f"assinatura-{uuid.uuid4().hex}"
 
 
-def _anexos_graph(resposta: Resposta) -> list[dict]:
+def _anexos_graph(resposta: Resposta, cid: str) -> list[dict]:
     """A assinatura como anexo embutido (o HTML aponta para ela pelo ``cid``)."""
     if not resposta.assinatura:
         return []
     return [{
         "@odata.type": "#microsoft.graph.fileAttachment", "name": "assinatura.png",
         "contentType": "image/png", "contentBytes": base64.b64encode(resposta.assinatura).decode(),
-        "isInline": True, "contentId": CID_GRAPH,
+        "isInline": True, "contentId": cid,
     }]
 
 

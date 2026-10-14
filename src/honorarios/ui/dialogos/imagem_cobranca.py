@@ -176,7 +176,12 @@ class DialogoImagemCobranca(QDialog):
         return self.vencimento.valor()
 
     def _alternar_acordo(self) -> None:
-        self.linha_atualizado.setVisible(self.acordo.isChecked())
+        marcado = self.acordo.isChecked()
+        self.linha_atualizado.setVisible(marcado)
+        self.vencimento.setToolTip(
+            "Prazo do acordo: o juros fica congelado em \"Valores atualizados em\""
+            if marcado else "O juros da imagem é calculado até esta data"
+        )
         self._refazer()
 
     def _explicar_acordo(self) -> None:
@@ -215,12 +220,13 @@ class DialogoImagemCobranca(QDialog):
     def _refazer(self) -> None:
         """Uma data mudou: refaz os dados e a imagem."""
         atualizado_em, vencimento = self._base(), self.vencimento.valor()
-        if vencimento < atualizado_em:
-            # pagar até não pode vir antes da data dos valores: acompanha
-            self.vencimento.blockSignals(True)
-            self.vencimento.definir(atualizado_em)
-            self.vencimento.blockSignals(False)
-            vencimento = atualizado_em
+        ajustada = vencimento < atualizado_em
+        if ajustada:
+            # o "pagar até" que a pessoa escolheu manda: a data dos valores não passa dele
+            self.atualizado_em.blockSignals(True)
+            self.atualizado_em.definir(vencimento)
+            self.atualizado_em.blockSignals(False)
+            atualizado_em = vencimento
 
         def acao():
             return self.gerar(vencimento, atualizado_em)
@@ -233,7 +239,9 @@ class DialogoImagemCobranca(QDialog):
         self._mostrar_imagem()
         self._mostrar_tamanho()
         self.aviso.setText(f"Valores de {dados.campos['data']}, pagar até "
-                           f"{dados.campos['vencimento']}: total {dados.campos['total']}.")
+                           f"{dados.campos['vencimento']}: total {dados.campos['total']}."
+                           + (" \"Valores atualizados em\" não pode passar do \"Pagar até\": "
+                              "ficou igual a ele." if ajustada else ""))
         self._explicar_acordo()
 
     def copiar(self) -> None:
