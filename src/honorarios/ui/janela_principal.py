@@ -28,6 +28,7 @@ from .paineis.clientes import PainelClientes
 from .paineis.configuracoes import PainelConfiguracoes
 from .paineis.email_cobrancas import PainelEmailCobrancas
 from .paineis.honorarios import PainelImpostoRenda
+from .paineis.importacao_personalizada import PainelImportacaoPersonalizada
 from .paineis.importar import PainelImportar
 from .paineis.painel import PainelResumo
 from .paineis.rankings import PainelRankings
@@ -111,6 +112,7 @@ class JanelaPrincipal(QMainWindow):
                 PainelRankings,
                 PainelRelatorios,
                 PainelImportar,
+                PainelImportacaoPersonalizada,
                 PainelConfiguracoes,
             )),
         )

@@ -502,9 +502,10 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
 
     janela = JanelaPrincipal(contexto)
     qtbot.addWidget(janela)
-    assert janela.telas.count() == 12
-    assert len(janela.linhas_de_tela) == 12
+    assert janela.telas.count() == 13
+    assert len(janela.linhas_de_tela) == 13
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
+    assert "Importação personalizada" in titulos
     assert "Gerenciador de e-mail" in titulos
     assert "Cobranças enviadas" in titulos and "Ranking dos atrasados" in titulos
     assert "Clientes de IR" in titulos and "Tipos e formas de envio" in titulos
@@ -2153,3 +2154,45 @@ def test_configuracoes_sem_formas_de_envio(qtbot, contexto):
 
     abas = painel.findChild(QTabWidget)
     assert "Formas de envio" not in [abas.tabText(i) for i in range(abas.count())]
+
+
+def test_importacao_personalizada_da_tela(qtbot, contexto, tmp_path, monkeypatch):
+    """Layout preenchido na tela, salvo, exportado como modelo e importado."""
+    from openpyxl import load_workbook
+
+    from honorarios.servicos.importacao import personalizada
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.paineis import importacao_personalizada as tela
+
+    painel = tela.PainelImportacaoPersonalizada(contexto)
+    qtbot.addWidget(painel)
+    painel.nome_layout.setText("Simples")
+    for chave, letra in (("cliente_codigo", "A"), ("cliente_nome", "B"),
+                         ("honorario_competencia", "C"), ("honorario_vencimento", "D"),
+                         ("honorario_valor", "E")):
+        painel.colunas[chave].setText(letra)
+    tipo = painel.padroes["honorario_tipo"]
+    tipo.setCurrentIndex(tipo.findText("Honorário mensal"))
+    painel._salvar_layout()
+    assert "Simples" in personalizada.listar_layouts(contexto.sessao)
+
+    modelo = tmp_path / "modelo.xlsx"
+    monkeypatch.setattr(tela.QFileDialog, "getSaveFileName", lambda *a, **k: (str(modelo), ""))
+    monkeypatch.setattr(widgets, "informar", lambda *a, **k: None)
+    painel._exportar_modelo()
+    livro = load_workbook(modelo)
+    aba = livro.worksheets[0]
+    aba.append(["300", "EMPRESA DA TELA LTDA", "08/2026", date(2026, 9, 10), 450])
+    livro.save(modelo)
+
+    monkeypatch.setattr(tela.QFileDialog, "getOpenFileName", lambda *a, **k: (str(modelo), ""))
+    painel._escolher()
+    assert painel.previa is not None
+    assert painel.previa.linhas[0].acao_cliente == "Novo cliente"
+
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    painel._importar()
+    from honorarios.servicos import clientes
+
+    novo = clientes.por_codigo(contexto.sessao, "300")
+    assert novo is not None and len(novo.honorarios) == 1

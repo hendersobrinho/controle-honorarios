@@ -18,6 +18,7 @@ Para instalar e configurar, veja [INSTALACAO.md](INSTALACAO.md).
 | **Ranking dos atrasados** | Pódio de quem mais deve em dinheiro, quem deve há mais tempo, quem junta mais boletos e quem mais foi cobrado — dois gráficos por aba; clicar num nome abre a ficha. A aba **Análise de juros** lista os clientes que pagaram e mostra, para cada um, original + juros = pago, o trabalho que deu para receber em gráfico (ele × a média dos clientes: atrasos, dias em atraso, cobranças, juros por cobrança), a linha do tempo do atraso de cada honorário com as cobranças feitas, um gráfico dos cenários, honorário por honorário, uma explicação em frases e cenários de taxa (+10% a dobrar, sem abono, valor testado) com o efeito de cada cenário honorário por honorário; **Exportar PDF…** gera o relatório da análise do cliente (documento interno) para compartilhar; o primeiro item é a visão geral de todos |
 | **Relatórios e exportação** | Planilha Excel da lista filtrada e extrato de débitos em PDF |
 | **Importar planilha** | Lê a planilha antiga, mostra prévia e relatório de erros, e só grava depois da confirmação |
+| **Importação personalizada** | Importa qualquer planilha: para cada informação do cadastro (cliente, contato, vínculo e suspensão, contrato, honorário) se diz a letra da coluna do Excel. O layout é salvo e exportado como planilha-modelo. Cliente já cadastrado não é duplicado |
 | **Tipos e formas de envio** | Aba **Grupos e tipos**: grupos à esquerda (a ordem é a das seções nas telas), tipos do grupo à direita, cada um mostrando a frase como sai na cobrança e quanto é usado. O cadastro do tipo mostra a prévia da mensagem enquanto se digita. Aba **Formas de envio**: cadastrar, renomear e ativar/desativar, com quantos contratos e honorários usam cada uma |
 | **Configurações** | PIX, modelos de mensagem, imagem da cobrança, e-mail e backup |
 
@@ -72,6 +73,48 @@ entram na mesma mensagem, e cada linha diz de quem é —
 
 O vínculo tem um nível só (pessoa física → pessoa jurídica) e não muda a quem o
 honorário pertence: ele continua na ficha da pessoa.
+
+### Importação personalizada
+
+Para trazer dados de uma planilha que não é a antiga. Na aba **Colunas do
+layout** estão todas as informações que o sistema cadastra, em grupos (Cliente,
+Contato, Vínculo e suspensão, Contrato e Honorário). Na frente de cada uma:
+
+- **Coluna**: a letra do Excel onde ela está (A, B… AA);
+- **Valor fixo**: usado quando a célula vem vazia, ou quando a informação não
+  está na planilha — por exemplo, o tipo de honorário igual para todas as linhas.
+
+O que fica em branco não é importado. Também se informa a **aba** (vazio, a
+primeira) e a **linha onde começam os dados**. **Salvar layout** guarda tudo com
+um nome, para usar de novo. **Exportar modelo…** gera uma planilha com o título de
+cada informação na coluna certa, uma aba **Instruções** dizendo o que cada uma
+aceita e o layout escondido — **Abrir de um modelo…** traz o layout de volta a
+partir dessa planilha.
+
+**Escolher planilha…** lê o arquivo e mostra a **Prévia**, sem gravar nada. Para
+cada linha ela diz o que vai acontecer com o cliente, o contrato e o honorário.
+A conferência com o cadastro segue estas regras:
+
+- O cliente é reconhecido pelo **CPF/CNPJ**, depois pelo **código** e, sem
+  nenhum dos dois, pelo **nome** (sem diferença de acento e maiúscula). PF ou PJ,
+  quem já está cadastrado **não é cadastrado de novo**: recebe só o que a
+  planilha traz de diferente (nome, CPF/CNPJ que faltava, juros por dia — como
+  nova vigência a partir de hoje —, contato novo, observações acrescentadas,
+  empresa que paga, suspensão da cobrança). O código do cadastro é mantido.
+- Código que já é de outro CPF/CNPJ trava a linha, para não misturar clientes.
+- O mesmo cliente pode aparecer em várias linhas (uma por honorário).
+- **Contrato**: criado quando a linha traz tipo e valor. Se o cliente já tem
+  contrato desse tipo, ele é atualizado; valor diferente vira **reajuste**, com
+  histórico.
+- **Honorário**: lançado quando a linha traz tipo, valor e vencimento. O que já
+  existe (mesma competência, ou mesmo vencimento e valor no avulso) e o que se
+  repete na planilha não entram de novo. Status Pago entra quitado, com o valor
+  congelado e a data de "Pago em".
+
+Desmarcando **Atualizar dados de clientes já cadastrados**, quem já existe fica
+como está e só entram clientes novos, contratos novos e honorários. Linha com
+erro não pode ser marcada; os avisos e erros ficam no **Relatório de erros e
+ajustes**. **Importar marcados** grava depois da confirmação.
 
 ### Agradecimento pelo pagamento
 

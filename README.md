@@ -9,7 +9,7 @@
 Registra honorários, calcula o juros de atraso dia a dia, prepara a cobrança pronta para
 o WhatsApp e acompanha a conversa de cobrança por e-mail com o financeiro.
 
-![Versão 1.0.1](https://img.shields.io/badge/vers%C3%A3o-1.0.1-F9B259)
+![Versão 1.0.0](https://img.shields.io/badge/vers%C3%A3o-1.0.0-F9B259)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-203461?logo=python&logoColor=white)
 ![PySide6](https://img.shields.io/badge/PySide6-Qt%206-4BBDCD?logo=qt&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-banco%20do%20escrit%C3%B3rio-203461?logo=postgresql&logoColor=white)
@@ -87,6 +87,8 @@ juros, quem já foi cobrado e o que cada cliente respondeu.
 - **Ranking dos atrasados** e **análise de juros** por cliente, com exportação em PDF
 - **Notificações** do que vence hoje, promessas vencidas e e-mails novos
 - Planilha Excel, extrato de débitos em PDF e importação da planilha antiga
+- Importação personalizada: a coluna do Excel de cada informação, layout salvo e
+  exportado como planilha-modelo, sem duplicar cliente nem honorário já cadastrado
 - Backup do banco do servidor numa cópia local, e restauração com tudo ou nada
 
 </td>

@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.0.1
+# Especificação — Financeiro Métodos 1.0.0
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.0.1 (outubro de 2026) |
+| **Versão** | 1.0.0 (outubro de 2026, ainda não lançada) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -89,6 +89,8 @@ justificativa, total — tudo congelado) · `cobranca_lote` (uma mensagem) +
 imagem da cobrança) · `modelo_mensagem` · `configuracao` · `forma_envio` ·
 `notificacao` · `email_mensagem` (os e-mails da pasta Cobranças, com as
 correções de linha) · `importacao` + `importacao_erro` · `log_alteracao`.
+Os layouts da importação personalizada ficam em `configuracao`, na chave
+`importacao_layouts` (JSON), sem tabela própria.
 
 Índice único parcial em `(cliente, tipo, competencia_chave)` ignorando
 cancelados: é o que impede a geração de competência duplicar. Os índices
@@ -111,8 +113,9 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 7 | Imagem da cobrança com Pix e acordo, comprovante "Pagamento confirmado", notificações | concluída |
 | 8 | Gerenciador de e-mail (Outlook/Microsoft 365 e Gmail): conferência da lista, baixa dos que saíram, correção de linhas, resposta | concluída |
 | 9 | Honorário recorrente no cadastro do cliente, "Paga pela empresa", geração automática, próximo dia útil | concluída |
-| 10 | PostgreSQL do escritório, primeiro uso, backup/restauração, instalador do Windows — **versão 1.0.0** | concluída |
-| 11 | Assinatura em imagem no e-mail ao financeiro; juros da imagem da cobrança até o "Pagar até" — **versão 1.0.1** | concluída |
+| 10 | PostgreSQL do escritório, primeiro uso, backup/restauração, instalador do Windows | concluída |
+| 11 | Assinatura em imagem no e-mail ao financeiro; juros da imagem da cobrança até o "Pagar até" | concluída |
+| 12 | Importação personalizada: coluna do Excel de cada informação, layout salvo e exportado como modelo, conferência que não duplica cliente PF/PJ, contrato nem honorário — tudo na **versão 1.0.0**, ainda não lançada | concluída |
 
 ## 6. O que continua fora do sistema
 
