@@ -404,3 +404,62 @@ def test_assinatura_vai_embutida_pelo_cid(monkeypatch, sessao, conta_gmail):
 
     servico.gravar_assinatura(sessao, b"")
     assert servico.assinatura(sessao) == b""
+
+
+# ------------------------------------------- cofre do Windows (limite do CredWrite)
+
+
+class _CofreDoWindows:
+    """Como o Gerenciador de Credenciais: até 2.560 bytes, gravados em UTF-16."""
+
+    def __init__(self, recusar_tudo: bool = False) -> None:
+        self.dados: dict[tuple[str, str], str] = {}
+        self.recusar_tudo = recusar_tudo
+
+    def set_password(self, servico_, nome, valor):
+        if self.recusar_tudo or len(valor.encode("utf-16-le")) > 2560:
+            raise OSError(1783, "CredWrite", "O fragmento de código recebeu dados incorretos.")
+        self.dados[(servico_, nome)] = valor
+
+    def get_password(self, servico_, nome):
+        return self.dados.get((servico_, nome))
+
+    def delete_password(self, servico_, nome):
+        if (servico_, nome) not in self.dados:
+            raise KeyError(nome)
+        del self.dados[(servico_, nome)]
+
+
+def test_autorizacao_grande_cabe_no_cofre_do_windows_em_pedacos(monkeypatch):
+    cofre = _CofreDoWindows()
+    monkeypatch.setattr(servico, "_cofre", lambda: cofre)
+    chave = servico.chave_token_microsoft("cobranca@exemplo.com.br")
+    grande = "x" * 1700 + "y" * 1700   # token da Microsoft: mais de 1.280 caracteres
+
+    servico.guardar_segredo(chave, grande)
+    assert servico.ler_segredo(chave) == grande
+    assert len(cofre.dados) == 5   # a marca + 4 pedaços
+
+    servico.guardar_segredo(chave, "curto")   # trocar não deixa pedaço sobrando
+    assert servico.ler_segredo(chave) == "curto"
+    assert len(cofre.dados) == 1
+
+    servico.guardar_segredo(chave, grande)
+    servico.apagar_segredo(chave)
+    assert cofre.dados == {} and servico.ler_segredo(chave) == ""
+
+
+def test_cofre_recusando_nao_derruba_a_entrada_na_microsoft(monkeypatch):
+    cofre = _CofreDoWindows(recusar_tudo=True)
+    monkeypatch.setattr(servico, "_cofre", lambda: cofre)
+    monkeypatch.setattr(servico, "_SO_NESTA_SESSAO", {})
+    conta = servico.ContaEmail(provedor=servico.MICROSOFT, endereco="cobranca@exemplo.com.br",
+                               pasta="Cobranças", ms_cliente="app-id")
+    caixa = servico.CaixaMicrosoft(conta)
+
+    caixa._guardar_tokens({"access_token": "acesso", "refresh_token": "r" * 3000,
+                           "expires_in": 3600})
+    assert "entrar de novo" in caixa.aviso
+    assert caixa.conectada()   # vale até fechar o programa
+    assert servico.ler_segredo(servico.chave_token_microsoft(conta.endereco)) == "r" * 3000
+    assert cofre.dados == {}   # nenhum pedaço solto ficou para trás

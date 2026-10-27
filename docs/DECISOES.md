@@ -377,6 +377,14 @@ quem limita é a pasta.
 - **Segredos no cofre do sistema (`keyring`).** Senha e autorização renovável
   ficam no cofre, nunca no banco nem em arquivo. Nos testes, um cofre em
   memória substitui o real.
+- **Segredo grande vai em pedaços.** O Gerenciador de Credenciais do Windows
+  aceita até 2.560 bytes por credencial e o `keyring` grava em UTF-16; a
+  autorização renovável da Microsoft passa disso e o `CredWrite` recusava
+  (erro 1783). Acima de 1.000 caracteres, o segredo vai em pedaços
+  (`nome#1`, `nome#2`…) e a entrada principal guarda só quantos são. Se o cofre
+  recusar mesmo assim, a entrada na conta não se perde: a autorização vale
+  enquanto o programa estiver aberto, com aviso de que será preciso entrar de
+  novo depois.
 - **Rede em segundo plano.** Verificar e enviar rodam no `QThreadPool`, sem
   tocar na sessão do banco. O resultado volta por sinal, e é na tela que se
   grava.
@@ -501,6 +509,14 @@ explícito em cada ação; cada tela chama `contexto.atualizar()` (que faz
 `expire_all`) antes de recarregar. Registros novos são anexados pelo
 relacionamento (`cliente.honorarios.append`), não por `session.add`, para as
 coleções já carregadas não ficarem desatualizadas.
+
+### Importação personalizada confere em memória
+A prévia lê de uma vez os clientes, os contratos e os honorários dos clientes
+já cadastrados e confere linha a linha em memória. Com o PostgreSQL na rede,
+uma consulta por linha deixava a prévia de milhares de linhas em dezenas de
+segundos. A gravação confere de novo contra o banco, item a item, porque ele
+pode ter mudado desde a prévia. Os layouts ficam em `configuracao`
+(`importacao_layouts`, JSON), sem tabela nem migration.
 
 ### Importação não inventa dado
 A planilha não guardava data nem valor do pagamento. Honorário pago entra

@@ -251,7 +251,11 @@ marcada. **Copiar** e **Salvar rascunho** saem sem a imagem, porque o Outlook
 já põe a sua própria assinatura.
 
 A senha de app e a autorização da Microsoft ficam no **cofre de senhas do
-sistema** (Gerenciador de Credenciais no Windows), nunca no banco. Os e-mails
+sistema** (Gerenciador de Credenciais no Windows), nunca no banco. A
+autorização da Microsoft é grande para uma credencial só do Windows, por isso
+aparece lá dividida em algumas entradas `honorarios-email`. Se o cofre recusar,
+a conta funciona até fechar o programa, com um aviso de que será preciso entrar
+de novo. Os e-mails
 baixados ficam no banco local, que não vai para o Git.
 
 ### Notificações

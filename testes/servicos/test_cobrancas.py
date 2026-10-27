@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, time, timedelta
 
 import pytest
 
 from honorarios.dominio.enums import ResultadoCobranca
-from honorarios.dominio.valores import Competencia
+from honorarios.dominio.valores import Competencia, hoje
 from honorarios.servicos import cobrancas
 from honorarios.servicos import honorarios as servico_honorarios
 from honorarios.servicos.erros import ErroDeValidacao
@@ -130,12 +130,14 @@ def test_filtro_nunca_cobrado_e_sem_cobranca_ha_dias(sessao):
     cobrancas.registrar(sessao, selecao(sessao, cliente))
     sessao.commit()
     assert servico_honorarios.pendentes(sessao, Filtro(nunca_cobrado=True)) == []
+    # a cobrança é registrada hoje: as referências andam com o relógio
+    cobrado_em = hoje()
     assert servico_honorarios.pendentes(
-        sessao, Filtro(sem_cobranca_dias=7, data_referencia=date(2026, 9, 29))
+        sessao, Filtro(sem_cobranca_dias=7, data_referencia=cobrado_em + timedelta(days=3))
     ) == []
     assert len(
         servico_honorarios.pendentes(
-            sessao, Filtro(sem_cobranca_dias=7, data_referencia=date(2026, 10, 20))
+            sessao, Filtro(sem_cobranca_dias=7, data_referencia=cobrado_em + timedelta(days=21))
         )
     ) == 1
 

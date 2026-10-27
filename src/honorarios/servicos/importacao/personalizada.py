@@ -888,7 +888,27 @@ def _mesmo_contato(novo: dict[str, str], outro: dict[str, str]) -> bool:
     return False
 
 
-def _cliente_no_banco(sessao: Session, plano: ClientePlanejado
+class _Cadastro:
+    """Os clientes do banco lidos de uma vez, para conferir sem uma consulta por linha.
+
+    No PostgreSQL do escritório cada consulta atravessa a rede: com milhares de
+    linhas, a conferência consulta por linha levava dezenas de segundos.
+    """
+
+    def __init__(self, sessao: Session) -> None:
+        self.por_documento: dict[str, Cliente] = {}
+        self.por_codigo: dict[str, Cliente] = {}
+        self.por_nome: dict[str, list[Cliente]] = {}
+        for cliente in sessao.scalars(
+            select(Cliente).where(Cliente.excluido_em.is_(None))
+        ).unique():
+            if cliente.documento:
+                self.por_documento[cliente.documento] = cliente
+            self.por_codigo[cliente.codigo] = cliente
+            self.por_nome.setdefault(cliente.nome_busca, []).append(cliente)
+
+
+def _cliente_no_banco(cadastro: _Cadastro, plano: ClientePlanejado
                       ) -> tuple[Cliente | None, str]:
     """Acha o cliente já cadastrado. Devolve (cliente, conflito)."""
     valores = plano.valores
@@ -896,12 +916,12 @@ def _cliente_no_banco(sessao: Session, plano: ClientePlanejado
     codigo = valores.get("cliente_codigo")
     plano.reconhecido_por = ""
     if documento:
-        achado = servico_clientes.por_documento(sessao, documento)
+        achado = cadastro.por_documento.get(documento)
         if achado is not None:
             plano.reconhecido_por = "documento"
             return achado, ""
     if codigo:
-        achado = servico_clientes.por_codigo(sessao, codigo)
+        achado = cadastro.por_codigo.get(str(codigo).strip())
         if achado is not None:
             if documento and achado.documento and achado.documento != documento:
                 return None, (
@@ -911,9 +931,7 @@ def _cliente_no_banco(sessao: Session, plano: ClientePlanejado
             return achado, ""
     nome = normalizar_busca(valores.get("cliente_nome") or "")
     if nome:
-        achados = list(sessao.scalars(
-            select(Cliente).where(Cliente.nome_busca == nome, Cliente.excluido_em.is_(None))
-        ).unique())
+        achados = cadastro.por_nome.get(nome, [])
         # pelo nome só quando é um cliente só e o CPF/CNPJ não desmente
         compativeis = [
             c for c in achados if not documento or not c.documento or c.documento == documento
@@ -1052,6 +1070,7 @@ def conferir(sessao: Session, previa: Previa, atualizar_existentes: bool = True
         linha.acao_cliente = linha.acao_contrato = linha.acao_honorario = ""
     validas = [linha for linha in previa.linhas if not linha.bloqueada]
     planos = _agrupar_clientes(previa.aba, validas)
+    cadastro = _Cadastro(sessao)
     por_chave: dict[str, list[LinhaPersonalizada]] = {}
     for linha in validas:
         if linha.chave_cliente:
@@ -1069,7 +1088,7 @@ def conferir(sessao: Session, previa: Previa, atualizar_existentes: bool = True
                     Problema(previa.aba, linha.linha, campo, valor, motivo, gravidade)
                 )
 
-        existente, conflito = _cliente_no_banco(sessao, plano)
+        existente, conflito = _cliente_no_banco(cadastro, plano)
         if conflito:
             avisar("Cliente", plano.valores.get("cliente_codigo", ""), conflito, "ERRO", True)
             continue
@@ -1139,6 +1158,13 @@ def _empresa_planejada(sessao: Session, plano: ClientePlanejado,
 def _conferir_contratos(sessao: Session, previa: Previa, planos: dict[str, ClientePlanejado],
                         atualizar_existentes: bool = True) -> None:
     vistos: dict[tuple[str, int], LinhaPersonalizada] = {}
+    ids = {plano.existente_id for plano in planos.values() if plano.existente_id}
+    contratos = {
+        (contrato.cliente_id, contrato.tipo_id): contrato
+        for contrato in sessao.scalars(select(Contrato).where(
+            Contrato.cliente_id.in_(ids), Contrato.excluido_em.is_(None)
+        )).unique()
+    } if ids else {}
     for linha in previa.linhas:
         if linha.bloqueada or not linha.tem("contrato_valor"):
             continue
@@ -1149,7 +1175,7 @@ def _conferir_contratos(sessao: Session, previa: Previa, planos: dict[str, Clien
             continue
         vistos[chave] = linha
         plano = planos[linha.chave_cliente]
-        existente = _contrato_existente(sessao, plano.existente_id, tipo.id)
+        existente = contratos.get((plano.existente_id, tipo.id))
         if existente is None:
             valor = formatar_moeda(linha.valores["contrato_valor"])
             linha.acao_contrato = f"Novo: {tipo.nome} {valor}"
@@ -1208,6 +1234,9 @@ def _mudancas_contrato(contrato: Contrato, valores: dict) -> list[str]:
 def _conferir_honorarios(sessao: Session, previa: Previa, planos: dict[str, ClientePlanejado]
                          ) -> None:
     vistos: dict[tuple, LinhaPersonalizada] = {}
+    lancados = _honorarios_lancados(
+        sessao, {plano.existente_id for plano in planos.values() if plano.existente_id}
+    )
     for linha in previa.linhas:
         if linha.bloqueada or not linha.tem("honorario_valor"):
             continue
@@ -1225,14 +1254,14 @@ def _conferir_honorarios(sessao: Session, previa: Previa, planos: dict[str, Clie
             continue
         vistos[chave] = linha
         cliente_id = planos[linha.chave_cliente].existente_id
-        existente = _honorario_existente(
-            sessao, cliente_id, tipo.id, competencia, valores["honorario_vencimento"],
-            valores["honorario_valor"], valores.get("honorario_status"),
+        cancelado = valores.get("honorario_status") is StatusPagamento.CANCELADO
+        vencimento = lancados.get(
+            (cliente_id, tipo.id, chave_competencia, cancelado) if chave_competencia
+            else (cliente_id, tipo.id, valores["honorario_vencimento"],
+                  valores["honorario_valor"], cancelado)
         )
-        if existente is not None:
-            linha.acao_honorario = (
-                f"Já cadastrado (venc. {existente.vencimento:%d/%m/%Y}): ignorado"
-            )
+        if vencimento is not None:
+            linha.acao_honorario = f"Já cadastrado (venc. {vencimento:%d/%m/%Y}): ignorado"
             continue
         status = valores.get("honorario_status") or StatusPagamento.EM_ABERTO
         rotulo = competencia.rotulo() or valores.get("honorario_descricao") or ""
@@ -1241,6 +1270,28 @@ def _conferir_honorarios(sessao: Session, previa: Previa, planos: dict[str, Clie
                 "  ", " ")
             + ("" if status is StatusPagamento.EM_ABERTO else f" ({status.rotulo.lower()})")
         )
+
+
+def _honorarios_lancados(sessao: Session, cliente_ids: set[int]) -> dict[tuple, date]:
+    """Os honorários dos clientes já cadastrados, numa consulta só, para a prévia.
+
+    As chaves seguem a regra de ``_honorario_existente``: pela competência ou, sem
+    ela, por vencimento e valor; e cancelado só casa com linha de cancelado.
+    """
+    if not cliente_ids:
+        return {}
+    lancados: dict[tuple, date] = {}
+    for cliente_id, tipo_id, chave, vencimento, valor, status in sessao.execute(
+        select(Honorario.cliente_id, Honorario.tipo_id, Honorario.competencia_chave,
+               Honorario.vencimento, Honorario.valor_original, Honorario.status)
+        .where(Honorario.cliente_id.in_(cliente_ids))
+    ):
+        cancelado = status is StatusPagamento.CANCELADO
+        if chave:
+            lancados.setdefault((cliente_id, tipo_id, chave, cancelado), vencimento)
+        else:
+            lancados.setdefault((cliente_id, tipo_id, vencimento, valor, cancelado), vencimento)
+    return lancados
 
 
 def _honorario_existente(sessao: Session, cliente_id: int | None, tipo_id: int,
@@ -1360,13 +1411,14 @@ def importar(sessao: Session, previa: Previa, atualizar_existentes: bool = True)
     # --- clientes (o vínculo com empresa vem depois: a empresa pode ser nova)
     clientes: dict[str, Cliente] = {}
     criados: set[str] = set()
+    cadastro = _Cadastro(sessao)
     codigos = _Codigos(sessao, {
         plano.valores["cliente_codigo"] for plano in planos.values()
         if plano.valores.get("cliente_codigo")
     })
     for chave, plano in planos.items():
         primeira = plano.linhas[0]
-        existente, _ = _cliente_no_banco(sessao, plano)
+        existente, _ = _cliente_no_banco(cadastro, plano)
         try:
             if existente is not None:
                 clientes[chave] = existente

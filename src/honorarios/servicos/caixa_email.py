@@ -167,24 +167,70 @@ def _cofre():
     return keyring
 
 
+# O Gerenciador de Credenciais do Windows aceita até 2.560 bytes por credencial, e o
+# keyring grava em UTF-16 (2 bytes por caractere): a autorização da Microsoft passa
+# disso e o CredWrite recusa (erro 1783). Segredo grande vai em pedaços; a entrada
+# principal guarda só quantos são.
+TAMANHO_PEDACO = 1000
+MARCA_PEDACOS = "@pedacos:"
+# o que o cofre recusou de guardar: vale enquanto o programa estiver aberto
+_SO_NESTA_SESSAO: dict[str, str] = {}
+
+
+def _pedaco(nome: str, indice: int) -> str:
+    return f"{nome}#{indice}"
+
+
 def guardar_segredo(nome: str, valor: str) -> None:
+    cofre = _cofre()
     try:
-        _cofre().set_password(SERVICO_COFRE, nome, valor)
+        apagar_segredo(nome)   # sem sobrar pedaço de um segredo antigo maior
+        if len(valor) <= TAMANHO_PEDACO:
+            cofre.set_password(SERVICO_COFRE, nome, valor)
+        else:
+            pedacos = [valor[i:i + TAMANHO_PEDACO] for i in range(0, len(valor), TAMANHO_PEDACO)]
+            for indice, pedaco in enumerate(pedacos, start=1):
+                cofre.set_password(SERVICO_COFRE, _pedaco(nome, indice), pedaco)
+            # a marca por último: sem ela, um pedaço solto não vale como segredo
+            cofre.set_password(SERVICO_COFRE, nome, f"{MARCA_PEDACOS}{len(pedacos)}")
     except Exception as falha:  # noqa: BLE001 - qualquer falha do cofre vira mensagem
+        apagar_segredo(nome)
         raise ErroDeNegocio(f"Não consegui guardar no cofre de senhas do sistema: {falha}") \
             from falha
+    _SO_NESTA_SESSAO.pop(nome, None)
+
+
+def guardar_so_nesta_sessao(nome: str, valor: str) -> None:
+    """Quando o cofre recusa: o segredo vale até fechar o programa."""
+    _SO_NESTA_SESSAO[nome] = valor
 
 
 def ler_segredo(nome: str) -> str:
     try:
-        return _cofre().get_password(SERVICO_COFRE, nome) or ""
+        cofre = _cofre()
+        valor = cofre.get_password(SERVICO_COFRE, nome) or ""
+        if valor.startswith(MARCA_PEDACOS):
+            total = int(valor.removeprefix(MARCA_PEDACOS))
+            pedacos = [cofre.get_password(SERVICO_COFRE, _pedaco(nome, i)) or ""
+                       for i in range(1, total + 1)]
+            valor = "".join(pedacos) if all(pedacos) else ""
     except Exception:  # noqa: BLE001
-        return ""
+        valor = ""
+    return valor or _SO_NESTA_SESSAO.get(nome, "")
 
 
 def apagar_segredo(nome: str) -> None:
+    _SO_NESTA_SESSAO.pop(nome, None)
     try:
-        _cofre().delete_password(SERVICO_COFRE, nome)
+        cofre = _cofre()
+        valor = cofre.get_password(SERVICO_COFRE, nome) or ""
+        if valor.startswith(MARCA_PEDACOS):
+            for indice in range(1, int(valor.removeprefix(MARCA_PEDACOS)) + 1):
+                try:
+                    cofre.delete_password(SERVICO_COFRE, _pedaco(nome, indice))
+                except Exception:  # noqa: BLE001
+                    pass
+        cofre.delete_password(SERVICO_COFRE, nome)
     except Exception:  # noqa: BLE001 - não existia: nada a apagar
         pass
 
@@ -615,6 +661,7 @@ class CaixaMicrosoft:
         self.conta = conta_email
         self._token = ""
         self._token_vale_ate = 0.0
+        self.aviso = ""   # o cofre recusou a autorização: vale só nesta sessão
 
     @property
     def _login(self) -> str:
@@ -665,8 +712,19 @@ class CaixaMicrosoft:
         raise ErroDeNegocio("O código expirou. Clique em Entrar de novo.")
 
     def _guardar_tokens(self, resposta: dict) -> None:
-        if resposta.get("refresh_token"):
-            guardar_segredo(chave_token_microsoft(self.conta.endereco), resposta["refresh_token"])
+        renovavel = resposta.get("refresh_token")
+        if renovavel:
+            chave = chave_token_microsoft(self.conta.endereco)
+            try:
+                guardar_segredo(chave, renovavel)
+                self.aviso = ""
+            except ErroDeNegocio as falha:
+                # a entrada deu certo: não se perde por causa do cofre
+                guardar_so_nesta_sessao(chave, renovavel)
+                self.aviso = (
+                    f"{falha}\nA conta funciona enquanto o programa estiver aberto; "
+                    "depois de fechar, será preciso entrar de novo."
+                )
         self._token = resposta.get("access_token", "")
         self._token_vale_ate = time.monotonic() + int(resposta.get("expires_in", 3600)) - 120
 

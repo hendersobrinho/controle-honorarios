@@ -115,7 +115,8 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 9 | Honorário recorrente no cadastro do cliente, "Paga pela empresa", geração automática, próximo dia útil | concluída |
 | 10 | PostgreSQL do escritório, primeiro uso, backup/restauração, instalador do Windows | concluída |
 | 11 | Assinatura em imagem no e-mail ao financeiro; juros da imagem da cobrança até o "Pagar até" | concluída |
-| 12 | Importação personalizada: coluna do Excel de cada informação, layout salvo e exportado como modelo, conferência que não duplica cliente PF/PJ, contrato nem honorário — tudo na **versão 1.0.0**, ainda não lançada | concluída |
+| 12 | Importação personalizada: coluna do Excel de cada informação, layout salvo e exportado como modelo, conferência que não duplica cliente PF/PJ, contrato nem honorário | concluída |
+| 13 | Conta Microsoft guardada no cofre do Windows em pedaços (corrige o erro 1783 do CredWrite), prévia da importação conferida em memória — tudo na **versão 1.0.0**, ainda não lançada | concluída |
 
 ## 6. O que continua fora do sistema
 

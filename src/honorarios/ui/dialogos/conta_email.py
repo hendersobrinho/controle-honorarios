@@ -415,7 +415,10 @@ class DialogoContaEmail(QDialog):
         dialogo = DialogoEntradaMicrosoft(caixa, self.executor, self)
         dialogo.exec()
         self._mostrar_situacao_microsoft()
-        if dialogo.conectou:
+        if dialogo.conectou and caixa.aviso:
+            widgets.aviso(self, caixa.aviso, "Conta conectada só nesta sessão")
+            self.resultado.setText("✓ Conta Microsoft conectada (só até fechar). Salve para usar.")
+        elif dialogo.conectou:
             self.resultado.setText("✓ Conta Microsoft conectada. Salve para usar.")
 
     def _desconectar_microsoft(self) -> None:
