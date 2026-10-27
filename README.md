@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src/honorarios/recursos/icone.svg" alt="Ícone do Financeiro Métodos" width="150">
+<img src="docs/imagens/capa.png" alt="Financeiro Métodos" width="100%">
 
 # Financeiro Métodos
 
@@ -99,7 +99,7 @@ juros, quem já foi cobrado e o que cada cliente respondeu.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/imagens/abertura.png" alt="Tela de abertura"><br><sub><b>Abertura</b>: carregamento com as cores da marca</sub></td>
+<td width="50%"><img src="docs/imagens/abertura.png" alt="Tela de abertura"><br><sub><b>Abertura</b>: o canhoto, com a barra carregando</sub></td>
 <td width="50%"><img src="docs/imagens/primeiro_uso.png" alt="Primeiro uso: conexão com o PostgreSQL"><br><sub><b>Primeiro uso</b>: conexão com o banco do escritório</sub></td>
 </tr>
 </table>

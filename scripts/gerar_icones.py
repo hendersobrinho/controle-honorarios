@@ -2,7 +2,8 @@
 
 - ``src/honorarios/recursos/icone.svg`` → ``instalador/financeiro_metodos.ico``:
   o ícone do programa (área de trabalho, menu Iniciar, barra de tarefas). Por ser
-  vetor, cada tamanho é desenhado do zero — nítido de 16 até 256 px.
+  vetor, cada tamanho é desenhado do zero — nítido de 16 até 256 px. Até 24 px
+  vem do ``icone_pequeno.svg`` (F mais grosso, para não sumir).
 - ``instalador/instalador.png`` → ``instalador/instalador.ico``: o ícone do
   instalador. A origem tem 96 px, então os tamanhos param em 96 (ampliar borraria).
 
@@ -70,8 +71,9 @@ def main() -> int:
     pasta = RAIZ / "instalador"
     pasta.mkdir(exist_ok=True)
     svg = RAIZ / "src/honorarios/recursos/icone.svg"
+    pequeno = RAIZ / "src/honorarios/recursos/icone_pequeno.svg"
     gravar_ico(pasta / "financeiro_metodos.ico",
-               [_do_svg(svg, lado) for lado in TAMANHOS_PROGRAMA])
+               [_do_svg(pequeno if lado <= 24 else svg, lado) for lado in TAMANHOS_PROGRAMA])
     origem = QImage(str(pasta / "instalador.png"))
     gravar_ico(pasta / "instalador.ico",
                [_do_png(origem, lado) for lado in TAMANHOS_INSTALADOR if lado <= origem.width()])

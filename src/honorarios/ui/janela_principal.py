@@ -74,7 +74,7 @@ class JanelaPrincipal(QMainWindow):
         coluna_layout.addLayout(linha_botao)
         self.logo_menu = QLabel()
         self.logo_menu.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.logo_menu.setToolTip("Métodos Financeiro")
+        self.logo_menu.setToolTip("Financeiro Métodos")
         coluna_layout.addWidget(self.logo_menu)
         layout.addWidget(coluna)
 
@@ -260,7 +260,7 @@ class JanelaPrincipal(QMainWindow):
 
         nome = servico_configuracoes.obter(self.contexto.sessao, "tema", "claro")
         cores.definir_tema(nome)
-        self.logo_menu.setPixmap(logo.pixmap(170, escuro=nome == "escuro"))
+        self.logo_menu.setPixmap(logo.pixmap(170, escuro=nome == "escuro", arquivo=logo.MARCA))
         folha = tema.folha_de_estilo(nome)
         aplicativo = QApplication.instance()
         if aplicativo is not None:

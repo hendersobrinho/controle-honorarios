@@ -32,10 +32,12 @@ ICONE = logo.ICONE
 
 def icone_da_marca() -> QIcon:
     """O ícone do programa (o mesmo da área de trabalho): janela, barra de tarefas e
-    notificação do sistema. Vetor: desenhado em cada tamanho, sempre nítido."""
-    renderizador = QSvgRenderer(str(ICONE))
+    notificação do sistema. Vetor: desenhado em cada tamanho, sempre nítido; até
+    24 px, a versão pequena (F mais grosso)."""
+    pequeno, padrao = QSvgRenderer(str(logo.ICONE_PEQUENO)), QSvgRenderer(str(ICONE))
     icone = QIcon()
     for lado in (16, 20, 24, 32, 40, 48, 64, 96, 128, 256):
+        renderizador = pequeno if lado <= 24 else padrao
         imagem = QPixmap(lado, lado)
         imagem.fill(QColor(0, 0, 0, 0))
         pintor = QPainter(imagem)

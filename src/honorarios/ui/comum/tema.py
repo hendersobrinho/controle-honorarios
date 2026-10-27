@@ -11,7 +11,8 @@ CORES = {
         "borda": "#dfe3e8",
         "texto": "#1c2430",
         "texto_fraco": "#6b7684",
-        "destaque": "#1f6feb",
+        "destaque": "#203461",         # navy da marca
+        "destaque_hover": "#2E4A85",
         "atrasado": "#c0392b",
         "atencao": "#b7791f",
         "pago": "#1f7a45",
@@ -28,7 +29,8 @@ CORES = {
         "borda": "#2d353f",
         "texto": "#e6eaef",
         "texto_fraco": "#98a2b0",
-        "destaque": "#5596ff",
+        "destaque": "#4A6FC2",
+        "destaque_hover": "#3B5DA8",
         "atrasado": "#ff7a6b",
         "atencao": "#e9b949",
         "pago": "#5fd08a",
@@ -135,7 +137,9 @@ def folha_de_estilo(tema: str = "claro") -> str:
         color: #ffffff;
         font-weight: 600;
     }}
-    QPushButton#primario:hover {{ background: {c["texto"]}; border-color: {c["texto"]}; }}
+    QPushButton#primario:hover {{
+        background: {c["destaque_hover"]}; border-color: {c["destaque_hover"]};
+    }}
     QPushButton#botaoPerigo {{
         background: {c["atrasado"]}; color: #ffffff; border: 1px solid {c["atrasado"]};
         font-weight: 600; padding: 6px 14px;

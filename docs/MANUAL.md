@@ -129,9 +129,9 @@ mesma imagem depois.
 
 ### Ao abrir
 
-O sistema abre com a tela de carregamento: o ícone do Financeiro Métodos num
-cartão azul com os arcos das cores da marca, a etapa que está carregando e a
-porcentagem. A logo fica depois no pé do menu lateral. Não aparece nenhum cartão de resumo ao
+O sistema abre com a tela de carregamento: um cartão em forma de canhoto, com a
+marca do Financeiro Métodos no corpo azul e, depois do picote, o canhoto ciano
+com a etapa que está carregando, a porcentagem e a barra. A logo fica depois no pé do menu lateral. Não aparece nenhum cartão de resumo ao
 abrir: o que pede atenção fica no contador de **Notificações** e nos números ao
 lado de cada tela do menu.
 
