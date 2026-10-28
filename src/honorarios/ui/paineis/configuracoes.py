@@ -196,19 +196,23 @@ class PainelConfiguracoes(QWidget):
         self.qrcode_atual.setWordWrap(True)
         caixa_qr.addWidget(self.qrcode_atual)
         botoes_qr = QHBoxLayout()
+        self.botoes_qr = {}
         for texto, funcao in (
             ("Escolher PNG do QR code…", self._escolher_qrcode),
-            ("Remover", self._remover_qrcode),
+            ("Usar o do escritório", self._qrcode_modelo),
+            ("Sair sem QR", self._remover_qrcode),
         ):
             botao = widgets.QPushButton(texto)
             botao.clicked.connect(lambda _=False, f=funcao: f())
             botoes_qr.addWidget(botao)
+            self.botoes_qr[texto] = botao
         botoes_qr.addStretch(1)
         caixa_qr.addLayout(botoes_qr)
         caixa_qr.addWidget(widgets.rotulo_fraco(
-            "Gere o QR code da chave Pix no app do banco, salve como PNG e escolha aqui. "
-            "Ele entra no retângulo id=\"qrcode\" do fundo, em toda imagem de cobrança. "
-            "É o QR da chave, sem valor: o cliente digita o valor ao pagar."
+            "O QR do Pix do escritório já vem no sistema. Para trocar, gere o QR da chave "
+            "no app do banco, salve como PNG e escolha aqui. Ele entra no retângulo "
+            "id=\"qrcode\" do fundo, em toda imagem de cobrança. É o QR da chave, sem "
+            "valor: o cliente digita o valor ao pagar."
         ))
         layout.addWidget(grupo_qr)
 
@@ -222,8 +226,8 @@ class PainelConfiguracoes(QWidget):
                 "Deixe esses dois retângulos transparentes. Opcional: no retângulo da "
                 "lista, data-fonte, data-cor, data-cor-fraca e data-cor-linha mudam a "
                 "fonte e as cores dos honorários. Agrupe a camada da cobrança (textos, "
-                'lista, QR) em um grupo com id="conteudo": o PDF da análise de juros '
-                "usa o fundo sem esse grupo como papel das páginas."
+                'lista, QR) em um grupo com id="conteudo": o "Pagamento confirmado" '
+                "usa o fundo sem esse grupo."
             )
         )
         layout.addStretch(1)
@@ -253,11 +257,29 @@ class PainelConfiguracoes(QWidget):
     def _mostrar_qrcode(self) -> None:
         from ...servicos import imagem_cobranca
 
-        caminho = imagem_cobranca.caminho_qrcode(self.contexto.sessao)
-        self.qrcode_atual.setText(
-            f"Usando: <b>{caminho}</b>" if caminho
-            else "Nenhum QR code escolhido: a imagem sai sem QR."
-        )
+        sessao = self.contexto.sessao
+        caminho = imagem_cobranca.caminho_qrcode(sessao)
+        modelo = imagem_cobranca.usa_qrcode_modelo(sessao)
+        if modelo:
+            texto = "Usando o <b>QR do Pix do escritório</b> (vem com o sistema)."
+        elif caminho:
+            texto = f"Usando: <b>{caminho}</b>"
+        else:
+            texto = "Sem QR code: a imagem sai com a chave Pix no lugar dele."
+        self.qrcode_atual.setText(texto)
+        self.botoes_qr["Usar o do escritório"].setEnabled(not modelo)
+        self.botoes_qr["Sair sem QR"].setEnabled(caminho is not None)
+
+    def _qrcode_modelo(self) -> None:
+        from ...servicos import imagem_cobranca
+
+        def acao():
+            imagem_cobranca.usar_qrcode_modelo(self.contexto.sessao)
+            self.contexto.salvar()
+
+        if not widgets.executar(self, acao)[0]:
+            self.contexto.desfazer()
+        self._mostrar_qrcode()
 
     def _escolher_qrcode(self) -> None:
         from ...servicos import imagem_cobranca

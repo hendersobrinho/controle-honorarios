@@ -268,7 +268,7 @@ TEAL_MARCA = "#4BBDCD"
 LARANJA_MARCA = "#F9B259"
 TEAL_SUAVE = "#DDF3F6"     # o verde-água da logo, clarinho, no painel do valor
 LARGURA_AGRADECIMENTO = 1620   # 1,5× a cobrança: comprovante nítido
-FUNDO_AGRADECIMENTO = "#F4F6F9"
+FUNDO_AGRADECIMENTO = "#EEF1F5"   # o mesmo cinza do fundo da cobrança
 
 
 def _texto(pintor: QPainter, area: QRectF, texto: str, pixels: float, cor: str,
@@ -280,11 +280,11 @@ def _texto(pintor: QPainter, area: QRectF, texto: str, pixels: float, cor: str,
                     metrica.elidedText(texto, Qt.TextElideMode.ElideRight, area.width()))
 
 
-def _logo_original(pintor: QPainter, area: QRectF) -> None:
-    """A logo nas cores originais, em vetor (nítida em qualquer tamanho)."""
+def _marca(pintor: QPainter, area: QRectF) -> None:
+    """A marca do Financeiro nas cores dela, em vetor (nítida em qualquer tamanho)."""
     from . import logo
 
-    renderizador = QSvgRenderer(str(logo.ARQUIVO))
+    renderizador = QSvgRenderer(str(logo.MARCA))
     caixa = renderizador.viewBoxF()
     altura = area.width() * caixa.height() / caixa.width()
     renderizador.render(pintor, QRectF(area.left(), area.top(), area.width(), altura))
@@ -342,8 +342,8 @@ def renderizar_agradecimento(texto_svg: str, dados: DadosImagem,
     pintor.setBrush(QColor("#FFFFFF"))
     pintor.drawRoundedRect(cartao, 32, 32)
 
-    # topo: a logo como ela é e o rótulo do documento
-    _logo_original(pintor, QRectF(116, 100, 250, 0))
+    # topo: a marca e o rótulo do documento
+    _marca(pintor, QRectF(116, 94, 220, 0))
     _texto(pintor, QRectF(560, 122, 404, 30), "COMPROVANTE DE PAGAMENTO", 20, CINZA_MARCA,
            True, Qt.AlignmentFlag.AlignRight)
 
@@ -401,7 +401,7 @@ def renderizar_agradecimento(texto_svg: str, dados: DadosImagem,
     # rodapé do cartão
     rodape = QRectF(116, 1076, 848, 96)
     pintor.setPen(Qt.PenStyle.NoPen)
-    pintor.setBrush(QColor("#F6F8FA"))
+    pintor.setBrush(QColor("#E6F6F8"))   # o ciano claro do canhoto da cobrança
     pintor.drawRoundedRect(rodape, 18, 18)
     _texto(pintor, QRectF(140, 1088, 800, 40), "Obrigado pela confiança!", 30, AZUL_MARCA,
            True, centro)

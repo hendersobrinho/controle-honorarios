@@ -1273,6 +1273,7 @@ def test_cobrar_gera_imagem_dos_honorarios_marcados(
 ):
     from PySide6.QtGui import QGuiApplication
 
+    from honorarios.servicos import imagem_cobranca as servico_imagem
     from honorarios.ui.dialogos import imagem_cobranca
     from honorarios.ui.dialogos.cobrar import DialogoCobrar
 
@@ -1291,8 +1292,8 @@ def test_cobrar_gera_imagem_dos_honorarios_marcados(
 
     [aberto] = abertos
     assert len(aberto.dados.linhas) == len(dialogo.modelo.marcados())
-    # sem PNG do QR escolhido: a imagem sai sem QR, e a prévia avisa onde escolher
-    assert aberto.dados.qrcode is None
+    # sem PNG escolhido: a imagem sai com o QR do Pix do escritório, que vem no sistema
+    assert aberto.dados.qrcode == servico_imagem.QRCODE_MODELO
     assert aberto.dados.campos["cliente"] == cliente_com_debito.nome
     assert not QGuiApplication.clipboard().image().isNull()   # copiada para colar no WhatsApp
     # junto vai a chave como texto (Outlook/Telegram colam os dois; o WhatsApp, a imagem)
@@ -1345,16 +1346,16 @@ def test_imagem_estica_quando_os_honorarios_nao_cabem(qtbot, contexto, tmp_path)
 
     dados.linhas = [dados.linhas[i % 3] for i in range(12)]
     esticada = desenho.renderizar(fundo, dados)
-    # a lista do modelo tem 450 px; 12 linhas × 84 px pedem 558 px a mais
+    # a lista do modelo tem 364 px; 12 linhas × 84 px pedem 644 px a mais
     assert esticada.width() == 1080
-    assert esticada.height() == 1350 + 12 * desenho.ALTURA_ESTICADA - 450
+    assert esticada.height() == 1350 + 12 * desenho.ALTURA_ESTICADA - 364
 
     # o QR desceu junto com o resto do desenho
     deslocamento = esticada.height() - 1350
     pretos = sum(
         1
-        for x in range(90, 358, 4)
-        for y in range(1010 + deslocamento, 1278 + deslocamento, 4)
+        for x in range(118, 358, 4)
+        for y in range(934 + deslocamento, 1174 + deslocamento, 4)
         if QColor(esticada.pixel(x, y)).lightness() < 60
     )
     assert pretos > 200
@@ -1362,7 +1363,7 @@ def test_imagem_estica_quando_os_honorarios_nao_cabem(qtbot, contexto, tmp_path)
     # acima do máximo, a imagem para de crescer e o resto vira "e mais N"
     dados.linhas = [dados.linhas[i % 3] for i in range(60)]
     maior = desenho.renderizar(fundo, dados)
-    assert maior.height() == 1350 + desenho.MAXIMO_LINHAS * desenho.ALTURA_ESTICADA - 450
+    assert maior.height() == 1350 + desenho.MAXIMO_LINHAS * desenho.ALTURA_ESTICADA - 364
 
 
 # ---------------------------------------------------- avulsos e editar no cartão

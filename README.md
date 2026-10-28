@@ -205,7 +205,7 @@ O detalhamento está em [docs/ESPECIFICACAO.md](docs/ESPECIFICACAO.md) e
 ---
 
 <div align="center">
-<img src="src/honorarios/recursos/logo.svg" alt="Métodos" width="200">
+<img src="src/honorarios/recursos/metodos.svg" alt="Métodos Contabilidade" width="200">
 <br>
 <sub>Feito para o dia a dia da cobrança na Métodos Serviços Contábeis.</sub>
 </div>

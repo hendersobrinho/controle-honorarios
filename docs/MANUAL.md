@@ -313,8 +313,18 @@ O cartão do honorário mostra "Acordo até dd/mm" enquanto ele vale. **Copiar i
 **Copiar chave Pix** copia a chave para mandar como texto logo depois;
 **Salvar PNG…** guarda o arquivo. Copiar não registra a cobrança.
 
-O fundo é escolhido em **Configurações → Imagem da cobrança** (sem ele, vale o
-modelo do sistema, que também pode ser salvo como ponto de partida). No SVG:
+A imagem já sai pronta, sem precisar importar nada: o modelo do sistema tem a
+identidade do Financeiro (o canhoto — faixa navy com a marca no topo, o cartão
+com o cliente, a lista e o total, e depois do picote o canhoto ciano com o QR do
+Pix do escritório e a chave), com a logo da Métodos no pé. O mesmo fundo vale
+para a cobrança e para o lembrete; o **Pagamento confirmado** é um comprovante
+com a marca do Financeiro, sobre o mesmo fundo.
+
+Ao abrir a versão com a identidade nova pela primeira vez, a imagem passa para
+esse modelo; um fundo seu escolhido antes continua guardado e volta com
+**Voltar para o meu fundo**. Outro fundo pode ser escolhido em
+**Configurações → Imagem da cobrança** (o modelo também pode ser salvo como
+ponto de partida). No SVG:
 
 - textos com `{cliente}`, `{codigo}`, `{documento}`, `{tipo_documento}`,
   `{vencimento}`, `{data}`, `{total}`, `{total_original}`,
@@ -327,10 +337,11 @@ modelo do sistema, que também pode ser salvo como ponto de partida). No SVG:
   `data-cor-fraca` e `data-cor-linha` nesse retângulo mudam fonte e cores;
 - um retângulo transparente com `id="qrcode"` recebe o PNG do QR code (270 px de lado
   ou mais, num fundo de 1080 de largura);
-- **sem QR code anexado**, o grupo `id="mensagem-qrcode"` (o "aponte a câmera…")
-  não aparece, e o que tiver `data-sem-qrcode="translate(x y)"` se move. No fundo
-  da Métodos, o bloco "Pague com Pix" + chave vai para o lugar do QR, em vez de
-  deixar um quadrado vazio. Com o QR anexado, tudo volta como desenhado.
+- **sem QR code**, os grupos `id="mensagem-qrcode"` (o "aponte a câmera…") e
+  `id="quadro-qrcode"` (a moldura branca dele) não aparecem, e o que tiver
+  `data-sem-qrcode="translate(x y)"` se move: no modelo, o bloco "Pague com Pix"
+  + chave vai para o lugar do QR, em vez de deixar um quadrado vazio. Com o QR,
+  tudo volta como desenhado.
 
 - se o fundo tiver dois logos (`id="logo-imagem"` e `id="logo-pdf"`), a imagem
   usa o `logo-pdf`; o `logo-imagem` só aparece quando é o único do fundo;
@@ -339,7 +350,9 @@ modelo do sistema, que também pode ser salvo como ponto de partida). No SVG:
 Os PDFs (painel, análise de juros, extrato) não usam esse fundo: saem no papel
 do Financeiro, com a faixa navy, o picote e o canhoto ciano.
 
-O QR code é o da chave Pix, **gerado no app do banco**: salve como PNG e
-escolha em **Configurações → Imagem da cobrança → Escolher PNG do QR code…**.
-É o QR da chave, sem valor — o cliente digita o valor ao pagar. Sem PNG
-escolhido, a imagem sai sem QR e a prévia avisa onde escolher.
+O QR code do Pix do escritório (Métodos Serviços Contábeis, gerado no app do
+banco) **já vem no sistema**. É o QR da chave, sem valor — o cliente digita o
+valor ao pagar. Para trocar, salve o novo QR como PNG no app do banco e escolha
+em **Configurações → Imagem da cobrança → Escolher PNG do QR code…**; **Usar o
+do escritório** volta ao que vem no sistema, e **Sair sem QR** tira o QR da
+imagem (a prévia avisa).

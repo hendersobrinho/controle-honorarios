@@ -4,11 +4,12 @@ O fundo é um SVG desenhado fora do sistema. Nele:
 
 * textos com ``{campo}`` são trocados pelos valores (ver ``CAMPOS``);
 * o retângulo ``id="lista"`` recebe os honorários selecionados, um por linha;
-* o retângulo ``id="qrcode"`` recebe o PNG do QR code do Pix, gerado no banco e
-  escolhido nas Configurações;
+* o retângulo ``id="qrcode"`` recebe o PNG do QR code do Pix, gerado no banco: o
+  do escritório vem com o sistema, e outro pode ser escolhido nas Configurações;
 * sem QR code anexado, sai o que tiver ``id="mensagem-qrcode"`` (o "aponte a
-  câmera…") e quem tiver ``data-sem-qrcode="translate(x y)"`` se move — para o
-  bloco do Pix ocupar o lugar do QR em vez de deixar um quadrado vazio.
+  câmera…") ou ``id="quadro-qrcode"`` (a moldura dele) e quem tiver
+  ``data-sem-qrcode="translate(x y)"`` se move — para o bloco do Pix ocupar o
+  lugar do QR em vez de deixar um quadrado vazio.
 
 Aqui fica só o que não depende de Qt: os dados e o texto do SVG preenchido. O
 desenho em si está em ``ui/comum/imagem_cobranca.py``.
@@ -36,6 +37,9 @@ from .erros import ErroDeValidacao
 FUNDO_MODELO = Path(__file__).resolve().parent.parent / "recursos" / "fundo_cobranca.svg"
 NOME_FUNDO = "fundo_cobranca.svg"
 NOME_QRCODE = "qrcode_pix.png"
+# o QR do Pix do escritório (gerado no app do banco), usado enquanto não se escolhe outro
+QRCODE_MODELO = FUNDO_MODELO.parent / NOME_QRCODE
+SEM_QRCODE = "nenhum"   # valor da configuração quando a pessoa tira o QR da imagem
 
 CAMPOS = (
     ("cliente", "nome do cliente"),
@@ -158,9 +162,18 @@ def voltar_ao_fundo_guardado(sessao: Session) -> list[str]:
 
 
 def caminho_qrcode(sessao: Session) -> Path | None:
-    """O PNG do QR code escolhido nas Configurações, se houver."""
+    """O PNG do QR code: o escolhido nas Configurações, o do escritório que vem com o
+    sistema, ou nenhum (se a pessoa removeu)."""
     escolhido = configuracoes.obter(sessao, "imagem_qrcode_png", "")
-    return Path(escolhido) if escolhido and Path(escolhido).is_file() else None
+    if escolhido == SEM_QRCODE:
+        return None
+    if escolhido and Path(escolhido).is_file():
+        return Path(escolhido)
+    return QRCODE_MODELO if QRCODE_MODELO.is_file() else None
+
+
+def usa_qrcode_modelo(sessao: Session) -> bool:
+    return caminho_qrcode(sessao) == QRCODE_MODELO
 
 
 def definir_qrcode(sessao: Session, origem: Path) -> None:
@@ -180,6 +193,13 @@ def definir_qrcode(sessao: Session, origem: Path) -> None:
 
 
 def remover_qrcode(sessao: Session) -> None:
+    """A imagem passa a sair sem QR (o bloco do Pix ocupa o lugar dele)."""
+    configuracoes.gravar(sessao, "imagem_qrcode_png", SEM_QRCODE)
+    sessao.flush()
+
+
+def usar_qrcode_modelo(sessao: Session) -> None:
+    """Volta ao QR do escritório que vem com o sistema."""
     configuracoes.gravar(sessao, "imagem_qrcode_png", "")
     sessao.flush()
 
@@ -213,14 +233,15 @@ def base_do_fundo(texto_svg: str) -> str | None:
 
 
 MENSAGEM_QRCODE = "mensagem-qrcode"
+SO_COM_QRCODE = {MENSAGEM_QRCODE, "quadro-qrcode"}   # saem quando não há QR code
 
 
 def sem_qrcode(texto_svg: str) -> str:
     """O fundo para quando não há QR code: sem a mensagem dele, com o Pix no lugar."""
-    if MENSAGEM_QRCODE not in texto_svg and "data-sem-qrcode" not in texto_svg:
+    if not any(nome in texto_svg for nome in (*SO_COM_QRCODE, "data-sem-qrcode")):
         return texto_svg
     try:
-        texto, _ = _sem_elementos(texto_svg, {MENSAGEM_QRCODE})
+        texto, _ = _sem_elementos(texto_svg, SO_COM_QRCODE)
         raiz = ET.fromstring(texto.encode("utf-8"))
     except ET.ParseError:
         return texto_svg

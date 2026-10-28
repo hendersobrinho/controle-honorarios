@@ -41,6 +41,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 honorarios = [
     "recursos/*.svg",
+    "recursos/*.png",
     "infra/migracoes/*.py",
     "infra/migracoes/*.mako",
     "infra/migracoes/versions/*.py",

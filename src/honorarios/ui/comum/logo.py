@@ -1,10 +1,8 @@
-"""A logo, a marca do produto e o ícone do sistema: no menu lateral, na abertura e
-nas janelas.
+"""A marca do Financeiro, a logo da Métodos e o ícone do sistema: no menu lateral,
+na abertura, nas janelas e nas imagens para o cliente.
 
 É vetor (SVG), desenhada no tamanho exato em que aparece. No tema escuro o azul
 da marca some no fundo, então ela vira clara — as cores de destaque continuam.
-A ``logo.svg`` é a da Métodos (vai nas imagens para o cliente); a ``marca.svg`` é
-a do Financeiro (fica dentro do programa).
 """
 
 from __future__ import annotations
@@ -23,11 +21,12 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
-ARQUIVO = Path(__file__).resolve().parent.parent.parent / "recursos" / "logo.svg"
-MARCA = ARQUIVO.parent / "marca.svg"
-MARCA_NEGATIVO = ARQUIVO.parent / "marca_negativo.svg"
-ICONE = ARQUIVO.parent / "icone.svg"
-ICONE_PEQUENO = ARQUIVO.parent / "icone_pequeno.svg"
+RECURSOS = Path(__file__).resolve().parent.parent.parent / "recursos"
+MARCA = RECURSOS / "marca.svg"
+MARCA_NEGATIVO = RECURSOS / "marca_negativo.svg"
+METODOS = RECURSOS / "metodos.svg"   # a logo do escritório
+ICONE = RECURSOS / "icone.svg"
+ICONE_PEQUENO = RECURSOS / "icone_pequeno.svg"
 AZUL_DA_MARCA = "#203461"
 
 
@@ -36,8 +35,9 @@ def _densidade() -> float:
     return tela.devicePixelRatio() if tela else 1.0
 
 
-def pixmap(largura: int, escuro: bool = False, arquivo: Path = ARQUIVO) -> QPixmap:
-    """A logo (ou outro SVG da marca) na largura pedida, nítida em tela de alta densidade."""
+def pixmap(largura: int, escuro: bool = False, arquivo: Path = MARCA) -> QPixmap:
+    """A marca (ou outro SVG de ``recursos``) na largura pedida, nítida em tela de alta
+    densidade."""
     texto = arquivo.read_text(encoding="utf-8")
     if escuro:
         texto = texto.replace(AZUL_DA_MARCA, "#E6EAEF")

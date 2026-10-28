@@ -279,6 +279,18 @@ serviços continuarem sem Qt. Os gráficos
 do painel vão para o PDF como imagem, desenhados pela interface sempre no tema
 claro (o PDF é branco) e em dobro de resolução.
 
+### A imagem de cobrança já vem pronta
+O modelo do sistema (`recursos/fundo_cobranca.svg`) tem a identidade do
+Financeiro — o canhoto da abertura — e o QR do Pix do escritório vem junto
+(`recursos/qrcode_pix.png`), para a imagem sair certa sem importar nada. O QR é
+o PNG que o banco gerou, só recortado e com os módulos redesenhados nítidos
+(conferido: lê o mesmo conteúdo do original); o sistema não gera QR de Pix. Na
+configuração, vazio quer dizer "o do escritório" e `nenhum` quer dizer sem QR.
+Ao abrir a versão nova uma vez (`identidade_visual_v1`), a imagem volta ao
+modelo; o fundo escolhido antes fica guardado para "Voltar para o meu fundo". A
+logo da Métodos continua no pé (quem cobra é o escritório) e ganhou arquivo
+próprio, `recursos/metodos.svg`; a logo antiga do Financeiro (`logo.svg`) saiu.
+
 ### Acordo de valor ("pague R$ X até tal data")
 A imagem separa a data dos valores ("atualizados em") do prazo ("pagar até").
 Guardado como acordo (tabela `acordo_valor`, um por honorário), o valor congelado

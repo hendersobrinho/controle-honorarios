@@ -100,13 +100,8 @@ class DialogoImagemCobranca(QDialog):
         avisos = list(self.dados.avisos)
         if self.dados.qrcode is None and not self.agradecimento:
             avisos.append(
-                "A imagem está sem QR code. Escolha o PNG do QR code do Pix (gerado no app "
-                "do banco) em Configurações → Imagem da cobrança."
-            )
-        if self.dados.linhas and servico.usa_modelo(self.contexto.sessao):
-            avisos.append(
-                "Usando o fundo modelo do sistema. Escolha o seu em Configurações → "
-                "Imagem da cobrança."
+                "A imagem está sem QR code. Para voltar a ter: Configurações → Imagem da "
+                "cobrança → Usar o do escritório."
             )
         for texto in avisos:
             aviso = QLabel(texto)

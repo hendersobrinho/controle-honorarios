@@ -71,7 +71,9 @@ def test_a_imagem_segue_a_selecao(sessao, empresa):
 
 
 def test_qr_code_e_o_png_escolhido(sessao, empresa, pasta_dados, tmp_path):
-    assert servico.montar(sessao, _selecao(sessao, empresa)).qrcode is None
+    # de fábrica: o QR do Pix do escritório, que vem com o sistema
+    assert servico.montar(sessao, _selecao(sessao, empresa)).qrcode == servico.QRCODE_MODELO
+    assert servico.usa_qrcode_modelo(sessao)
 
     origem = png_de_qrcode(tmp_path / "qr-do-banco.png")
     servico.definir_qrcode(sessao, origem)
@@ -83,13 +85,43 @@ def test_qr_code_e_o_png_escolhido(sessao, empresa, pasta_dados, tmp_path):
     servico.remover_qrcode(sessao)
     assert servico.montar(sessao, _selecao(sessao, empresa)).qrcode is None
 
+    servico.usar_qrcode_modelo(sessao)
+    assert servico.caminho_qrcode(sessao) == servico.QRCODE_MODELO
+
+
+def test_qr_do_escritorio_e_um_png_legivel():
+    from PIL import Image  # vem com o reportlab
+
+    with Image.open(servico.QRCODE_MODELO) as qr:
+        assert qr.format == "PNG"
+        assert min(qr.size) >= 270                       # legível no fundo de 1080
+
+
+def test_identidade_nova_volta_a_imagem_ao_modelo_uma_vez(sessao, pasta_dados, tmp_path):
+    from honorarios.infra import carga_inicial
+    from honorarios.infra.modelos import Configuracao
+
+    meu = tmp_path / "meu.svg"
+    meu.write_text(servico.FUNDO_MODELO.read_text(encoding="utf-8"), encoding="utf-8")
+    sessao.delete(sessao.get(Configuracao, carga_inicial.IDENTIDADE))
+    servico.definir_fundo(sessao, meu)
+    assert not servico.usa_modelo(sessao)
+
+    carga_inicial.aplicar(sessao)                        # ao abrir com a versão nova
+    assert servico.usa_modelo(sessao)
+    assert servico.fundo_guardado() is not None          # dá para voltar ao seu
+
+    servico.voltar_ao_fundo_guardado(sessao)
+    carga_inicial.aplicar(sessao)                        # só uma vez: a escolha fica
+    assert not servico.usa_modelo(sessao)
+
 
 def test_qr_code_precisa_ser_png(sessao, tmp_path):
     falso = tmp_path / "qr.png"
     falso.write_text("não é imagem")
     with pytest.raises(ErroDeValidacao, match="não é uma imagem PNG"):
         servico.definir_qrcode(sessao, falso)
-    assert servico.caminho_qrcode(sessao) is None
+    assert servico.caminho_qrcode(sessao) == servico.QRCODE_MODELO   # nada mudou
 
 
 def test_honorario_de_pessoa_vinculada_diz_de_quem_e(sessao, empresa):
@@ -150,9 +182,9 @@ def test_fundo_escolhido_e_copiado_para_a_pasta_de_dados(sessao, pasta_dados, tm
 def test_exemplo_para_a_previa(sessao, tmp_path):
     dados = servico.exemplo(sessao)
     assert len(dados.linhas) == 3
-    assert dados.qrcode is None
+    assert dados.qrcode == servico.QRCODE_MODELO
     servico.definir_qrcode(sessao, png_de_qrcode(tmp_path / "qr.png"))
-    assert servico.exemplo(sessao).qrcode is not None
+    assert servico.exemplo(sessao).qrcode not in (None, servico.QRCODE_MODELO)
 
 
 def test_base_do_fundo_tira_so_o_grupo_conteudo():

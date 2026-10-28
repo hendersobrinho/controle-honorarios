@@ -124,12 +124,15 @@ TIPOS = (
     ),
 )
 
+IDENTIDADE = "identidade_visual_v1"
+
 CONFIGURACOES = (
     ("recebedor_razao_social", "Métodos Serviços Contábeis Ltda", "Nome que aparece no PIX"),
     ("recebedor_tipo_chave", TipoChavePix.CNPJ.value, "Tipo da chave PIX"),
     ("recebedor_chave", "02.294.442/0001-13", "Chave PIX da empresa"),
     ("imagem_fundo", "", "Fundo SVG da imagem de cobrança (vazio = modelo do sistema)"),
-    ("imagem_qrcode_png", "", "PNG do QR code do Pix (gerado no banco) da imagem de cobrança"),
+    ("imagem_qrcode_png", "",
+     "PNG do QR code do Pix (vazio = o do escritório; \"nenhum\" = sem QR)"),
     ("formato_link_whatsapp", "WA_ME", "wa.me, api.whatsapp.com ou whatsapp://"),
     ("dias_vence_em_breve", "5", "Quantos dias antes do vencimento pintar de âmbar"),
     ("backup_ao_fechar", "1", "Gera backup automático ao fechar o app"),
@@ -180,7 +183,21 @@ def aplicar(sessao: Session) -> None:
         if not sessao.get(Configuracao, chave):
             sessao.add(Configuracao(chave=chave, valor=valor, descricao=descricao))
 
+    _identidade_visual(sessao)
     sessao.flush()
+
+
+def _identidade_visual(sessao: Session) -> None:
+    """Uma vez só: com a identidade nova, a imagem de cobrança volta ao modelo do
+    sistema (o fundo escolhido antes fica guardado: "Voltar para o meu fundo")."""
+    marca = sessao.get(Configuracao, IDENTIDADE)
+    if marca is not None:
+        return
+    fundo = sessao.get(Configuracao, "imagem_fundo")
+    if fundo is not None:
+        fundo.valor = ""
+    sessao.add(Configuracao(chave=IDENTIDADE, valor="1",
+                            descricao="Imagem de cobrança já passou para a identidade nova"))
 
 
 def garantir(sessao: Session) -> None:
