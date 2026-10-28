@@ -1,8 +1,8 @@
-"""Molde dos relatórios em PDF (análise de juros, painel): o mesmo visual em todos.
+"""Molde dos PDFs (análise de juros, painel, extrato): o mesmo visual em todos.
 
-Com o fundo da cobrança como papel, o título vai sobre o fundo e o conteúdo num
-cartão branco entre o logo do topo e o do rodapé. Sem fundo, sai o visual simples
-(título no topo e a faixa de três cores na lateral).
+A página é um canhoto, como a abertura do programa: no topo, a faixa navy com o
+título e a marca do Financeiro; o picote com os furos nas laterais; e no pé o
+canhoto ciano com o rodapé. Tudo em vetor (a marca também), arquivo leve.
 """
 
 from __future__ import annotations
@@ -13,8 +13,11 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from ..dominio.valores import formatar_data
+from . import svg_pdf
 
 AZUL = "#203461"
+AZUL_ESCURO = "#16254A"
+PICOTE = "#8C9BC0"
 TEAL = "#4BBDCD"
 LARANJA = "#F9B259"
 FRACO = "#5B6577"
@@ -23,12 +26,13 @@ FAIXA = "#EEF1F5"
 VERDE = "#1F7A45"
 VERMELHO = "#B03A2E"
 
-# Com o fundo da cobrança como papel: o conteúdo vai num cartão branco entre o
-# logo do topo e o do rodapé (medidas em pontos, página A4 de 595 × 842).
-CARTAO_TOPO = 120        # distância do topo da página até o cartão
-CARTAO_BASE = 84         # distância do pé da página até o fim do cartão
-CARTAO_LADO = 28
-RESPIRO = 18             # do cartão até o texto
+MARCA = Path(__file__).resolve().parent.parent / "recursos" / "marca_negativo.svg"
+
+# o canhoto da página, em pontos (A4 tem 595 × 842)
+FAIXA_TOPO = 92          # altura da faixa navy do topo
+CANHOTO = 30             # altura do canhoto ciano do pé
+FURO = 9                 # raio dos furos do picote
+LADO = 40                # margem lateral do texto
 
 
 def texto(valor) -> str:
@@ -45,7 +49,6 @@ class RelatorioPdf:
         subtitulo: str,
         recebedor,
         gerado_em: date,
-        fundo: Path | None = None,
         rodape: str = "Documento interno",
     ) -> None:
         from reportlab.lib import colors
@@ -57,16 +60,12 @@ class RelatorioPdf:
         self.subtitulo = subtitulo
         self.recebedor = recebedor
         self.gerado_em = gerado_em
-        self.fundo = fundo
         self.rodape = rodape
         self.cor = colors.HexColor
         self.pagina_a4 = A4
-        if fundo is not None:
-            self.margem_lado = CARTAO_LADO + RESPIRO
-            self.margem_topo = CARTAO_TOPO + RESPIRO
-            self.margem_base = CARTAO_BASE + RESPIRO + 14   # + a linha do rodapé
-        else:
-            self.margem_lado, self.margem_topo, self.margem_base = 18 * mm, 15 * mm, 16 * mm
+        self.margem_lado = LADO
+        self.margem_topo = FAIXA_TOPO + 8 * mm
+        self.margem_base = CANHOTO + 8 * mm
         self.largura_util = A4[0] - 2 * self.margem_lado
 
         cor = self.cor
@@ -174,81 +173,71 @@ class RelatorioPdf:
         largura_px, altura_px = ImageReader(str(caminho)).getSize()
         return Image(str(caminho), width=largura, height=largura * altura_px / largura_px)
 
-    def topo(self):
-        """Título no topo da página — só quando não há fundo (com fundo, ele vai no papel)."""
-        from reportlab.platypus import Table, TableStyle
-
-        topo = Table(
-            [[
-                [self.p(texto(self.titulo), "titulo"), self.p(texto(self.subtitulo), "subtitulo")],
-                [self.p(texto(self.recebedor.razao_social), "fraco"),
-                 self.p(f"Gerado em {formatar_data(self.gerado_em)}", "fraco")],
-            ]],
-            colWidths=[self.largura_util * 0.66, self.largura_util * 0.34],
-        )
-        topo.setStyle(TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("ALIGN", (1, 0), (1, 0), "RIGHT"),
-            ("LINEBELOW", (0, 0), (-1, 0), 2, self.cor(TEAL)),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-            ("LEFTPADDING", (0, 0), (0, 0), 0),
-        ]))
-        return topo
-
     def inicio(self) -> list:
-        """O começo do corpo: o título (se não houver fundo) e um respiro."""
-        from reportlab.platypus import Spacer
-
-        return [] if self.fundo is not None else [self.topo(), Spacer(1, 6)]
+        """O começo do corpo (o título vai na faixa do topo, no papel)."""
+        return []
 
     # ------------------------------------------------------------ página
-    def _pagina_com_fundo(self, canvas, documento) -> None:
-        largura, altura = self.pagina_a4
-        canvas.saveState()
-        canvas.drawImage(str(self.fundo), 0, 0, largura, altura)
+    def _furos(self, canvas, y: float) -> None:
+        """Os furos do picote: meios círculos brancos nas duas laterais."""
+        largura = self.pagina_a4[0]
         canvas.setFillColor(self.cor("#FFFFFF"))
-        canvas.roundRect(
-            CARTAO_LADO, CARTAO_BASE, largura - 2 * CARTAO_LADO,
-            altura - CARTAO_TOPO - CARTAO_BASE, 14, stroke=0, fill=1,
-        )
-        # título no fundo, como na imagem de cobrança (à esquerda do logo do topo)
-        canvas.setFillColor(self.cor(AZUL))
-        canvas.setFont("Helvetica-Bold", 22)
-        canvas.drawString(CARTAO_LADO + 14, altura - 58, self.titulo)
-        canvas.setFont("Helvetica-Bold", 11)
-        subtitulo = self.subtitulo
-        # 360 pt: o resto da linha é da logo, no canto direito
-        while canvas.stringWidth(subtitulo, "Helvetica-Bold", 11) > 360 and len(subtitulo) > 10:
-            subtitulo = subtitulo[:-2].rstrip() + "…"
-        canvas.drawString(CARTAO_LADO + 14, altura - 78, subtitulo)
-        canvas.setFillColor(self.cor(TEAL))
-        canvas.roundRect(CARTAO_LADO + 14, altura - 92, 40, 3.5, 1.7, stroke=0, fill=1)
-        canvas.setFont("Helvetica", 7.5)
-        canvas.setFillColor(self.cor(FRACO))
-        canvas.drawString(
-            self.margem_lado, CARTAO_BASE + 12,
-            f"{self.rodape} · {self.recebedor.razao_social[:50]} · gerado em "
-            f"{formatar_data(self.gerado_em)}",
-        )
-        canvas.drawRightString(largura - self.margem_lado, CARTAO_BASE + 12,
-                               f"Página {documento.page}")
-        canvas.restoreState()
+        for x in (0, largura):
+            canvas.circle(x, y, FURO, stroke=0, fill=1)
 
-    def _pagina_simples(self, canvas, documento) -> None:
-        from reportlab.lib.units import mm
+    def _tracejado(self, canvas, y: float) -> None:
+        largura = self.pagina_a4[0]
+        canvas.setFillColor(self.cor(PICOTE))
+        canvas.setFillAlpha(0.6)
+        x = 26.0
+        while x + 7 <= largura - 26:
+            canvas.roundRect(x, y - 1, 7, 2, 1, stroke=0, fill=1)
+            x += 14
+        canvas.setFillAlpha(1)
 
+    def _pagina(self, canvas, documento) -> None:
         largura, altura = self.pagina_a4
         canvas.saveState()
-        for indice, cor in enumerate((LARANJA, TEAL, AZUL)):
-            canvas.setFillColor(self.cor(cor))
-            canvas.rect(0, indice * altura / 3, 4 * mm, altura / 3, stroke=0, fill=1)
+        # faixa navy do topo, em degradê como a abertura
+        base_faixa = altura - FAIXA_TOPO
+        canvas.saveState()
+        recorte = canvas.beginPath()
+        recorte.rect(0, base_faixa, largura, FAIXA_TOPO)
+        canvas.clipPath(recorte, stroke=0, fill=0)
+        canvas.linearGradient(0, altura, largura, base_faixa,
+                              (self.cor(AZUL), self.cor(AZUL_ESCURO)))
+        canvas.restoreState()
+        self._furos(canvas, base_faixa)
+        self._tracejado(canvas, base_faixa - 8)
+        # a marca à direita; o título e o subtítulo à esquerda
+        altura_marca = 38
+        largura_marca = altura_marca * svg_pdf.proporcao(MARCA)
+        svg_pdf.desenhar(canvas, MARCA, largura - LADO - largura_marca,
+                         base_faixa + (FAIXA_TOPO - altura_marca) / 2, altura_marca)
+        espaco = largura - 2 * LADO - largura_marca - 24
+        canvas.setFillColor(self.cor("#FFFFFF"))
+        canvas.setFont("Helvetica-Bold", 20)
+        canvas.drawString(LADO, altura - 44, _caber(canvas, self.titulo, "Helvetica-Bold",
+                                                    20, espaco))
+        canvas.setFillColor(self.cor(TEAL))
+        canvas.setFont("Helvetica-Bold", 10.5)
+        canvas.drawString(LADO, altura - 64, _caber(canvas, self.subtitulo, "Helvetica-Bold",
+                                                    10.5, espaco))
+        # o canhoto ciano no pé, com o rodapé em navy
+        canvas.setFillColor(self.cor(TEAL))
+        canvas.rect(0, 0, largura, CANHOTO, stroke=0, fill=1)
+        self._furos(canvas, CANHOTO)
+        self._tracejado(canvas, CANHOTO + 8)
         canvas.setFont("Helvetica", 7.5)
-        canvas.setFillColor(self.cor(FRACO))
+        canvas.setFillColor(self.cor(AZUL))
         canvas.drawString(
-            18 * mm, 9 * mm,
-            f"{self.rodape} · {self.subtitulo[:60]} · gerado em {formatar_data(self.gerado_em)}",
+            LADO, CANHOTO / 2 - 2.5,
+            _caber(canvas, f"{self.rodape} · {self.recebedor.razao_social} · gerado em "
+                           f"{formatar_data(self.gerado_em)}", "Helvetica", 7.5,
+                   largura - 2 * LADO - 60),
         )
-        canvas.drawRightString(largura - 18 * mm, 9 * mm, f"Página {documento.page}")
+        canvas.setFont("Helvetica-Bold", 7.5)
+        canvas.drawRightString(largura - LADO, CANHOTO / 2 - 2.5, f"Página {documento.page}")
         canvas.restoreState()
 
     def salvar(self, corpo: list, destino: Path, titulo_documento: str) -> Path:
@@ -266,6 +255,12 @@ class RelatorioPdf:
             title=titulo_documento,
             author=self.recebedor.razao_social,
         )
-        pagina = self._pagina_com_fundo if self.fundo is not None else self._pagina_simples
-        documento.build(corpo, onFirstPage=pagina, onLaterPages=pagina)
+        documento.build(corpo, onFirstPage=self._pagina, onLaterPages=self._pagina)
         return destino
+
+
+def _caber(canvas, conteudo: str, fonte: str, tamanho: float, largura: float) -> str:
+    """Corta com reticências o que não cabe na largura."""
+    while canvas.stringWidth(conteudo, fonte, tamanho) > largura and len(conteudo) > 10:
+        conteudo = conteudo[:-2].rstrip() + "…"
+    return conteudo

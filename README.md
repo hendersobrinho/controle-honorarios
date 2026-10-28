@@ -114,7 +114,7 @@ Para rodar a partir do código, você precisa do Python 3.12:
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m honorarios.app
+.venv/bin/python main.py
 ```
 
 Rodando do código, o banco é um SQLite em `dados/honorarios.db`, que fica fora do git.

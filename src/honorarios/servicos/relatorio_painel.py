@@ -33,7 +33,6 @@ def painel_pdf(
     recebedor,
     destino: Path,
     graficos: dict[str, Path] | None = None,
-    fundo: Path | None = None,
     gerado_em: date | None = None,
 ) -> Path:
     """Gera o PDF do painel do ano e devolve o caminho."""
@@ -45,7 +44,6 @@ def painel_pdf(
         f"Honorários com competência em {dados.ano}",
         recebedor,
         gerado_em or hoje(),
-        fundo,
     )
     corpo = [
         *r.inicio(),

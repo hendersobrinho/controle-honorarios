@@ -15,7 +15,7 @@ from ..contexto import Contexto
 CORES_EVENTO = {
     servico.LANCAMENTO: "texto_fraco",
     servico.ENVIO: "texto_fraco",
-    servico.COBRANCA: "destaque",
+    servico.COBRANCA: "destaque_texto",
     servico.RESPOSTA: "atencao",
     servico.PAGAMENTO: "pago",
     servico.ESTORNO: "atrasado",

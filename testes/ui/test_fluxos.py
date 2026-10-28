@@ -1057,9 +1057,8 @@ def test_aba_de_analise_de_juros(
     botao_pdf.click()
     assert detalhe.pdf_gerado == arquivo_pdf
     assert arquivo_pdf.read_bytes().startswith(b"%PDF")
-    assert detalhe.pdf_com_fundo                     # o modelo tem o grupo id="conteudo"
-    # o PDF leva os gráficos da tela (papel + comparação, atrasos, cenários e por honorário)
-    assert arquivo_pdf.read_bytes().count(b"/Subtype /Image") >= 5
+    # o PDF leva os gráficos da tela (comparação, atrasos, cenários e por honorário)
+    assert arquivo_pdf.read_bytes().count(b"/Subtype /Image") >= 4
     assert abertos_pdf == [f"file://{arquivo_pdf}"]
 
     # a busca filtra a lista; o botão leva à ficha
@@ -1364,22 +1363,6 @@ def test_imagem_estica_quando_os_honorarios_nao_cabem(qtbot, contexto, tmp_path)
     dados.linhas = [dados.linhas[i % 3] for i in range(60)]
     maior = desenho.renderizar(fundo, dados)
     assert maior.height() == 1350 + desenho.MAXIMO_LINHAS * desenho.ALTURA_ESTICADA - 450
-
-
-def test_fundo_vira_papel_a4_sem_deformar(qtbot):
-    from PySide6.QtGui import QColor
-
-    from honorarios.servicos import imagem_cobranca
-    from honorarios.ui.comum.imagem_cobranca import renderizar_pagina
-
-    base = imagem_cobranca.base_do_fundo(
-        imagem_cobranca.FUNDO_MODELO.read_text(encoding="utf-8")
-    )
-    papel = renderizar_pagina(base, 1080, 1527)        # A4 na largura de 1080
-    assert (papel.width(), papel.height()) == (1080, 1527)
-    # o topo (faixa azul do modelo) e o pé (fundo claro) ficam onde estavam
-    assert QColor(papel.pixel(540, 100)).blue() > 150
-    assert QColor(papel.pixel(540, 1520)).lightness() > 220
 
 
 # ---------------------------------------------------- avulsos e editar no cartão

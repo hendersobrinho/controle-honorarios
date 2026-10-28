@@ -130,7 +130,7 @@ def cartao_de_honorario(
     if atualizacao.parcialmente_pago:
         detalhes.append(("Saldo", formatar_moeda(atualizacao.saldo)))
     # no prazo e sem nada pedindo atenção: azul, para toda faixa ter significado
-    cor = cores.cor_de_linha(linha, dias_em_breve) or tema.cor("destaque", cores.tema_atual())
+    cor = cores.cor_de_linha(linha, dias_em_breve) or tema.cor("destaque_texto", cores.tema_atual())
     return DadosCartao(
         titulo=f"{linha.cliente.codigo} – {linha.cliente.nome}",
         subtitulo=_descricao(linha.honorario),

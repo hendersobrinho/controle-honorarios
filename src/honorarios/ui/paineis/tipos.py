@@ -174,7 +174,7 @@ class PainelTipos(QWidget):
                 ("Em uso", f"{honorarios} honorário(s) · {contratos} contrato(s)"),
             ],
             situacao="Ativo" if tipo.ativo else "Inativo",
-            cor=tema.cor("destaque" if tipo.ativo else "texto_fraco", cores.tema_atual()),
+            cor=tema.cor("destaque_texto" if tipo.ativo else "texto_fraco", cores.tema_atual()),
             item=tipo,
             acoes=[
                 Acao("Editar", self._editar_tipo, primaria=True),

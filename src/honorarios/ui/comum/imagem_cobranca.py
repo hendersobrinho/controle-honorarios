@@ -260,40 +260,6 @@ def renderizar(texto_svg: str, dados: DadosImagem, largura: int = LARGURA) -> QI
     return imagem
 
 
-def renderizar_pagina(texto_svg: str, largura: int, altura: int) -> QImage:
-    """O fundo como papel de uma página (ex.: A4 para o PDF).
-
-    Na largura da página; se o fundo for mais curto que a página, estica no meio
-    (onde costuma haver só fundo liso e faixa lateral) e os logos ficam intactos.
-    """
-    renderizador = QSvgRenderer(QByteArray(texto_svg.encode("utf-8")))
-    if not renderizador.isValid():
-        raise ErroDeValidacao("O fundo não é um SVG que o sistema consiga desenhar.")
-    caixa = renderizador.viewBoxF()
-    if caixa.isEmpty():
-        tamanho = renderizador.defaultSize()
-        caixa = QRectF(0, 0, tamanho.width(), tamanho.height())
-    altura_svg = round(caixa.height() * largura / caixa.width())
-    if altura_svg > altura:   # fundo mais comprido que a página: cabe pela altura
-        largura_svg = round(caixa.width() * altura / caixa.height())
-        imagem = QImage(largura, altura, QImage.Format.Format_ARGB32)
-        imagem.fill(QColor("#ffffff"))
-        pintor = QPainter(imagem)
-        pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
-        renderizador.render(pintor, QRectF((largura - largura_svg) / 2, 0, largura_svg, altura))
-        pintor.end()
-        return imagem
-    imagem = QImage(largura, altura_svg, QImage.Format.Format_ARGB32)
-    imagem.fill(QColor("#ffffff"))
-    pintor = QPainter(imagem)
-    pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
-    renderizador.render(pintor, QRectF(0, 0, largura, altura_svg))
-    pintor.end()
-    if altura_svg < altura:
-        imagem, _ = _esticar_em(imagem, altura_svg // 2, altura - altura_svg)
-    return imagem
-
-
 # ---------------------------------------------------------- agradecimento
 
 AZUL_MARCA = "#203461"

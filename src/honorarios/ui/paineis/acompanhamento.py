@@ -42,7 +42,7 @@ CORES_SITUACAO = {
     servico.PROMESSA_VENCIDA: "atrasado",
     servico.AGUARDANDO: "atencao",
     servico.PRECISA_DECISAO: "atencao",
-    servico.PROMESSA_EM_ABERTO: "destaque",
+    servico.PROMESSA_EM_ABERTO: "destaque_texto",
     servico.NAO_RESPONDEU: "atrasado",
     servico.ENCERRADA: "pago",
 }

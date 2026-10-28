@@ -256,7 +256,7 @@ class DialogoContaEmail(QDialog):
 
     # ------------------------------------------------------------ páginas
     def _ajuda(self, html: str) -> QLabel:
-        cor = tema.cor("destaque", cores.tema_atual()).name()
+        cor = tema.cor("destaque_texto", cores.tema_atual()).name()
         rotulo = QLabel(html.replace("<a href", f"<a style='color:{cor}' href"))
         rotulo.setWordWrap(True)
         rotulo.setOpenExternalLinks(True)

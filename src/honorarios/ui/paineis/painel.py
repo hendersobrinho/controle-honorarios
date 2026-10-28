@@ -261,8 +261,7 @@ class PainelResumo(QWidget):
         from PySide6.QtWidgets import QFileDialog
 
         from ...config.caminhos import pasta_exportacoes
-        from ...servicos import configuracoes, imagem_cobranca, relatorio_painel
-        from ..comum.imagem_cobranca import renderizar_pagina
+        from ...servicos import configuracoes, relatorio_painel
 
         if destino is None:
             sugestao = str(pasta_exportacoes() / f"painel-{self.indicadores.ano}.pdf")
@@ -275,20 +274,12 @@ class PainelResumo(QWidget):
             destino += ".pdf"
 
         def acao():
-            sessao = self.contexto.sessao
-            svg = imagem_cobranca.caminho_fundo(sessao).read_text(encoding="utf-8")
-            base = imagem_cobranca.base_do_fundo(svg)
             with tempfile.TemporaryDirectory() as pasta:
-                papel = None
-                if base is not None:
-                    papel = Path(pasta) / "papel.png"
-                    renderizar_pagina(base, 1654, 2339).save(str(papel), "PNG")
                 return relatorio_painel.painel_pdf(
                     self.indicadores,
-                    configuracoes.recebedor(sessao),
+                    configuracoes.recebedor(self.contexto.sessao),
                     Path(destino),
                     graficos=self._imagens_dos_graficos(pasta),
-                    fundo=papel,
                     gerado_em=self.contexto.data_referencia,
                 )
 

@@ -408,26 +408,18 @@ def test_pdf_exige_analise_de_um_cliente(sessao, carteira, tmp_path):
         )
 
 
-def test_pdf_com_o_fundo_como_papel(sessao, trabalhoso, tmp_path, monkeypatch):
+def test_pdf_no_papel_do_canhoto(sessao, trabalhoso, tmp_path, monkeypatch):
     from reportlab import rl_config
-    from reportlab.lib.utils import ImageReader
 
     from honorarios.servicos import configuracoes, relatorio_juros
 
     monkeypatch.setattr(rl_config, "pageCompression", 0)
-    papel = tmp_path / "papel.png"
-    # um PNG mínimo serve de papel; o desenho de verdade vem da tela (Qt)
-    from PIL import Image  # vem com o reportlab
-
-    Image.new("RGB", (165, 234), "#d9d9d9").save(papel)
-    assert ImageReader(str(papel)).getSize() == (165, 234)
-
     dele = analise_juros.analisar(sessao, referencia=REFERENCIA).do_cliente(trabalhoso.id)
     arquivo = relatorio_juros.analise_cliente_pdf(
-        dele, None, configuracoes.recebedor(sessao), tmp_path / "com_fundo.pdf",
-        REFERENCIA, fundo=papel,
+        dele, None, configuracoes.recebedor(sessao), tmp_path / "canhoto.pdf", REFERENCIA,
     )
     conteudo = arquivo.read_bytes()
-    assert b"/Subtype /Image" in conteudo               # o papel está na página
-    assert b"lise de juros" in conteudo                 # o título vai sobre o papel
-    assert b"DA TRABALHO LTDA" in conteudo
+    assert b"/Subtype /Image" not in conteudo           # a marca vai em vetor, não imagem
+    assert b"/Shading" in conteudo                      # o degradê da faixa do topo
+    assert b"lise de juros" in conteudo                 # o título vai na faixa
+    assert b"gina 1" in conteudo                        # o rodapé, no canhoto do pé

@@ -66,6 +66,7 @@ class BotaoNotificacoes(QPushButton):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 0, 10, 0)
         self.rotulo = QLabel("Notificações")
+        self.rotulo.setObjectName("rotuloNotificacoes")
         self.rotulo.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.contador = QLabel()
         self.contador.setObjectName("contadorNotificacoes")

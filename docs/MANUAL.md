@@ -14,7 +14,7 @@ Para instalar e configurar, veja [INSTALACAO.md](INSTALACAO.md).
 | **Cobranças enviadas** | Cada mensagem enviada e o que o cliente respondeu, com período e agrupamento à escolha. É aqui que a resposta é anotada |
 | **Clientes** | Abas **Ativos**, **Imposto de Renda** (quem só tem honorário de IR) e **Inativos**; PF \| PJ \| Todos e busca sem acento/pontuação; ficha completa da empresa. Dívida e atraso não aparecem aqui (têm telas próprias). Aqui também se suspende e retoma a cobrança de um cliente. O cadastro tem as abas **Dados**, **Contatos** e **Honorário recorrente**: no cliente novo, o honorário mensal (ou trimestral…) é cadastrado junto; quem tem "Paga pela empresa" salva sem honorário; sem honorário e sem empresa pagadora, o sistema pergunta antes (cliente só de IR ou de avulsos). No cliente já cadastrado, a aba lista os recorrentes dele, com novo, editar, reajustar e suspender |
 | **Honorários** | A gestão dos honorários, em três abas (o recorrente se cadastra no cliente). **Mês a mês**: tudo o que foi emitido no mês (recorrente ou avulso), com ◀ ▶ e um menu para ir direto a qualquer mês, os totais (emitido, pago, em aberto, cancelados), filtros de origem e situação, e o aviso de contratos que ainda não geraram a competência — "Gerar competência" já abre no mês da tela. **Recorrentes**: contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia. **Avulsos**: lançar, corrigir e cancelar serviços que não vêm de contrato (IRPF, alteração contratual, atas…) e consultar o histórico por período, pagos ou não, com a situação de cada um. A cobrança desses honorários fica em Atrasados e A vencer |
-| **Painel** | O ano em números e gráficos: emitido × quitado por mês de competência (com a opção de ver em tabela), o que entrou no caixa por mês, de onde vem o faturamento (grupo e PF/PJ) e frases com o que os números dizem, comparando com o ano anterior quando há base. **Exportar PDF…** gera o relatório no mesmo visual da análise de juros (fundo da cobrança, gráficos e tabela mês a mês). Atraso e devedores ficam no Ranking dos atrasados |
+| **Painel** | O ano em números e gráficos: emitido × quitado por mês de competência (com a opção de ver em tabela), o que entrou no caixa por mês, de onde vem o faturamento (grupo e PF/PJ) e frases com o que os números dizem, comparando com o ano anterior quando há base. **Exportar PDF…** gera o relatório no mesmo visual da análise de juros (o papel do Financeiro, gráficos e tabela mês a mês). Atraso e devedores ficam no Ranking dos atrasados |
 | **Ranking dos atrasados** | Pódio de quem mais deve em dinheiro, quem deve há mais tempo, quem junta mais boletos e quem mais foi cobrado — dois gráficos por aba; clicar num nome abre a ficha. A aba **Análise de juros** lista os clientes que pagaram e mostra, para cada um, original + juros = pago, o trabalho que deu para receber em gráfico (ele × a média dos clientes: atrasos, dias em atraso, cobranças, juros por cobrança), a linha do tempo do atraso de cada honorário com as cobranças feitas, um gráfico dos cenários, honorário por honorário, uma explicação em frases e cenários de taxa (+10% a dobrar, sem abono, valor testado) com o efeito de cada cenário honorário por honorário; **Exportar PDF…** gera o relatório da análise do cliente (documento interno) para compartilhar; o primeiro item é a visão geral de todos |
 | **Relatórios e exportação** | Planilha Excel da lista filtrada e extrato de débitos em PDF |
 | **Importar planilha** | Lê a planilha antiga, mostra prévia e relatório de erros, e só grava depois da confirmação |
@@ -332,11 +332,12 @@ modelo do sistema, que também pode ser salvo como ponto de partida). No SVG:
   da Métodos, o bloco "Pague com Pix" + chave vai para o lugar do QR, em vez de
   deixar um quadrado vazio. Com o QR anexado, tudo volta como desenhado.
 
-- se o fundo tiver um logo só para a imagem (`id="logo-imagem"`) e outro só
-  para os PDFs (`id="logo-pdf"`), cada saída usa o seu;
-- a camada da cobrança (textos, lista, QR) fica num grupo `<g id="conteudo">`:
-  o **PDF da análise de juros** usa o fundo sem esse grupo como papel das
-  páginas (esticado para A4 no meio, sem deformar os logos).
+- se o fundo tiver dois logos (`id="logo-imagem"` e `id="logo-pdf"`), a imagem
+  usa o `logo-pdf`; o `logo-imagem` só aparece quando é o único do fundo;
+- a camada da cobrança (textos, lista, QR) fica num grupo `<g id="conteudo">`.
+
+Os PDFs (painel, análise de juros, extrato) não usam esse fundo: saem no papel
+do Financeiro, com a faixa navy, o picote e o canhoto ciano.
 
 O QR code é o da chave Pix, **gerado no app do banco**: salve como PNG e
 escolha em **Configurações → Imagem da cobrança → Escolher PNG do QR code…**.

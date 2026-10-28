@@ -117,98 +117,46 @@ def extrato_pdf(
     destino: Path | None = None,
     data_referencia: date | None = None,
 ) -> Path:
-    """Extrato de débitos da empresa, para enviar ao cliente."""
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import mm
-    from reportlab.platypus import (
-        Paragraph,
-        SimpleDocTemplate,
-        Spacer,
-        Table,
-        TableStyle,
-    )
+    """Extrato de débitos da empresa, para enviar ao cliente (no molde dos PDFs)."""
+    from reportlab.platypus import Spacer
+
+    from .pdf_relatorio import RelatorioPdf, texto
 
     referencia = data_referencia or hoje()
     arquivo = Path(destino) if destino else _nome_arquivo(
         f"extrato-{cliente.codigo}", "pdf"
     )
-    estilos = getSampleStyleSheet()
-    estilo_titulo = ParagraphStyle(
-        "TituloExtrato", parent=estilos["Title"], fontSize=15, spaceAfter=4
+    r = RelatorioPdf(
+        "Extrato de débitos em aberto",
+        f"{cliente.codigo} – {cliente.nome}",
+        recebedor,
+        referencia,
+        rodape="Extrato de débitos",
     )
-    estilo_normal = estilos["Normal"]
-
-    documento = SimpleDocTemplate(
-        str(arquivo),
-        pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=16 * mm,
-        bottomMargin=16 * mm,
-        title=f"Extrato de débitos – {cliente.nome}",
-    )
-
     total = sum((linha.atualizacao.total for linha in linhas), start=ZERO)
-    corpo = [
-        Paragraph("Extrato de débitos em aberto", estilo_titulo),
-        Paragraph(recebedor.razao_social, estilo_normal),
-        Spacer(1, 8),
-        Paragraph(f"<b>Cliente:</b> {cliente.nome} (código {cliente.codigo})", estilo_normal),
-        Paragraph(f"<b>Valores atualizados para:</b> {formatar_data(referencia)}", estilo_normal),
-        Spacer(1, 10),
-    ]
-
     dados = [["Honorário", "Competência", "Vencimento", "Atraso", "Valor", "Juros", "Total"]]
     for linha in linhas:
-        dados.append(
-            [
-                linha.honorario.tipo.nome,
-                linha.honorario.competencia_rotulo,
-                formatar_data(linha.honorario.vencimento),
-                f"{linha.atualizacao.dias_atraso} d",
-                formatar_moeda(linha.atualizacao.valor_original),
-                formatar_moeda(linha.atualizacao.juros),
-                formatar_moeda(linha.atualizacao.total),
-            ]
-        )
+        dados.append([
+            r.p(texto(linha.honorario.tipo.nome), "celula"),
+            linha.honorario.competencia_rotulo,
+            formatar_data(linha.honorario.vencimento),
+            f"{linha.atualizacao.dias_atraso} d",
+            formatar_moeda(linha.atualizacao.valor_original),
+            formatar_moeda(linha.atualizacao.juros),
+            formatar_moeda(linha.atualizacao.total),
+        ])
     dados.append(["", "", "", "", "", "Total", formatar_moeda(total)])
-
-    tabela = Table(dados, hAlign="LEFT", colWidths=[46 * mm, 22 * mm, 22 * mm, 14 * mm,
-                                                   24 * mm, 20 * mm, 26 * mm])
-    tabela.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef1f5")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (-2, -1), (-1, -1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-                ("ALIGN", (3, 1), (-1, -1), "RIGHT"),
-                ("GRID", (0, 0), (-1, -2), 0.4, colors.HexColor("#c9d1da")),
-                ("LINEABOVE", (0, -1), (-1, -1), 0.8, colors.HexColor("#6b7684")),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]
-        )
-    )
-    corpo.append(tabela)
-    corpo.append(Spacer(1, 12))
-    corpo.append(
-        Paragraph(
-            f"Pagamento por PIX – {recebedor.razao_social}<br/>"
-            f"{recebedor.rotulo_chave}: {recebedor.chave}",
-            estilo_normal,
-        )
-    )
-    corpo.append(Spacer(1, 6))
-    corpo.append(
-        Paragraph(
-            "Juros de mora calculados por dia de atraso, conforme contrato. "
-            "Após o pagamento, por gentileza, encaminhe o comprovante.",
-            ParagraphStyle("Rodape", parent=estilo_normal, fontSize=8, textColor=colors.gray),
-        )
-    )
-    documento.build(corpo)
-    return arquivo
+    corpo = [
+        *r.inicio(),
+        r.p(f"<b>Cliente:</b> {texto(cliente.nome)} (código {cliente.codigo})"),
+        r.p(f"<b>Valores atualizados para:</b> {formatar_data(referencia)}"),
+        Spacer(1, 10),
+        r.tabela(dados, r.larguras((0.28, 0.12, 0.12, 0.08, 0.14, 0.12, 0.14)), total=True),
+        Spacer(1, 12),
+        r.p(f"Pagamento por PIX – {texto(recebedor.razao_social)}<br/>"
+            f"{texto(recebedor.rotulo_chave)}: {texto(recebedor.chave)}"),
+        Spacer(1, 6),
+        r.p("Juros de mora calculados por dia de atraso, conforme contrato. "
+            "Após o pagamento, por gentileza, encaminhe o comprovante.", "nota"),
+    ]
+    return r.salvar(corpo, arquivo, f"Extrato de débitos – {cliente.nome}")

@@ -13,6 +13,7 @@ CORES = {
         "texto_fraco": "#6b7684",
         "destaque": "#203461",         # navy da marca
         "destaque_hover": "#2E4A85",
+        "destaque_texto": "#203461",   # destaque usado como cor de texto e selo
         "atrasado": "#c0392b",
         "atencao": "#b7791f",
         "pago": "#1f7a45",
@@ -22,6 +23,10 @@ CORES = {
         "roxo": "#7c5cff",
         "marca": "#F9B259",            # laranja da logo: contadores do menu
         "texto_sobre_marca": "#203461",  # azul da logo, legível sobre o laranja
+        "menu": "#203461",             # menu lateral: o corpo navy do canhoto
+        "menu_texto": "#DCE3F2",
+        "menu_fraco": "#8C9BC0",
+        "menu_selecionado": "#4BBDCD",   # o canhoto ciano; texto navy em cima
     },
     "escuro": {
         "fundo": "#161a1f",
@@ -31,6 +36,7 @@ CORES = {
         "texto_fraco": "#98a2b0",
         "destaque": "#4A6FC2",
         "destaque_hover": "#3B5DA8",
+        "destaque_texto": "#93ACEB",   # o #4A6FC2 é para fundo; como texto, some no escuro
         "atrasado": "#ff7a6b",
         "atencao": "#e9b949",
         "pago": "#5fd08a",
@@ -40,6 +46,10 @@ CORES = {
         "roxo": "#a48bff",
         "marca": "#F9B259",
         "texto_sobre_marca": "#203461",
+        "menu": "#16254A",
+        "menu_texto": "#DCE3F2",
+        "menu_fraco": "#8C9BC0",
+        "menu_selecionado": "#4BBDCD",
     },
 }
 
@@ -98,7 +108,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
     QListWidget#listaGrupos::item:selected {{
         background: {c["destaque"]};
         color: #ffffff;
-        border-color: {c["destaque"]};
+        border-color: {c["destaque_texto"]};
     }}
     QLabel#previaMensagem {{
         background: {c["faixa"]};
@@ -121,7 +131,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
     }}
     QLabel#rotuloCartao {{ color: {c["texto_fraco"]}; font-size: 11px; }}
     QLabel#valorCartao {{ font-size: 21px; font-weight: 600; }}
-    QLabel#valorDestaque {{ font-size: 21px; font-weight: 600; color: {c["destaque"]}; }}
+    QLabel#valorDestaque {{ font-size: 21px; font-weight: 600; color: {c["destaque_texto"]}; }}
 
     QPushButton {{
         background: {c["superficie"]};
@@ -129,11 +139,11 @@ def folha_de_estilo(tema: str = "claro") -> str:
         border-radius: 6px;
         padding: 6px 14px;
     }}
-    QPushButton:hover {{ border-color: {c["destaque"]}; }}
+    QPushButton:hover {{ border-color: {c["destaque_texto"]}; }}
     QPushButton:disabled {{ color: {c["texto_fraco"]}; }}
     QPushButton#primario {{
         background: {c["destaque"]};
-        border-color: {c["destaque"]};
+        border-color: {c["destaque_texto"]};
         color: #ffffff;
         font-weight: 600;
     }}
@@ -161,10 +171,10 @@ def folha_de_estilo(tema: str = "claro") -> str:
         border: 1px solid {c["borda"]};
         border-radius: 6px;
         padding: 5px 8px;
-        selection-background-color: {c["destaque"]};
+        selection-background-color: {c["destaque_texto"]};
     }}
     QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QPlainTextEdit:focus {{
-        border-color: {c["destaque"]};
+        border-color: {c["destaque_texto"]};
     }}
 
     QTableView, QTreeView {{
@@ -173,7 +183,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
         border: 1px solid {c["borda"]};
         border-radius: 8px;
         gridline-color: {c["borda"]};
-        selection-background-color: {c["destaque"]};
+        selection-background-color: {c["destaque_texto"]};
         selection-color: #ffffff;
     }}
     QHeaderView::section {{
@@ -189,7 +199,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
         border: 1px solid {c["borda"]};
         border-radius: 8px;
     }}
-    QFrame#cartaoRegistro:hover {{ border-color: {c["destaque"]}; }}
+    QFrame#cartaoRegistro:hover {{ border-color: {c["destaque_texto"]}; }}
     QFrame#cartaoRegistro[selecionado="true"] {{
         border: 2px solid {c["destaque"]};
         background: {c["faixa"]};
@@ -215,11 +225,13 @@ def folha_de_estilo(tema: str = "claro") -> str:
     QPushButton#cartaoAcao {{
         padding: 4px 10px;
         font-size: 12px;
-        color: {c["destaque"]};
+        color: {c["destaque_texto"]};
         border-color: {c["borda"]};
         background: transparent;
     }}
-    QPushButton#cartaoAcao:hover {{ border-color: {c["destaque"]}; background: {c["faixa"]}; }}
+    QPushButton#cartaoAcao:hover {{
+        border-color: {c["destaque_texto"]}; background: {c["faixa"]};
+    }}
     QToolButton#chipFiltro {{
         background: {c["superficie"]};
         border: 1px solid {c["borda"]};
@@ -228,10 +240,10 @@ def folha_de_estilo(tema: str = "claro") -> str:
         font-size: 12px;
         color: {c["texto"]};
     }}
-    QToolButton#chipFiltro:hover {{ border-color: {c["destaque"]}; }}
+    QToolButton#chipFiltro:hover {{ border-color: {c["destaque_texto"]}; }}
     QToolButton#chipFiltro[ativo="true"] {{
-        border-color: {c["destaque"]};
-        color: {c["destaque"]};
+        border-color: {c["destaque_texto"]};
+        color: {c["destaque_texto"]};
         background: {c["faixa"]};
         font-weight: 600;
     }}
@@ -239,7 +251,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
     QPushButton#linkFiltro {{
         border: none;
         background: transparent;
-        color: {c["destaque"]};
+        color: {c["destaque_texto"]};
         padding: 4px 6px;
         font-size: 12px;
     }}
@@ -253,7 +265,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
         font-weight: 700;
         color: {c["texto"]};
     }}
-    QToolButton#botaoMes:hover {{ color: {c["destaque"]}; }}
+    QToolButton#botaoMes:hover {{ color: {c["destaque_texto"]}; }}
     QToolButton#botaoMes::menu-indicator {{ image: none; width: 0px; }}
     QToolButton#menuAcoes {{
         background: {c["superficie"]};
@@ -262,7 +274,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
         padding: 6px 12px;
         color: {c["texto"]};
     }}
-    QToolButton#menuAcoes:hover {{ border-color: {c["destaque"]}; }}
+    QToolButton#menuAcoes:hover {{ border-color: {c["destaque_texto"]}; }}
     QToolButton#menuAcoes::menu-indicator {{ image: none; width: 0px; }}
     QPushButton#cartaoPagamento {{
         padding: 4px 10px;
@@ -282,14 +294,14 @@ def folha_de_estilo(tema: str = "claro") -> str:
         border-color: {c["borda"]};
     }}
 
-    QWidget#colunaNavegacao {{
-        background: {c["superficie"]};
-        border-right: 1px solid {c["borda"]};
-    }}
+    QWidget#colunaNavegacao {{ background: {c["menu"]}; border: none; }}
+    QWidget#colunaNavegacao QLabel {{ background: transparent; }}
     QListWidget#navegacao {{
-        background: {c["superficie"]};
+        background: {c["menu"]};
+        color: {c["menu_texto"]};
         border: none;
-        padding: 8px 6px;
+        outline: none;
+        padding: 10px 10px 0px 10px;
         font-size: 14px;
     }}
     QFrame#resumoDia {{
@@ -308,7 +320,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
     QListWidget#listaEmails::item:hover {{ background: {c["faixa"]}; }}
     QFrame#itemEmail {{ background: transparent; border: none;
         border-left: 3px solid transparent; }}
-    QFrame#itemEmail[naoLido="true"] {{ border-left-color: {c["destaque"]}; }}
+    QFrame#itemEmail[naoLido="true"] {{ border-left-color: {c["destaque_texto"]}; }}
     QLabel#remetenteEmail {{ font-size: 13px; background: transparent; }}
     QFrame#itemEmail[naoLido="true"] QLabel#remetenteEmail {{ font-weight: 700; }}
     QLabel#dataEmail {{ color: {c["texto_fraco"]}; font-size: 11px; background: transparent; }}
@@ -330,7 +342,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
     }}
     QPushButton#abaCaixa:hover {{ color: {c["texto"]}; }}
     QPushButton#abaCaixa:checked {{
-        background: {c["destaque"]}; color: #ffffff; border-color: {c["destaque"]};
+        background: {c["destaque"]}; color: #ffffff; border-color: {c["destaque_texto"]};
     }}
     QLabel#vazioTitulo {{ font-size: 16px; font-weight: 600; color: {c["texto_fraco"]}; }}
     QFrame#cabecalhoEmail {{ background: {c["superficie"]}; border: 1px solid {c["borda"]};
@@ -351,7 +363,7 @@ def folha_de_estilo(tema: str = "claro") -> str:
         background: {c["faixa"]}; border: 1px solid {c["borda"]}; border-radius: 8px;
         text-align: left; padding: 0px;
     }}
-    QPushButton#botaoNotificacoes:hover {{ border-color: {c["destaque"]}; }}
+    QPushButton#botaoNotificacoes:hover {{ border-color: {c["destaque_texto"]}; }}
     QLabel#contadorNotificacoes {{
         background: {c["atrasado"]}; color: #ffffff; border-radius: 10px;
         min-width: 20px; min-height: 20px; max-height: 20px; padding: 0px 6px;
@@ -374,8 +386,19 @@ def folha_de_estilo(tema: str = "claro") -> str:
     QLabel#detalheNotificacao {{
         color: {c["texto_fraco"]}; font-size: 12px; background: transparent;
     }}
-    QListWidget#navegacao::item {{ padding: 9px 12px; border-radius: 6px; }}
-    QListWidget#navegacao::item:selected {{ background: {c["destaque"]}; color: #ffffff; }}
+    QListWidget#navegacao::item {{ padding: 0px 12px; border-radius: 8px; border: none; }}
+    QListWidget#navegacao::item:hover {{ background: rgba(255, 255, 255, 18); }}
+    QListWidget#navegacao::item:selected {{
+        background: {c["menu_selecionado"]}; color: {c["menu"]}; font-weight: 600;
+    }}
+    QWidget#colunaNavegacao QPushButton#botaoNotificacoes {{
+        background: rgba(255, 255, 255, 18); border: 1px solid rgba(255, 255, 255, 28);
+        color: {c["menu_texto"]};
+    }}
+    QWidget#colunaNavegacao QPushButton#botaoNotificacoes:hover {{
+        background: rgba(255, 255, 255, 30); border-color: {c["menu_selecionado"]};
+    }}
+    QWidget#colunaNavegacao QLabel#rotuloNotificacoes {{ color: {c["menu_texto"]}; }}
     /* barra de abas visível: trilho cinza, aba ativa branca com marca colorida */
     QTabWidget::pane {{
         background: {c["superficie"]};
@@ -402,8 +425,8 @@ def folha_de_estilo(tema: str = "claro") -> str:
     }}
     QTabBar::tab:selected {{
         background: {c["superficie"]};
-        color: {c["destaque"]};
-        border-top: 3px solid {c["destaque"]};
+        color: {c["destaque_texto"]};
+        border-top: 3px solid {c["destaque_texto"]};
         padding-top: 5px;
         font-weight: 700;
     }}

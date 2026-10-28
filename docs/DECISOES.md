@@ -238,13 +238,7 @@ do serviço, não da tela, para a tela e o PDF mostrarem o mesmo número. O PDF 
 marcado como **documento interno** no rodapé: a "Leitura" do comportamento do
 cliente não é texto para mandar a ele.
 
-O PDF usa o fundo da imagem de cobrança como papel: o SVG sem o grupo
-`id="conteudo"` (a camada que só serve à imagem), desenhado a ~200 dpi e esticado
-para a proporção do A4 repetindo a faixa do meio — a mesma técnica da imagem
-comprida, que não deforma logos. O conteúdo vai num cartão branco entre o logo
-do topo e o do rodapé; as medidas do cartão são constantes em
-`servicos/relatorio_juros.py`, ajustadas ao fundo atual. Sem o grupo no SVG, o
-PDF sai no visual simples, sem fundo. Os blocos do relatório são mantidos
+O PDF sai no papel do Financeiro (ver "Um molde para os PDFs"). Os blocos do relatório são mantidos
 inteiros na página (título, tabela e nota juntos), sem `KeepTogether` dentro de
 `KeepTogether`: aninhado, o reportlab calcula a altura errado e pula página.
 
@@ -273,9 +267,15 @@ Para corrigir sem trocar de tela, os cartões em aberto da cobrança ganharam
 **Editar** (honorário pago continua não editável: estorne antes).
 
 ### Um molde para os PDFs
-Os relatórios em PDF (análise de juros e painel) usam o mesmo molde
-(`servicos/pdf_relatorio.py`): o fundo da cobrança como papel, o cartão branco,
-os estilos, a tabela de cabeçalho cinza e a grade de indicadores. Os gráficos
+Os PDFs (análise de juros, painel e extrato de débitos) usam o mesmo molde
+(`servicos/pdf_relatorio.py`): a página é um canhoto, como a abertura — faixa
+navy no topo com o título e a marca do Financeiro, o picote com os furos nas
+laterais e o canhoto ciano no pé com o rodapé —, os estilos, a tabela de
+cabeçalho cinza e a grade de indicadores. Antes o papel era o fundo da imagem de
+cobrança renderizado a ~200 dpi; agora é tudo vetor, desenhado no próprio PDF. A
+marca vem do `marca_negativo.svg` por um conversor pequeno
+(`servicos/svg_pdf.py`, só os comandos que os SVGs da marca usam), para os
+serviços continuarem sem Qt. Os gráficos
 do painel vão para o PDF como imagem, desenhados pela interface sempre no tema
 claro (o PDF é branco) e em dobro de resolução.
 

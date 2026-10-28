@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QFont, QFontMetricsF, QKeySequence, QPainter
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QKeySequence,
+    QPainter,
+    QPalette,
+)
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -11,7 +19,9 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QStackedWidget,
+    QStyle,
     QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
@@ -46,8 +56,8 @@ class JanelaPrincipal(QMainWindow):
         self.bandeja = None   # ícone na bandeja do sistema, para a notificação do sistema
         self.setWindowTitle("Financeiro Métodos")
         self.resize(1360, 820)
+        self._aplicar_tema()   # antes de montar: as telas já nascem com as cores do tema
         self._montar()
-        self._aplicar_tema()
 
     def _montar(self) -> None:
         central = QWidget()
@@ -55,26 +65,35 @@ class JanelaPrincipal(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # coluna do menu: a lista de telas e, fixa embaixo, a logo
+        # coluna do menu, navy como o corpo do canhoto: a lista de telas e, fixos
+        # embaixo depois do picote, as notificações e a marca. Largura e altura
+        # fixas: o menu inteiro sempre cabe, sem barra de rolagem.
         coluna = QWidget()
         coluna.setObjectName("colunaNavegacao")
-        coluna.setFixedWidth(210)
+        coluna.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        coluna.setFixedWidth(LARGURA_MENU)
         coluna_layout = QVBoxLayout(coluna)
-        coluna_layout.setContentsMargins(0, 0, 0, 16)
-        coluna_layout.setSpacing(8)
+        coluna_layout.setContentsMargins(0, 0, 0, 18)
+        coluna_layout.setSpacing(10)
         self.navegacao = QListWidget()
         self.navegacao.setObjectName("navegacao")
         self.navegacao.setItemDelegate(ContadorDoMenu(self.navegacao))
+        self.navegacao.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.navegacao.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.navegacao.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         coluna_layout.addWidget(self.navegacao, 1)
+        coluna_layout.addWidget(Picote())
         self.botao_notificacoes = BotaoNotificacoes()
         self.botao_notificacoes.clicked.connect(self.abrir_notificacoes)
         linha_botao = QHBoxLayout()
-        linha_botao.setContentsMargins(10, 0, 10, 0)
+        linha_botao.setContentsMargins(12, 0, 12, 0)
         linha_botao.addWidget(self.botao_notificacoes)
         coluna_layout.addLayout(linha_botao)
         self.logo_menu = QLabel()
         self.logo_menu.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.logo_menu.setToolTip("Financeiro Métodos")
+        self.logo_menu.setPixmap(logo.pixmap(LARGURA_MENU - 64, arquivo=logo.MARCA_NEGATIVO))
+        coluna_layout.addSpacing(4)
         coluna_layout.addWidget(self.logo_menu)
         layout.addWidget(coluna)
 
@@ -139,6 +158,7 @@ class JanelaPrincipal(QMainWindow):
                 indice = self.telas.addWidget(painel)
                 self.paineis.append(painel)
                 item = QListWidgetItem(classe.titulo)
+                item.setSizeHint(QSize(0, ALTURA_ITEM))
                 item.setData(ContadorDoMenu.PAPEL_GRUPO, numero)
                 self.navegacao.addItem(item)
                 self.linhas_de_tela[self.navegacao.row(item)] = indice
@@ -150,6 +170,12 @@ class JanelaPrincipal(QMainWindow):
         if self.painel_email is not None:
             self.painel_email.chegaram.connect(self._chegaram_emails)
             self.painel_email.recarregado.connect(self._atualizar_contadores)
+        # a lista do tamanho exato dos itens: nunca rola, e a janela não encolhe
+        # a ponto de cortar o menu
+        altura = sum(self.navegacao.item(linha).sizeHint().height()
+                     for linha in range(self.navegacao.count()))
+        margens = self.navegacao.contentsMargins()
+        self.navegacao.setMinimumHeight(altura + margens.top() + margens.bottom() + 12)
         self.navegacao.currentRowChanged.connect(self._trocar_tela)
         self.navegacao.setCurrentRow(next(iter(self.linhas_de_tela)))
         self._atualizar_contadores()
@@ -173,14 +199,14 @@ class JanelaPrincipal(QMainWindow):
         item = QListWidgetItem(titulo)
         item.setFlags(Qt.ItemFlag.NoItemFlags)
         item.setData(ContadorDoMenu.PAPEL_CABECALHO, numero)
-        item.setSizeHint(QSize(0, 34))
+        item.setSizeHint(QSize(0, 30))
         self.navegacao.addItem(item)
 
     def _separador(self) -> None:
         espaco = QListWidgetItem()
         espaco.setFlags(Qt.ItemFlag.NoItemFlags)
         espaco.setData(ContadorDoMenu.PAPEL_SEPARADOR, True)
-        espaco.setSizeHint(QSize(0, 18))
+        espaco.setSizeHint(QSize(0, 14))
         self.navegacao.addItem(espaco)
 
     def _mensagem_status(self) -> str:
@@ -260,7 +286,6 @@ class JanelaPrincipal(QMainWindow):
 
         nome = servico_configuracoes.obter(self.contexto.sessao, "tema", "claro")
         cores.definir_tema(nome)
-        self.logo_menu.setPixmap(logo.pixmap(170, escuro=nome == "escuro", arquivo=logo.MARCA))
         folha = tema.folha_de_estilo(nome)
         aplicativo = QApplication.instance()
         if aplicativo is not None:
@@ -440,6 +465,8 @@ class JanelaPrincipal(QMainWindow):
 
 
 INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000   # meia hora
+LARGURA_MENU = 220
+ALTURA_ITEM = 34
 ABAS_DE_VENCIMENTOS = ("A vencer", "Atrasados", "Pagos")
 # notificações guardadas antes de a tela mudar de nome
 NOMES_ANTIGOS = {"E-mail": "Gerenciador de e-mail", "E-mail de cobranças": "Gerenciador de e-mail"}
@@ -454,22 +481,38 @@ class TelaAdiada(QWidget):
         self.titulo = classe.titulo
 
 
-# cor de cada grupo do menu (Cobrança, Cadastros, Gestão): as cores da logo,
-# em tons que dão leitura sobre o fundo claro e sobre o escuro
-CORES_DOS_GRUPOS = {
-    "claro": ("#1E8A9A", "#C27A1A", "#203461"),
-    "escuro": ("#6FD3E0", "#F9B259", "#A9B8E6"),
-}
+# cor de cada grupo do menu (Cobrança, Cadastros, Gestão): as cores da marca,
+# legíveis sobre o navy do menu (o mesmo nos dois temas)
+CORES_DOS_GRUPOS = ("#4BBDCD", "#F9B259", "#A9B8E6")
 
 
 def cor_do_grupo(numero: int) -> QColor:
-    tons = CORES_DOS_GRUPOS.get(cores.tema_atual(), CORES_DOS_GRUPOS["claro"])
-    return QColor(tons[numero % len(tons)])
+    return QColor(CORES_DOS_GRUPOS[numero % len(CORES_DOS_GRUPOS)])
+
+
+class Picote(QWidget):
+    """O picote do canhoto: tracinhos entre o menu e o pé da coluna."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFixedHeight(8)
+
+    def paintEvent(self, _evento) -> None:  # noqa: N802
+        pintor = QPainter(self)
+        pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pintor.setPen(Qt.PenStyle.NoPen)
+        cor = QColor(logo.PICOTE)
+        cor.setAlphaF(0.45)
+        pintor.setBrush(cor)
+        meio = self.height() / 2
+        for x in range(14, self.width() - 14, 16):
+            pintor.drawRoundedRect(QRectF(x, meio - 1.25, 8, 2.5), 1.25, 1.25)
+        pintor.end()
 
 
 class ContadorDoMenu(QStyledItemDelegate):
-    """O menu lateral: o nome de cada grupo na cor dele, um fio da mesma cor ao
-    lado das telas do grupo, a linha entre grupos e a quantidade num selo laranja."""
+    """O menu lateral: o nome de cada grupo na cor dele, a linha entre grupos e a
+    quantidade num selo laranja."""
 
     PAPEL = Qt.ItemDataRole.UserRole + 1
     PAPEL_GRUPO = Qt.ItemDataRole.UserRole + 2       # tela: a que grupo pertence
@@ -480,7 +523,7 @@ class ContadorDoMenu(QStyledItemDelegate):
         caixa = QRectF(opcao.rect)
         if indice.data(self.PAPEL_SEPARADOR):
             pintor.save()
-            pintor.setPen(tema.cor("borda", cores.tema_atual()))
+            pintor.setPen(QColor(255, 255, 255, 26))
             meio = caixa.center().y()
             pintor.drawLine(QPointF(caixa.left() + 8, meio), QPointF(caixa.right() - 8, meio))
             pintor.restore()
@@ -490,15 +533,12 @@ class ContadorDoMenu(QStyledItemDelegate):
             self._cabecalho(pintor, caixa, indice.data(Qt.ItemDataRole.DisplayRole),
                             cor_do_grupo(cabecalho))
             return
+        if opcao.state & QStyle.StateFlag.State_Selected:
+            # texto navy e em negrito sobre o ciano (branco ali não dá leitura)
+            opcao = QStyleOptionViewItem(opcao)
+            opcao.palette.setColor(QPalette.ColorRole.HighlightedText, QColor(logo.AZUL))
+            opcao.font.setWeight(QFont.Weight.DemiBold)
         super().paint(pintor, opcao, indice)
-        grupo = indice.data(self.PAPEL_GRUPO)
-        if grupo is not None:   # o fio do grupo, à esquerda das telas dele
-            pintor.save()
-            cor = cor_do_grupo(grupo)
-            cor.setAlpha(150)
-            pintor.fillRect(QRectF(caixa.left() + 1, caixa.top() + 2, 2, caixa.height() - 4),
-                            cor)
-            pintor.restore()
         quantidade = indice.data(self.PAPEL)
         if not quantidade:
             return
@@ -529,20 +569,17 @@ class ContadorDoMenu(QStyledItemDelegate):
     def _cabecalho(pintor: QPainter, caixa: QRectF, titulo: str, cor: QColor) -> None:
         pintor.save()
         pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
-        faixa = QRectF(caixa.left() + 1, caixa.top() + 4, caixa.width() - 2, caixa.height() - 8)
-        fundo = QColor(cor)
-        fundo.setAlpha(28)
+        faixa = QRectF(caixa.left(), caixa.top() + 6, caixa.width(), caixa.height() - 6)
+        # um ponto na cor do grupo antes do nome
         pintor.setPen(Qt.PenStyle.NoPen)
-        pintor.setBrush(fundo)
-        pintor.drawRoundedRect(faixa, 6, 6)
         pintor.setBrush(cor)
-        pintor.drawRoundedRect(QRectF(faixa.left(), faixa.top(), 4, faixa.height()), 2, 2)
+        pintor.drawEllipse(QPointF(faixa.left() + 15, faixa.center().y()), 3, 3)
         fonte = QFont(pintor.font())
         fonte.setPixelSize(11)
         fonte.setBold(True)
         fonte.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.2)
         pintor.setFont(fonte)
         pintor.setPen(cor)
-        pintor.drawText(faixa.adjusted(14, 0, -6, 0),
+        pintor.drawText(faixa.adjusted(26, 0, -6, 0),
                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, titulo)
         pintor.restore()

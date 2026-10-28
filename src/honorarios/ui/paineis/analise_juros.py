@@ -906,7 +906,6 @@ class _DetalheCliente(QWidget):
         self.contexto = contexto
         self.analise: AnaliseJuros | None = None
         self.pdf_gerado = None
-        self.pdf_com_fundo = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -1066,29 +1065,15 @@ class _DetalheCliente(QWidget):
         def acao():
             import tempfile
 
-            from ...servicos import imagem_cobranca
-            from ..comum.imagem_cobranca import renderizar_pagina
-
-            sessao = self.contexto.sessao
-            svg = imagem_cobranca.caminho_fundo(sessao).read_text(encoding="utf-8")
-            base = imagem_cobranca.base_do_fundo(svg)
             with tempfile.TemporaryDirectory() as pasta:
-                papel = None
-                if base is not None:
-                    # A4 a ~200 dpi: nítido na tela e na impressão, arquivo leve
-                    papel = Path(pasta) / "papel.png"
-                    renderizar_pagina(base, 1654, 2339).save(str(papel), "PNG")
-                arquivo = relatorio_juros.analise_cliente_pdf(
+                return relatorio_juros.analise_cliente_pdf(
                     self.analise,
                     self.cenarios.escolhido(),
-                    configuracoes.recebedor(sessao),
+                    configuracoes.recebedor(self.contexto.sessao),
                     Path(destino),
                     self.contexto.data_referencia,
-                    fundo=papel,
                     graficos=self._imagens_para_pdf(Path(pasta)),
                 )
-            self.pdf_com_fundo = base is not None
-            return arquivo
 
         deu_certo, arquivo = widgets.executar(self, acao)
         if deu_certo:

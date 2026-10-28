@@ -50,13 +50,9 @@ def analise_cliente_pdf(
     recebedor,
     destino: Path,
     gerado_em: date | None = None,
-    fundo: Path | None = None,
     graficos: dict[str, Path] | None = None,
 ) -> Path:
     """Gera o PDF da análise de um cliente e devolve o caminho.
-
-    ``fundo`` é a imagem da página (a base do fundo da cobrança, já no formato
-    A4). Com ele, o título vai sobre o fundo e o conteúdo num cartão branco.
 
     ``graficos``: os gráficos da tela como imagem (chaves ``comparacao``,
     ``atrasos``, ``cenarios``, ``pagos_cenario``, ``abertos_cenario``). Com eles o
@@ -70,7 +66,7 @@ def analise_cliente_pdf(
     cliente = analise.cliente
     gerado_em = gerado_em or hoje()
     r = RelatorioPdf(
-        "Análise de juros", f"{cliente.codigo} – {cliente.nome}", recebedor, gerado_em, fundo
+        "Análise de juros", f"{cliente.codigo} – {cliente.nome}", recebedor, gerado_em
     )
     cor, estilo, p, tabela = r.cor, r.estilo, r.p, r.tabela
     largura_util = r.largura_util
