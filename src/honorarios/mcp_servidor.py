@@ -13,6 +13,7 @@ poder distingui-las; isso é só dica, não bloqueio.
 from __future__ import annotations
 
 import functools
+import json
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -23,6 +24,7 @@ from enum import Enum
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .dominio.enums import (
@@ -65,7 +67,15 @@ mcp = FastMCP(
         "modo='rascunho'; 'enviar' manda pela conta do sistema e não volta atrás).\n"
         "WhatsApp: cobrar_por_whatsapp abre a conversa com a mensagem e a chave Pix e "
         "copia a imagem; quem envia é o usuário. Registre a cobrança (registrar=True ou "
-        "registrar_cobranca) só depois que ele confirmar o envio."
+        "registrar_cobranca) só depois que ele confirmar o envio.\n"
+        "Lista de contatos das empresas: ler_planilha para ver a lista → "
+        "cadastrar_contatos_em_lote (gravar=false mostra o cruzamento; confira e repita "
+        "com gravar=true).\n"
+        "Planilhas: campos_de_importacao → salvar_layout_de_importacao → "
+        "previa_de_importacao → importar_planilha.\n"
+        "Banco: esquema_do_banco e consultar_banco (só leitura) para o que as ferramentas "
+        "não cobrem; executar_no_banco grava por fora das regras do sistema — último "
+        "recurso, sempre com confirmação."
     ),
 )
 
@@ -1143,6 +1153,533 @@ def cobrar_por_whatsapp(
             cobrancas.registrar(sessao, selecao, texto=mensagem, canal=Canal.WHATSAPP)
             resultado["cobranca_registrada"] = True
         return resultado
+
+
+# ---------------------------------------------------------------------- contatos
+def _contato(sessao: Session, contato_id: int):
+    from .infra.modelos import ClienteContato
+
+    contato = sessao.get(ClienteContato, contato_id)
+    if contato is None:
+        raise ValueError(f"Contato {contato_id} não encontrado (veja obter_cliente).")
+    return contato
+
+
+def _dados_contato(contato) -> dict:
+    return {"id": contato.id, "cliente_id": contato.cliente_id, "nome": contato.nome,
+            "tratamento": contato.nome_tratamento, "telefone": contato.telefone,
+            "email": contato.email, "principal": contato.principal, "ativo": contato.ativo,
+            "observacoes": contato.observacoes}
+
+
+@_ferramenta(GRAVA)
+def adicionar_contato(
+    cliente_id: int,
+    nome: str = "",
+    tratamento: str = "",
+    telefone: str = "",
+    email: str = "",
+    observacoes: str = "",
+    principal: bool = False,
+) -> dict:
+    """Cadastra um contato (responsável) no cliente. ``tratamento`` é como chamar na
+    saudação da mensagem; ``principal`` faz dele o contato da cobrança."""
+    from .servicos import contatos as servico_contatos
+
+    with _sessao(gravar=True) as sessao:
+        contato = servico_contatos.adicionar(
+            sessao, _cliente(sessao, cliente_id), nome, tratamento, telefone, email,
+            observacoes, principal)
+        return _dados_contato(contato)
+
+
+@_ferramenta(GRAVA)
+def atualizar_contato(
+    contato_id: int,
+    nome: str | None = None,
+    tratamento: str | None = None,
+    telefone: str | None = None,
+    email: str | None = None,
+    observacoes: str | None = None,
+    principal: bool | None = None,
+    ativo: bool | None = None,
+) -> dict:
+    """Muda só os campos informados de um contato (ids em obter_cliente)."""
+    from .servicos import contatos as servico_contatos
+
+    with _sessao(gravar=True) as sessao:
+        contato = _contato(sessao, contato_id)
+        mudou = servico_contatos.atualizar(sessao, contato, nome, tratamento, telefone, email,
+                                           observacoes, principal, ativo)
+        return {**_dados_contato(contato), "mudou": mudou}
+
+
+@_ferramenta(APAGA)
+def remover_contato(contato_id: int) -> str:
+    """Apaga o contato do cliente (outro ativo vira o principal, se preciso)."""
+    from .servicos import contatos as servico_contatos
+
+    with _sessao(gravar=True) as sessao:
+        contato = _contato(sessao, contato_id)
+        nome = contato.nome or contato.telefone
+        servico_contatos.remover(sessao, contato)
+        return f"Contato {nome} removido."
+
+
+@_ferramenta(GRAVA)
+def cadastrar_contatos_em_lote(contatos: list[dict], gravar: bool = False) -> dict:
+    """Cruza uma lista de contatos das empresas com o cadastro e grava os que baterem.
+
+    Cada item diz de qual empresa é por um destes (na ordem em que são tentados):
+    ``codigo`` (código do cliente no sistema), ``documento`` (CPF/CNPJ),
+    ``telefone_empresa`` (um telefone que a empresa já tem cadastrado) ou
+    ``nome_empresa`` (nome exato). E traz o responsável: ``nome``, ``tratamento``,
+    ``telefone``, ``email``, ``observacoes`` e ``principal`` (true/false).
+
+    Telefone igual (com ou sem 55, com ou sem o 9) é o mesmo contato: é atualizado só no
+    que vier preenchido; senão entra como novo. O que não achar a empresa, ou achar mais
+    de uma, não grava e volta com o motivo.
+
+    Com ``gravar=false`` (padrão) só mostra o que faria; confira e chame de novo com
+    ``gravar=true`` — o cruzamento é refeito na hora de gravar.
+    """
+    from .servicos import contatos as servico_contatos
+
+    campos = {f.name for f in fields(servico_contatos.ItemContato)}
+    itens = []
+    for numero, bruto in enumerate(contatos, start=1):
+        if not isinstance(bruto, dict):
+            raise ValueError(f"Item {numero} da lista não é um objeto.")
+        desconhecidos = set(bruto) - campos
+        if desconhecidos:
+            raise ValueError(f"Item {numero}: campo(s) que não existem: "
+                             f"{', '.join(sorted(desconhecidos))}. "
+                             f"Use: {', '.join(sorted(campos))}.")
+        dados = {chave: ("" if valor is None else valor) for chave, valor in bruto.items()}
+        dados = {chave: (bool(valor) if chave == "principal" else str(valor).strip())
+                 for chave, valor in dados.items()}
+        itens.append(servico_contatos.ItemContato(**dados))
+
+    with _sessao(gravar=gravar) as sessao:
+        cruzamentos = servico_contatos.cruzar(sessao, itens)
+        gravados = servico_contatos.gravar(sessao, cruzamentos) if gravar else 0
+        contagem: dict[str, int] = {}
+        for cruzamento in cruzamentos:
+            contagem[cruzamento.acao] = contagem.get(cruzamento.acao, 0) + 1
+        return {
+            "gravado": gravar,
+            "gravados": gravados,
+            "resumo": contagem,
+            "itens": [
+                {"item": c.indice,
+                 "cliente": f"{c.cliente.codigo} – {c.cliente.nome}" if c.cliente else None,
+                 "cliente_id": c.cliente.id if c.cliente else None,
+                 "achado_por": c.achado_por or None, "acao": c.acao,
+                 "contato_existente_id": c.contato.id if c.contato else None,
+                 "mudancas": c.mudancas, "motivo": c.motivo or None,
+                 "responsavel": c.item.nome, "telefone": c.item.telefone}
+                for c in cruzamentos
+            ],
+        }
+
+
+# ------------------------------------------------------------ planilhas e layouts
+def _caminho(arquivo: str):
+    from pathlib import Path
+
+    caminho = Path(arquivo).expanduser()
+    if not caminho.is_file():
+        raise ValueError(f"Arquivo não encontrado: {caminho}")
+    return caminho
+
+
+@_ferramenta(LEITURA)
+def ler_planilha(
+    arquivo: str, aba: str | None = None, linha_inicial: int = 1, limite: int = 500
+) -> dict:
+    """Lê uma planilha do computador (.xlsx, .xlsm ou .csv) e devolve as linhas com a
+    letra de cada coluna, para entender uma lista antes de importar ou cruzar."""
+    caminho = _caminho(arquivo)
+    linhas: list[dict] = []
+    if caminho.suffix.lower() == ".csv":
+        import csv
+
+        from openpyxl.utils import get_column_letter
+
+        texto = caminho.read_text(encoding="utf-8-sig", errors="replace")
+        dialeto = csv.Sniffer().sniff(texto[:4096], delimiters=";,\t") if texto else csv.excel
+        leitor = csv.reader(texto.splitlines(), dialeto)
+        abas, nome_aba = ["(csv)"], "(csv)"
+        for numero, celulas in enumerate(leitor, start=1):
+            if numero < linha_inicial or not any(c.strip() for c in celulas):
+                continue
+            linhas.append({"linha": numero, **{get_column_letter(i): c
+                                               for i, c in enumerate(celulas, start=1) if c}})
+            if len(linhas) > limite:
+                break
+    else:
+        from openpyxl import load_workbook
+        from openpyxl.utils import get_column_letter
+
+        livro = load_workbook(caminho, data_only=True, read_only=True)
+        try:
+            abas = list(livro.sheetnames)
+            nome_aba = aba or abas[0]
+            if nome_aba not in abas:
+                raise ValueError(f"A planilha não tem a aba {aba!r}. Abas: {', '.join(abas)}")
+            for numero, celulas in enumerate(
+                    livro[nome_aba].iter_rows(min_row=linha_inicial, values_only=True),
+                    start=linha_inicial):
+                valores = {get_column_letter(i): _plano(c)
+                           for i, c in enumerate(celulas, start=1) if c not in (None, "")}
+                if valores:
+                    linhas.append({"linha": numero, **valores})
+                if len(linhas) > limite:
+                    break
+        finally:
+            livro.close()
+    return {"abas": abas, "aba": nome_aba, "linhas": linhas[:limite],
+            "mais_linhas": len(linhas) > limite}
+
+
+@_ferramenta(LEITURA)
+def campos_de_importacao() -> list[dict]:
+    """As informações que um layout de importação pode ler, com a chave de cada uma."""
+    from .servicos.importacao import personalizada
+
+    return [{"chave": c.chave, "rotulo": c.rotulo, "grupo": c.grupo, "tipo": c.tipo,
+             "dica": c.dica} for c in personalizada.CAMPOS]
+
+
+@_ferramenta(LEITURA)
+def listar_layouts_de_importacao() -> list[dict]:
+    """Os layouts de importação salvos (os mesmos da tela Importação personalizada)."""
+    from .servicos.importacao import personalizada
+
+    with _sessao() as sessao:
+        return [layout.para_dict() for layout in personalizada.listar_layouts(sessao).values()]
+
+
+def _layout(campos: dict, nome: str = "", aba: str = "", linha_inicial: int = 2):
+    from .servicos.importacao import personalizada
+
+    mapas = {}
+    for chave, valor in campos.items():
+        if chave not in personalizada.POR_CHAVE:
+            raise ValueError(f"Campo {chave!r} não existe (veja campos_de_importacao).")
+        if isinstance(valor, str):
+            valor = {"coluna": valor}
+        if not isinstance(valor, dict):
+            raise ValueError(f"{chave}: use a letra da coluna ou {{coluna, padrao}}.")
+        mapas[chave] = personalizada.Mapeamento(
+            coluna=str(valor.get("coluna") or "").strip().upper(),
+            padrao=str(valor.get("padrao") or "").strip())
+    return personalizada.Layout(nome=nome.strip(), aba=aba.strip(),
+                                linha_inicial=linha_inicial, campos=mapas)
+
+
+@_ferramenta(GRAVA)
+def salvar_layout_de_importacao(
+    nome: str, campos: dict, aba: str = "", linha_inicial: int = 2
+) -> dict:
+    """Cria (ou substitui) um layout de importação. ``campos`` liga cada chave de
+    campos_de_importacao à letra da coluna — {"cliente_codigo": "A"} — ou a
+    {"coluna": "B", "padrao": "valor fixo quando a célula vier vazia"}. Precisa da coluna
+    do código, do CPF/CNPJ ou do nome do cliente."""
+    from .servicos.importacao import personalizada
+
+    with _sessao(gravar=True) as sessao:
+        layout = _layout(campos, nome, aba, linha_inicial)
+        personalizada.salvar_layout(sessao, layout)
+        return personalizada.listar_layouts(sessao)[layout.nome].para_dict()
+
+
+@_ferramenta(APAGA)
+def excluir_layout_de_importacao(nome: str) -> str:
+    """Apaga um layout de importação salvo."""
+    from .servicos.importacao import personalizada
+
+    with _sessao(gravar=True) as sessao:
+        personalizada.excluir_layout(sessao, nome)
+        return f"Layout {nome!r} excluído."
+
+
+def _layout_salvo(sessao: Session, nome: str):
+    from .servicos.importacao import personalizada
+
+    layout = personalizada.listar_layouts(sessao).get(nome)
+    if layout is None:
+        raise ValueError(f"Layout {nome!r} não existe (veja listar_layouts_de_importacao).")
+    return layout
+
+
+@_ferramenta(GRAVA)
+def exportar_modelo_de_layout(nome: str, destino: str | None = None) -> str:
+    """Gera a planilha-modelo do layout (cabeçalhos nas colunas certas e instruções),
+    para preencher e importar. Sem destino, vai para a pasta de exportações."""
+    from .config import caminhos
+    from .servicos.importacao import personalizada
+
+    with _sessao() as sessao:
+        layout = _layout_salvo(sessao, nome)
+    alvo = destino or str(caminhos.pasta_exportacoes() / f"modelo-{nome}.xlsx")
+    return str(personalizada.exportar_modelo(layout, alvo))
+
+
+def _problema(p) -> dict:
+    return {"linha": p.linha, "campo": p.campo, "valor": p.valor, "motivo": p.motivo,
+            "gravidade": p.gravidade}
+
+
+@_ferramenta(LEITURA)
+def previa_de_importacao(
+    arquivo: str, layout: str, atualizar_existentes: bool = True, limite: int = 200
+) -> dict:
+    """Lê a planilha com um layout salvo e confere tudo com o banco, sem gravar: o que
+    cada linha faria com o cliente, o contrato e o honorário, e os problemas."""
+    from .servicos.importacao import personalizada
+
+    with _sessao() as sessao:
+        previa = personalizada.ler(sessao, _caminho(arquivo), _layout_salvo(sessao, layout),
+                                   atualizar_existentes)
+        return {
+            "resumo": previa.resumo(),
+            "aba": previa.aba,
+            "problemas_gerais": [_problema(p) for p in previa.problemas],
+            "linhas": [
+                {"linha": linha.linha, "cliente": linha.rotulo_cliente,
+                 "cliente_acao": linha.acao_cliente or None,
+                 "contrato_acao": linha.acao_contrato or None,
+                 "honorario_acao": linha.acao_honorario or None,
+                 "bloqueada": linha.bloqueada,
+                 "problemas": [_problema(p) for p in linha.problemas]}
+                for linha in previa.linhas[:limite]
+            ],
+            "mais_linhas": len(previa.linhas) > limite,
+        }
+
+
+@_ferramenta(GRAVA)
+def importar_planilha(
+    arquivo: str,
+    layout: str,
+    atualizar_existentes: bool = True,
+    pular_linhas: list[int] | None = None,
+) -> dict:
+    """Importa a planilha com um layout salvo, como o botão Importar da tela: cria e
+    atualiza clientes, contatos, contratos e honorários. Linhas com erro ficam de fora;
+    ``pular_linhas`` tira outras (números das linhas do Excel). Rode previa_de_importacao
+    antes e confirme com o usuário."""
+    from .servicos.importacao import personalizada
+
+    pular = set(pular_linhas or [])
+    with _sessao(gravar=True) as sessao:
+        previa = personalizada.ler(sessao, _caminho(arquivo), _layout_salvo(sessao, layout),
+                                   atualizar_existentes)
+        for linha in previa.linhas:
+            if linha.linha in pular:
+                linha.importar = False
+        resultado = personalizada.importar(sessao, previa, atualizar_existentes)
+        return {"resumo": resultado.resumo, "importacao_id": resultado.importacao_id,
+                "falhas": [_problema(p) for p in resultado.falhas]}
+
+
+# -------------------------------------------------------- cadastros de apoio
+@_ferramenta(GRAVA)
+def criar_tipo_de_honorario(
+    nome: str,
+    grupo_id: int,
+    periodicidade: str = "MENSAL",
+    exige_competencia: str = "MES",
+    texto_mensagem: str = "",
+    texto_mensagem_empresa: str = "",
+    texto_item_lista: str = "",
+) -> dict:
+    """Novo tipo de honorário. periodicidade: MENSAL, TRIMESTRAL, ANUAL ou AVULSO;
+    exige_competencia: MES, ANO ou NENHUMA. Textos vazios usam o nome do tipo."""
+    from .dominio.enums import ExigeCompetencia
+
+    with _sessao(gravar=True) as sessao:
+        tipo = tipos.salvar_tipo(
+            sessao, None, nome, grupo_id, _enum(Periodicidade, periodicidade),
+            _enum(ExigeCompetencia, exige_competencia), texto_mensagem or nome,
+            texto_mensagem_empresa or texto_mensagem or nome, texto_item_lista or nome)
+        return {"id": tipo.id, "nome": tipo.nome}
+
+
+@_ferramenta(GRAVA)
+def criar_grupo_de_honorario(nome: str) -> dict:
+    """Novo grupo de honorários (as seções das telas de cobrança)."""
+    with _sessao(gravar=True) as sessao:
+        grupo = tipos.criar_grupo(sessao, nome)
+        return {"id": grupo.id, "nome": grupo.nome}
+
+
+@_ferramenta(GRAVA)
+def criar_forma_de_envio(nome: str) -> dict:
+    """Nova forma de envio do boleto (ex.: e-mail, WhatsApp, portal)."""
+    with _sessao(gravar=True) as sessao:
+        forma = tipos.criar_forma(sessao, nome)
+        return {"id": forma.id, "nome": forma.nome}
+
+
+@_ferramenta(GRAVA)
+def gerar_honorarios_dos_contratos(
+    competencia_ano: int, competencia_mes: int, cliente_id: int | None = None,
+    gravar: bool = False,
+) -> dict:
+    """Gera os honorários de uma competência a partir dos contratos (como a tela de
+    geração): suspensos, fora da vigência e já lançados ficam de fora com o motivo. Com
+    ``gravar=false`` (padrão) só mostra o que geraria."""
+    with _sessao(gravar=gravar) as sessao:
+        itens = contratos.previa_geracao(
+            sessao, Competencia(ano=competencia_ano, mes=competencia_mes), cliente_id)
+        criados = contratos.gerar(sessao, itens) if gravar else []
+        return {
+            "gravado": gravar, "gerados": len(criados),
+            "itens": [{"contrato_id": i.contrato.id, "cliente": i.cliente.nome,
+                       "tipo": i.contrato.tipo.nome, "valor": _plano(i.valor),
+                       "vencimento": _plano(i.vencimento), "gera": i.gerar,
+                       "impedimento": i.impedimento or None} for i in itens],
+        }
+
+
+@_ferramenta(GRAVA)
+def registrar_acordo_de_valor(honorario_ids: list[int], valido_ate: str,
+                              data_base: str | None = None) -> dict:
+    """Congela o valor (com os juros até ``data_base``, hoje se vazia) até ``valido_ate``:
+    pagando até lá, vale o valor do acordo."""
+    from .servicos import acordos
+
+    with _sessao(gravar=True) as sessao:
+        criados = acordos.registrar(sessao, [_honorario(sessao, i) for i in honorario_ids],
+                                    _data(data_base) or hoje(), _data(valido_ate))
+        return {"acordos": [{"honorario_id": a.honorario_id, "total": _plano(a.total),
+                             "valido_ate": _plano(a.valido_ate)} for a in criados]}
+
+
+@_ferramenta(GRAVA)
+def renegociar(
+    cliente_id: int,
+    honorario_ids: list[int],
+    valor_acordado: str,
+    parcelas: int,
+    primeiro_vencimento: str,
+    tipo_id: int,
+    desconto: str = "0",
+    observacoes: str = "",
+) -> dict:
+    """Renegocia honorários em aberto do cliente em parcelas (os originais ficam como
+    renegociados e as parcelas entram como honorários novos do ``tipo_id``)."""
+    from .servicos import renegociacoes
+
+    with _sessao(gravar=True) as sessao:
+        referencia = hoje()
+        acordo = renegociacoes.criar(
+            sessao, _cliente(sessao, cliente_id),
+            [_linha(sessao, i, referencia) for i in honorario_ids],
+            _valor(valor_acordado), parcelas, _data(primeiro_vencimento), tipo_id,
+            _valor(desconto), observacoes)
+        return {"renegociacao_id": acordo.id, "valor_acordado": _plano(acordo.valor_acordado),
+                "parcelas": acordo.parcelas}
+
+
+@_ferramenta(GRAVA)
+def gerar_backup(motivo: str = "pedido pelo Claude") -> str:
+    """Faz um backup completo do banco agora (o mesmo do botão Gerar backup)."""
+    from .servicos import backup
+
+    with _sessao():   # banco configurado e erro de negócio como mensagem
+        return str(backup.gerar(motivo))
+
+
+@_ferramenta(LEITURA)
+def listar_configuracoes() -> dict:
+    """Todas as configurações do sistema (chave → valor)."""
+    from .infra.modelos import Configuracao
+
+    with _sessao() as sessao:
+        return {c.chave: c.valor for c in sessao.scalars(
+            select(Configuracao).order_by(Configuracao.chave))}
+
+
+# -------------------------------------------------------- acesso direto ao banco
+def _executar_sql(sessao: Session, sql: str, parametros: dict | None):
+    from sqlalchemy.exc import DBAPIError, StatementError
+
+    if not (sql or "").strip():
+        raise ValueError("Informe o comando SQL.")
+    try:
+        return sessao.execute(text(sql), parametros or {})
+    except (DBAPIError, StatementError) as falha:
+        motivo = getattr(falha, "orig", None) or falha
+        raise ValueError(f"O banco recusou o comando: {motivo}") from falha
+
+
+def _linhas_sql(resultado, limite: int) -> dict:
+    colunas = list(resultado.keys())
+    linhas = resultado.fetchmany(limite + 1)
+    return {"colunas": colunas,
+            "linhas": [[_plano(v) if not isinstance(v, bytes) else f"<{len(v)} bytes>"
+                        for v in linha] for linha in linhas[:limite]],
+            "mais_linhas": len(linhas) > limite}
+
+
+@_ferramenta(LEITURA)
+def esquema_do_banco(tabela: str | None = None) -> dict:
+    """As tabelas do banco com as colunas (tipo, nulo, chave) e as ligações entre elas.
+    Use antes de consultar_banco/executar_no_banco."""
+    from sqlalchemy import inspect
+
+    with _sessao() as sessao:
+        inspetor = inspect(sessao.get_bind())
+        nomes = [tabela] if tabela else sorted(inspetor.get_table_names())
+        resultado = {}
+        for nome in nomes:
+            chave = set(inspetor.get_pk_constraint(nome).get("constrained_columns") or [])
+            resultado[nome] = {
+                "colunas": [{"nome": c["name"], "tipo": str(c["type"]),
+                             "nulo": c["nullable"], "chave": c["name"] in chave}
+                            for c in inspetor.get_columns(nome)],
+                "ligacoes": [{"colunas": f["constrained_columns"],
+                              "tabela": f["referred_table"], "para": f["referred_columns"]}
+                             for f in inspetor.get_foreign_keys(nome)],
+            }
+        return {"banco": sessao.get_bind().dialect.name, "tabelas": resultado}
+
+
+@_ferramenta(LEITURA)
+def consultar_banco(sql: str, parametros: dict | None = None, limite: int = 500) -> dict:
+    """Roda uma consulta SQL (SELECT) direto no banco e devolve as linhas. Nada é
+    gravado: a transação é sempre desfeita. Use :nome no SQL e ``parametros`` para
+    valores (ex.: "select * from cliente where codigo = :codigo")."""
+    with _sessao() as sessao:
+        if sessao.get_bind().dialect.name == "postgresql":
+            sessao.execute(text("SET TRANSACTION READ ONLY"))
+        resultado = _executar_sql(sessao, sql, parametros)
+        if not resultado.returns_rows:
+            raise ValueError("Esse comando não devolve linhas: para gravar, use "
+                             "executar_no_banco.")
+        dados = _linhas_sql(resultado, limite)
+        sessao.rollback()
+        return dados
+
+
+@_ferramenta(APAGA)
+def executar_no_banco(sql: str, parametros: dict | None = None) -> dict:
+    """Roda um comando SQL que grava (INSERT, UPDATE, DELETE, ALTER…) direto no banco e
+    confirma. Passa por fora das regras do sistema (juros, validações, histórico):
+    prefira as ferramentas específicas e use isto para o que elas não cobrem. Um comando
+    por vez; fica anotado no log de alterações. Confirme com o usuário antes."""
+    from .infra.modelos import LogAlteracao
+
+    with _sessao(gravar=True) as sessao:
+        resultado = _executar_sql(sessao, sql, parametros)
+        retorno = _linhas_sql(resultado, 500) if resultado.returns_rows else None
+        afetadas = resultado.rowcount
+        sessao.add(LogAlteracao(entidade="banco", acao="SQL", resumo=sql.strip()[:4000],
+                                depois=json.dumps(_plano(parametros or {}), ensure_ascii=False)))
+        return {"linhas_afetadas": afetadas, "retorno": retorno}
 
 
 def main() -> None:

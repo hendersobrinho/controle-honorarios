@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.3.1
+# Especificação — Financeiro Métodos 1.4.0
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.3.1 (outubro de 2026) |
+| **Versão** | 1.4.0 (outubro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -120,6 +120,7 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 14 | Identidade visual do Financeiro: ícone canhoto, abertura, menu lateral navy de tamanho fixo, PDFs no papel do canhoto, imagem de cobrança e comprovante na identidade nova com o QR do Pix do escritório de fábrica, e o assistente do instalador com a marca | 1.2.0 | concluída |
 | 15 | Busca das telas de honorários sem travar (espera a digitação, redesenho único, "Buscando…" discreto) e integração com o Claude: servidor MCP com 38 ferramentas (consulta e gravação com as regras das telas, e-mail do financeiro, cobrança no WhatsApp), aba Configurações → Claude (MCP) e o `FinanceiroMetodosMCP.exe` no instalador | 1.3.0 | concluída |
 | 16 | O servidor MCP se grava sozinho, a cada abertura, em todo Claude do computador: Claude Desktop comum, Claude Desktop da Microsoft Store (que lê de dentro do pacote) e Claude Code; a aba do Claude passa a mostrar onde está gravado | 1.3.1 | concluída |
+| 17 | Claude com acesso a todo o cadastro e ao banco: contatos um a um e em lote cruzando a lista das empresas com o cadastro, planilhas e layouts da importação personalizada, tipos, grupos e formas de envio, geração dos contratos, acordo, renegociação, backup e SQL direto (consulta e gravação, com log) — 61 ferramentas | 1.4.0 | concluída |
 
 Cada fase com recurso novo sobe a versão do meio; correção sobe a última. A 1.0.0
 chegou a ser reaproveitada para as fases 12 e 13 enquanto o sistema não estava
@@ -149,7 +150,11 @@ transação própria.
 | Cadastro | Cria, altera e exclui cliente (contatos preservados), vínculo PF → empresa, juros com vigência, suspende e retoma cobrança |
 | Honorários | Lança, corrige, cancela; dá baixa (total, parcial, abono) e estorna |
 | Cobrança | Registra cobrança e promessa, estorna, gera o texto do modelo |
-| Contratos | Cria, reajusta, suspende, exclui |
+| Contatos | Adiciona, atualiza e remove; cruza uma lista de contatos das empresas com o cadastro (código, CPF/CNPJ, telefone já cadastrado — com ou sem 55 e o 9 — ou nome exato) e grava os que baterem: telefone igual atualiza o contato, senão entra novo |
+| Contratos | Cria, reajusta, suspende, exclui; gera os honorários de uma competência |
+| Cadastros de apoio | Tipos e grupos de honorário, formas de envio, acordo de valor, renegociação em parcelas, backup |
+| Planilhas | Lê `.xlsx`/`.csv`; cria, apaga e exporta layouts da importação personalizada; prévia e importação |
+| Banco | Estrutura das tabelas, consulta SQL (sempre desfeita) e comando SQL que grava, anotado no log |
 | E-mail do financeiro | Verifica a pasta, lê e confere a lista com o sistema, dá baixa em quem saiu, responde com a lista atualizada (rascunho `.eml` aberto no Outlook ou envio pela conta do sistema) |
 | WhatsApp | Abre a conversa do contato com a mensagem e a chave Pix na última linha (da imagem não dá para copiar) e deixa a imagem de cobrança copiada para Ctrl+V |
 

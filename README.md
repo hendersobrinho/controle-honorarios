@@ -9,7 +9,7 @@
 Registra honorários, calcula o juros de atraso dia a dia, prepara a cobrança pronta para
 o WhatsApp e acompanha a conversa de cobrança por e-mail com o financeiro.
 
-![Versão 1.3.1](https://img.shields.io/badge/vers%C3%A3o-1.3.1-F9B259)
+![Versão 1.4.0](https://img.shields.io/badge/vers%C3%A3o-1.4.0-F9B259)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-203461?logo=python&logoColor=white)
 ![PySide6](https://img.shields.io/badge/PySide6-Qt%206-4BBDCD?logo=qt&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-banco%20do%20escrit%C3%B3rio-203461?logo=postgresql&logoColor=white)
@@ -152,8 +152,9 @@ HONORARIOS_TESTE_PG=postgresql+psycopg://… .venv/bin/python -m pytest   # cont
 
 O sistema também é um servidor [MCP](https://modelcontextprotocol.io): o Claude consulta e
 grava nos honorários com as mesmas regras das telas (juros, validações, log de alterações).
-São 38 ferramentas — clientes, honorários, pagamentos, cobranças, contratos, configurações,
-e-mail do financeiro e WhatsApp — **sem modo somente leitura**: o que a tela faz, o Claude faz,
+São 61 ferramentas — clientes e contatos, honorários, pagamentos, cobranças, contratos, tipos,
+configurações, importação por planilha, e-mail do financeiro, WhatsApp e acesso direto ao banco —
+**sem modo somente leitura**: o que a tela faz, o Claude faz,
 inclusive excluir e estornar. As que apagam ou desfazem levam `destructiveHint` para o cliente
 poder pedir confirmação.
 
@@ -163,6 +164,16 @@ poder pedir confirmação.
   O rascunho direto na pasta Rascunhos do Outlook pediria a permissão `Mail.ReadWrite` no
   aplicativo da Microsoft; com o conector do Microsoft 365 ligado no Claude, ele pode usar o
   `montar_resposta_financeiro` (que devolve o corpo e o id do e-mail) e criar o rascunho por lá.
+- **Contatos em lote:** `cadastrar_contatos_em_lote` recebe a lista de contatos das empresas e
+  cruza cada item com o cadastro pelo código, CPF/CNPJ, um telefone já cadastrado da empresa
+  (com ou sem 55, com ou sem o 9) ou o nome exato. O que bate vira contato novo ou atualiza o
+  que tem o mesmo telefone; o que não bate, ou bate com mais de uma empresa, volta com o motivo.
+  Primeiro mostra, depois grava.
+- **Planilhas:** lê qualquer `.xlsx`/`.csv`, cria e apaga layouts da importação personalizada,
+  exporta a planilha-modelo, mostra a prévia e importa — os mesmos da tela.
+- **Banco:** `esquema_do_banco` e `consultar_banco` (a transação é sempre desfeita, então nada
+  grava) e `executar_no_banco`, que grava qualquer comando SQL por fora das regras do sistema e
+  fica anotado no log de alterações.
 - **WhatsApp:** `cobrar_por_whatsapp` abre a conversa no telefone do contato com a mensagem do
   modelo e a chave Pix sozinha na última linha (da imagem não dá para copiar) e deixa a imagem
   de cobrança copiada para colar com Ctrl+V. O WhatsApp não aceita envio automático: quem aperta
@@ -178,7 +189,7 @@ código, `.venv/bin/python -m honorarios.mcp_servidor` (o `.mcp.json` já o regi
 
 O servidor usa o mesmo banco do programa (a conexão do primeiro uso; `HONORARIOS_DADOS` aponta
 para um SQLite de testes). Para liberar tudo sem perguntar a cada chamada, permita
-`mcp__financeiro-honorarios__*` nas permissões do Claude Code.
+`mcp__financeiro-honorarios` em `/permissions` (ou no `allow` do `settings.json`) do Claude Code.
 
 ## Instalar no Windows
 

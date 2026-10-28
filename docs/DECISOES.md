@@ -570,6 +570,20 @@ dizer se o Claude está usando — o servidor só existe enquanto o Claude o abr
   programa instalado grava, a cada abertura, no Desktop comum, no da Store e no
   `.claude.json` do Claude Code — só onde mudou, com `.bak` e troca atômica do
   arquivo. Os botões de testar e de copiar o comando saíram: não dependiam deles.
+- **Contatos em lote cruzam, não cadastram empresa**: a lista de contatos só grava
+  onde acha a empresa (código, CPF/CNPJ, telefone já cadastrado ou nome exato, nessa
+  ordem). Telefone é comparado por DDD e 8 últimos dígitos, para o número antigo sem
+  o 9 e o com 55 serem o mesmo; sem DDD de um lado, vale o número. Telefone que está
+  em duas empresas não decide nada. A ferramenta mostra primeiro e grava só com
+  `gravar=true`, refazendo o cruzamento na hora.
+- **SQL direto, com rede de proteção**: `consultar_banco` sempre desfaz a transação
+  (no PostgreSQL ainda abre como somente leitura), então nem um `UPDATE … RETURNING`
+  grava por ali. `executar_no_banco` grava e deixa o comando em `log_alteracao`
+  (entidade `banco`), porque passa por fora das regras do sistema.
+- **A liberação no Claude Code é do usuário**: gravar sozinho a regra
+  `mcp__financeiro-honorarios` nas permissões do Claude Code foi barrado pelo próprio
+  Claude Code (é o agente se dando permissão). Quem libera é a pessoa, uma vez, em
+  `/permissions` ou no `settings.json`.
 - **`atualizar_cliente` reenvia os contatos**: o serviço trata a lista como a
   verdade e apagaria os contatos se recebesse vazia.
 

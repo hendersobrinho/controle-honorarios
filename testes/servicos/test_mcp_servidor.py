@@ -388,3 +388,158 @@ def test_cobranca_no_whatsapp_sem_registrar_nao_grava(devedor, monkeypatch):
     servidor.cobrar_por_whatsapp(devedor.id, com_imagem=False)
 
     assert servidor.listar_honorarios()["honorarios"][0]["cobrancas"] == 0
+
+
+# ---------------------------------------------------------------------- contatos
+def test_contatos_em_lote_pela_ferramenta(devedor):
+    lista = [
+        {"codigo": "800", "nome": "Responsável", "tratamento": "Resp",
+         "telefone": "27 91234-5678", "principal": True},
+        {"codigo": "000", "nome": "Ninguém", "telefone": "27900000000"},
+    ]
+
+    previa = servidor.cadastrar_contatos_em_lote(lista)
+    assert previa["gravado"] is False and previa["resumo"] == {"novo": 1, "ignorado": 1}
+    assert len(servidor.obter_cliente(cliente_id=devedor.id)["contatos"]) == 1
+
+    feito = servidor.cadastrar_contatos_em_lote(lista, gravar=True)
+    assert feito["gravados"] == 1
+    contatos = servidor.obter_cliente(cliente_id=devedor.id)["contatos"]
+    assert [c["telefone"] for c in contatos if c["principal"]] == ["5527912345678"]
+
+
+def test_contato_em_lote_com_campo_errado_explica(devedor):
+    with pytest.raises(ValueError, match="cnpj"):
+        servidor.cadastrar_contatos_em_lote([{"cnpj": "1", "nome": "x"}])
+
+
+def test_adicionar_atualizar_e_remover_contato(devedor):
+    novo = servidor.adicionar_contato(devedor.id, "Fulano", telefone="27911110000")
+    mudou = servidor.atualizar_contato(novo["id"], email="f@x.com", principal=True)
+    assert mudou["mudou"] == ["email", "principal"] and mudou["principal"]
+    servidor.remover_contato(novo["id"])
+    assert [c["nome"] for c in servidor.obter_cliente(cliente_id=devedor.id)["contatos"]] \
+        == ["Contato Exemplo"]
+
+
+# ------------------------------------------------------------ planilhas e layouts
+@pytest.fixture
+def planilha(tmp_path):
+    from openpyxl import Workbook
+
+    livro = Workbook()
+    aba = livro.active
+    aba.title = "Clientes"
+    aba.append(["Código", "Nome", "Juros", "Telefone"])
+    aba.append(["850", "NOVA PELA PLANILHA LTDA", "1,50", "27 98765-4321"])
+    aba.append(["851", "OUTRA PELA PLANILHA LTDA", "2", ""])
+    caminho = tmp_path / "lista.xlsx"
+    livro.save(caminho)
+    return caminho
+
+
+def test_ler_planilha_xlsx_e_csv(planilha, tmp_path):
+    lida = servidor.ler_planilha(str(planilha), linha_inicial=2)
+    assert lida["abas"] == ["Clientes"]
+    assert lida["linhas"][0] == {"linha": 2, "A": "850", "B": "NOVA PELA PLANILHA LTDA",
+                                 "C": "1,50", "D": "27 98765-4321"}
+
+    csv = tmp_path / "lista.csv"
+    csv.write_text("codigo;nome\n900;Fulano\n", encoding="utf-8")
+    assert servidor.ler_planilha(str(csv))["linhas"][1] == {"linha": 2, "A": "900",
+                                                           "B": "Fulano"}
+
+
+def test_layout_criar_exportar_previa_e_importar(planilha, tmp_path):
+    campos = {"cliente_codigo": "A", "cliente_nome": "B", "cliente_juros_dia": "C",
+              "contato_telefone": "D", "cliente_tipo_pessoa": {"padrao": "PJ"}}
+    salvo = servidor.salvar_layout_de_importacao("Lista nova", campos, aba="Clientes")
+    assert salvo["campos"]["cliente_tipo_pessoa"] == {"coluna": "", "padrao": "PJ"}
+    assert [x["nome"] for x in servidor.listar_layouts_de_importacao()] == ["Lista nova"]
+    assert servidor.exportar_modelo_de_layout("Lista nova", str(tmp_path / "m.xlsx"))\
+        .endswith("m.xlsx")
+
+    previa = servidor.previa_de_importacao(str(planilha), "Lista nova")
+    assert [x["cliente_acao"] for x in previa["linhas"]] == ["Novo cliente", "Novo cliente"]
+    assert servidor.buscar_clientes("pela planilha") == []
+
+    feito = servidor.importar_planilha(str(planilha), "Lista nova", pular_linhas=[3])
+    assert feito["falhas"] == []
+    assert [c["codigo"] for c in servidor.buscar_clientes("pela planilha")] == ["850"]
+
+    servidor.excluir_layout_de_importacao("Lista nova")
+    assert servidor.listar_layouts_de_importacao() == []
+
+
+def test_layout_sem_identificar_o_cliente_e_recusado():
+    with pytest.raises(ValueError, match="código, do CPF/CNPJ ou do nome"):
+        servidor.salvar_layout_de_importacao("Ruim", {"contato_telefone": "D"})
+
+
+# -------------------------------------------------------- cadastros de apoio
+def test_tipo_grupo_forma_e_geracao_dos_contratos(sessao, devedor):
+    grupo = servidor.criar_grupo_de_honorario("Consultorias")
+    tipo = servidor.criar_tipo_de_honorario("Consultoria mensal", grupo["id"])
+    servidor.criar_forma_de_envio("Portal do cliente")
+    nomes = servidor.listar_tipos_e_grupos()
+    assert "Consultoria mensal" in [t["nome"] for t in nomes["tipos"]]
+    assert "Portal do cliente" in [f["nome"] for f in nomes["formas_de_envio"]]
+
+    servidor.criar_contrato(devedor.id, tipo["id"], "300", vigencia_inicio="2026-01-01")
+    previa = servidor.gerar_honorarios_dos_contratos(2026, 10)
+    assert previa["gerados"] == 0 and [i["gera"] for i in previa["itens"]] == [True]
+    feito = servidor.gerar_honorarios_dos_contratos(2026, 10, gravar=True)
+    assert feito["gerados"] == 1
+    de_novo = servidor.gerar_honorarios_dos_contratos(2026, 10)
+    assert de_novo["itens"][0]["gera"] is False   # já lançado
+
+
+def test_acordo_de_valor(devedor):
+    honorario_id = servidor.listar_honorarios()["honorarios"][0]["id"]
+    feito = servidor.registrar_acordo_de_valor([honorario_id], "2026-12-31",
+                                               data_base="2026-09-29")
+    assert feito["acordos"][0]["valido_ate"] == "2026-12-31"
+
+
+# -------------------------------------------------------- acesso direto ao banco
+def test_esquema_e_consulta_direta(devedor):
+    esquema = servidor.esquema_do_banco("cliente")
+    assert "codigo" in [c["nome"] for c in esquema["tabelas"]["cliente"]["colunas"]]
+
+    achado = servidor.consultar_banco("select codigo, nome from cliente where codigo = :c",
+                                      {"c": "800"})
+    assert achado["colunas"] == ["codigo", "nome"]
+    assert achado["linhas"] == [["800", "EMPRESA DEVEDORA LTDA"]]
+
+
+def test_consulta_nunca_grava(devedor):
+    with pytest.raises(ValueError, match="não devolve linhas"):
+        servidor.consultar_banco("update cliente set nome = 'X'")
+    servidor.consultar_banco("update cliente set nome = 'X' returning id")
+    assert servidor.obter_cliente(cliente_id=devedor.id)["nome"] == "EMPRESA DEVEDORA LTDA"
+
+
+def test_executar_grava_e_anota_no_log(devedor):
+    feito = servidor.executar_no_banco("update cliente set observacoes = :o where id = :i",
+                                       {"o": "via SQL", "i": devedor.id})
+    assert feito["linhas_afetadas"] == 1
+    assert servidor.obter_cliente(cliente_id=devedor.id)["observacoes"] == "via SQL"
+    log = servidor.consultar_banco(
+        "select acao, resumo from log_alteracao where entidade = 'banco'")
+    assert log["linhas"][0][0] == "SQL" and "update cliente" in log["linhas"][0][1]
+
+    with pytest.raises(ValueError, match="O banco recusou"):
+        servidor.executar_no_banco("update tabela_que_nao_existe set x = 1")
+
+
+def test_backup_pela_ferramenta(devedor, pasta_dados, monkeypatch):
+    from pathlib import Path
+
+    from honorarios.servicos import backup
+
+    monkeypatch.setattr(backup, "caminho_banco", lambda: pasta_dados / "outro.db")
+    with pytest.raises(ValueError, match="Não há banco"):
+        servidor.gerar_backup()
+
+    monkeypatch.setattr(backup, "caminho_banco", lambda: pasta_dados / "teste.db")
+    assert Path(servidor.gerar_backup()).is_file()
