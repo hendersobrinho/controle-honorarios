@@ -9,7 +9,7 @@
 Registra honorários, calcula o juros de atraso dia a dia, prepara a cobrança pronta para
 o WhatsApp e acompanha a conversa de cobrança por e-mail com o financeiro.
 
-![Versão 1.0.0](https://img.shields.io/badge/vers%C3%A3o-1.0.0-F9B259)
+![Versão 1.3.0](https://img.shields.io/badge/vers%C3%A3o-1.3.0-F9B259)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-203461?logo=python&logoColor=white)
 ![PySide6](https://img.shields.io/badge/PySide6-Qt%206-4BBDCD?logo=qt&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-banco%20do%20escrit%C3%B3rio-203461?logo=postgresql&logoColor=white)
@@ -147,6 +147,37 @@ com promessa cumprida e vencida.
 .venv/bin/ruff check src testes scripts
 HONORARIOS_TESTE_PG=postgresql+psycopg://… .venv/bin/python -m pytest   # contra o PostgreSQL
 ```
+
+## Usar com o Claude (servidor MCP)
+
+O sistema também é um servidor [MCP](https://modelcontextprotocol.io): o Claude consulta e
+grava nos honorários com as mesmas regras das telas (juros, validações, log de alterações).
+São 38 ferramentas — clientes, honorários, pagamentos, cobranças, contratos, configurações,
+e-mail do financeiro e WhatsApp — **sem modo somente leitura**: o que a tela faz, o Claude faz,
+inclusive excluir e estornar. As que apagam ou desfazem levam `destructiveHint` para o cliente
+poder pedir confirmação.
+
+- **E-mail do financeiro:** verifica a pasta "Cobranças", lê o e-mail e já confere a lista com
+  o sistema (quem continua, quem saiu, o que não bateu), dá baixa em quem saiu e responde com a
+  lista atualizada — como rascunho `.eml` aberto no Outlook ou enviado pela conta do sistema.
+  O rascunho direto na pasta Rascunhos do Outlook pediria a permissão `Mail.ReadWrite` no
+  aplicativo da Microsoft; com o conector do Microsoft 365 ligado no Claude, ele pode usar o
+  `montar_resposta_financeiro` (que devolve o corpo e o id do e-mail) e criar o rascunho por lá.
+- **WhatsApp:** `cobrar_por_whatsapp` abre a conversa no telefone do contato com a mensagem do
+  modelo e a chave Pix sozinha na última linha (da imagem não dá para copiar) e deixa a imagem
+  de cobrança copiada para colar com Ctrl+V. O WhatsApp não aceita envio automático: quem aperta
+  Enviar é você; a cobrança só é registrada quando pedido.
+
+Para ligar: **Configurações → Claude (MCP)**. Lá ficam o **Testar conexão** (abre o servidor
+como o Claude abriria e confere a resposta), o **Conectar ao Claude Desktop** (grava o sistema
+na configuração dele, sem mexer nos outros servidores; depois é só reabrir o Claude) e o
+**Copiar comando do Claude Code**. A aba também mostra a última vez que o Claude usou uma
+ferramenta. No instalado, o servidor é o `FinanceiroMetodosMCP.exe`, ao lado do programa; no
+código, `.venv/bin/python -m honorarios.mcp_servidor` (o `.mcp.json` já o registra aqui).
+
+O servidor usa o mesmo banco do programa (a conexão do primeiro uso; `HONORARIOS_DADOS` aponta
+para um SQLite de testes). Para liberar tudo sem perguntar a cada chamada, permita
+`mcp__financeiro-honorarios__*` nas permissões do Claude Code.
 
 ## Instalar no Windows
 

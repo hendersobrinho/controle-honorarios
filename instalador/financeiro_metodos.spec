@@ -71,6 +71,7 @@ ocultos += collect_submodules("keyring.backends")  # cofre de senhas do Windows
 ocultos += collect_submodules("alembic", filter=lambda nome: ".testing" not in nome)
 ocultos += collect_submodules("psycopg")           # o banco do escritório (PostgreSQL)
 ocultos += collect_submodules("psycopg_binary")
+ocultos += collect_submodules("mcp")              # o servidor do Claude (FinanceiroMetodosMCP)
 ocultos += ["sqlalchemy.dialects.sqlite", "sqlalchemy.dialects.postgresql",
             "sqlalchemy.dialects.postgresql.psycopg", "logging.config"]
 
@@ -94,10 +95,34 @@ exe = EXE(
     console=False,          # programa de janela: sem a tela preta do console
     upx=False,
 )
+# o servidor MCP: mesmo pacote, executável de console (o Claude conversa pela
+# entrada e saída padrão, que o programa de janela não tem)
+a_mcp = Analysis(
+    [str(RAIZ / "instalador" / "iniciar_mcp.py")],
+    pathex=[str(RAIZ / "src")],
+    datas=dados,
+    hiddenimports=ocultos,
+    excludes=["tkinter", "pytest", "pytestqt", "ruff"],
+    noarchive=False,
+)
+exe_mcp = EXE(
+    PYZ(a_mcp.pure),
+    a_mcp.scripts,
+    [],
+    exclude_binaries=True,
+    name="FinanceiroMetodosMCP",
+    icon=str(RAIZ / "instalador" / "financeiro_metodos.ico"),
+    version=INFO_VERSAO,
+    console=True,
+    upx=False,
+)
 coleta = COLLECT(
     exe,
     a.binaries,
     a.datas,
+    exe_mcp,
+    a_mcp.binaries,
+    a_mcp.datas,
     strip=False,
     upx=False,
     name="FinanceiroMetodos",

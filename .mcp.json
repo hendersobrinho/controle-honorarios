@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "financeiro-honorarios": {
+      "command": ".venv/bin/python",
+      "args": ["-m", "honorarios.mcp_servidor"]
+    }
+  }
+}

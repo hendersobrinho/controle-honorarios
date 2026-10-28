@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.0.0
+# Especificação — Financeiro Métodos 1.3.0
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.0.0 (outubro de 2026, ainda não lançada) |
+| **Versão** | 1.3.0 (outubro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -101,27 +101,65 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 
 ## 5. Fases entregues
 
-| Fase | Conteúdo | Situação |
-|---|---|---|
-| 0 | Esqueleto, `.gitignore`, Alembic, pytest | concluída |
-| 1 | Clientes PF/PJ/Doméstica, contatos, juros com vigência, cálculo com testes | concluída |
-| 2 | Tipos, contratos, geração de competência, avulsos, baixa (total, parcial, abono) | concluída |
-| 3 | Cobrança geral, ficha da empresa, fluxo "Cobrar" com WhatsApp | concluída |
-| 4 | Cobrança em sequência de várias empresas, importação da planilha, backup (as filas do dia e de envio saíram depois, a pedido) | concluída |
-| 5 | Painel, exportação Excel/PDF, renegociação, reajuste em massa | concluída |
-| 6 | Telas por situação (A vencer, Atrasados, Pagos por competência), rankings, análise de juros, Clientes de IR | concluída |
-| 7 | Imagem da cobrança com Pix e acordo, comprovante "Pagamento confirmado", notificações | concluída |
-| 8 | Gerenciador de e-mail (Outlook/Microsoft 365 e Gmail): conferência da lista, baixa dos que saíram, correção de linhas, resposta | concluída |
-| 9 | Honorário recorrente no cadastro do cliente, "Paga pela empresa", geração automática, próximo dia útil | concluída |
-| 10 | PostgreSQL do escritório, primeiro uso, backup/restauração, instalador do Windows | concluída |
-| 11 | Assinatura em imagem no e-mail ao financeiro; juros da imagem da cobrança até o "Pagar até" | concluída |
-| 12 | Importação personalizada: coluna do Excel de cada informação, layout salvo e exportado como modelo, conferência que não duplica cliente PF/PJ, contrato nem honorário | concluída |
-| 13 | Conta Microsoft guardada no cofre do Windows em pedaços (corrige o erro 1783 do CredWrite), prévia da importação conferida em memória — tudo na **versão 1.0.0**, ainda não lançada | concluída |
-| 14 | Identidade visual do Financeiro: ícone canhoto, abertura, menu lateral navy de tamanho fixo, PDFs no papel do canhoto, imagem de cobrança e comprovante na identidade nova com o QR do Pix do escritório de fábrica, e o assistente do instalador com a marca | concluída |
+| Fase | Conteúdo | Versão | Situação |
+|---|---|---|---|
+| 0 | Esqueleto, `.gitignore`, Alembic, pytest | 1.0.0 | concluída |
+| 1 | Clientes PF/PJ/Doméstica, contatos, juros com vigência, cálculo com testes | 1.0.0 | concluída |
+| 2 | Tipos, contratos, geração de competência, avulsos, baixa (total, parcial, abono) | 1.0.0 | concluída |
+| 3 | Cobrança geral, ficha da empresa, fluxo "Cobrar" com WhatsApp | 1.0.0 | concluída |
+| 4 | Cobrança em sequência de várias empresas, importação da planilha, backup (as filas do dia e de envio saíram depois, a pedido) | 1.0.0 | concluída |
+| 5 | Painel, exportação Excel/PDF, renegociação, reajuste em massa | 1.0.0 | concluída |
+| 6 | Telas por situação (A vencer, Atrasados, Pagos por competência), rankings, análise de juros, Clientes de IR | 1.0.0 | concluída |
+| 7 | Imagem da cobrança com Pix e acordo, comprovante "Pagamento confirmado", notificações | 1.0.0 | concluída |
+| 8 | Gerenciador de e-mail (Outlook/Microsoft 365 e Gmail): conferência da lista, baixa dos que saíram, correção de linhas, resposta | 1.0.0 | concluída |
+| 9 | Honorário recorrente no cadastro do cliente, "Paga pela empresa", geração automática, próximo dia útil | 1.0.0 | concluída |
+| 10 | PostgreSQL do escritório, primeiro uso, backup/restauração, instalador do Windows | 1.0.0 | concluída |
+| 11 | Assinatura em imagem no e-mail ao financeiro; juros da imagem da cobrança até o "Pagar até" | 1.0.1 | concluída |
+| 12 | Importação personalizada: coluna do Excel de cada informação, layout salvo e exportado como modelo, conferência que não duplica cliente PF/PJ, contrato nem honorário | 1.1.0 | concluída |
+| 13 | Conta Microsoft guardada no cofre do Windows em pedaços (corrige o erro 1783 do CredWrite), prévia da importação conferida em memória | 1.1.1 | concluída |
+| 14 | Identidade visual do Financeiro: ícone canhoto, abertura, menu lateral navy de tamanho fixo, PDFs no papel do canhoto, imagem de cobrança e comprovante na identidade nova com o QR do Pix do escritório de fábrica, e o assistente do instalador com a marca | 1.2.0 | concluída |
+| 15 | Busca das telas de honorários sem travar (espera a digitação, redesenho único, "Buscando…" discreto) e integração com o Claude: servidor MCP com 38 ferramentas (consulta e gravação com as regras das telas, e-mail do financeiro, cobrança no WhatsApp), aba Configurações → Claude (MCP) e o `FinanceiroMetodosMCP.exe` no instalador | 1.3.0 | concluída |
+
+Cada fase com recurso novo sobe a versão do meio; correção sobe a última. A 1.0.0
+chegou a ser reaproveitada para as fases 12 e 13 enquanto o sistema não estava
+em uso; a numeração acima é a que vale.
 
 ## 6. O que continua fora do sistema
 
-Emissão de boleto, baixa automática por banco e envio automático de mensagem.
+Emissão de boleto, baixa automática por banco e envio automático pelo WhatsApp.
 O sistema registra, calcula e prepara o texto. O WhatsApp é sempre enviado à
-mão, e o e-mail de resposta ao financeiro só sai depois da confirmação de quem
-usa o sistema. Nenhuma baixa vem do e-mail sem confirmação.
+mão: nem o sistema nem o Claude apertam Enviar. O e-mail de resposta ao
+financeiro só sai com a confirmação de quem usa o sistema — na tela, pelo botão
+Enviar; pelo Claude, quando a pessoa pede o envio. Nenhuma baixa vem do e-mail
+sem confirmação.
+
+## 7. Integração com o Claude (MCP)
+
+O sistema é também um servidor MCP (`honorarios.mcp_servidor`; no instalado,
+`FinanceiroMetodosMCP.exe`, executável de console ao lado do programa, porque o
+protocolo usa a entrada e a saída padrão). O Claude abre o servidor quando
+precisa; ele usa o mesmo banco do programa e a mesma camada de serviços das
+telas, então juros, validações e log valem igual. Cada ferramenta grava numa
+transação própria.
+
+| Área | O que o Claude faz |
+|---|---|
+| Consulta | Resumo, clientes, honorários com juros na data, histórico de cobrança, prévia de baixa, rankings, tipos, contratos, configurações |
+| Cadastro | Cria, altera e exclui cliente (contatos preservados), vínculo PF → empresa, juros com vigência, suspende e retoma cobrança |
+| Honorários | Lança, corrige, cancela; dá baixa (total, parcial, abono) e estorna |
+| Cobrança | Registra cobrança e promessa, estorna, gera o texto do modelo |
+| Contratos | Cria, reajusta, suspende, exclui |
+| E-mail do financeiro | Verifica a pasta, lê e confere a lista com o sistema, dá baixa em quem saiu, responde com a lista atualizada (rascunho `.eml` aberto no Outlook ou envio pela conta do sistema) |
+| WhatsApp | Abre a conversa do contato com a mensagem e a chave Pix na última linha (da imagem não dá para copiar) e deixa a imagem de cobrança copiada para Ctrl+V |
+
+Não há modo somente leitura (pedido do escritório). As ferramentas que apagam
+ou desfazem levam `destructiveHint`, para o Claude pedir confirmação. A cada
+chamada o servidor anota a hora e a ferramenta; a aba **Configurações → Claude
+(MCP)** mostra esse último uso, testa o servidor como o Claude o abriria e grava
+o sistema na configuração do Claude Desktop (sem mexer nos outros servidores).
+
+O rascunho direto na pasta Rascunhos do Outlook exigiria a permissão
+`Mail.ReadWrite` no aplicativo da Microsoft, que hoje tem só `Mail.Read` e
+`Mail.Send`; por isso o rascunho é o `.eml` ligado à conversa. Com o conector do
+Microsoft 365 ligado no próprio Claude, ele pode criar o rascunho por lá a partir
+de `montar_resposta_financeiro`.

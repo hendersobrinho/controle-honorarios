@@ -535,3 +535,38 @@ A planilha não guardava data nem valor do pagamento. Honorário pago entra
 congelado pelo valor do boleto, com observação dizendo exatamente isso, e sem
 registro de `Pagamento`. Cobrança extraída do texto guarda o texto original em
 `origem_texto_planilha`.
+
+### Busca espera a digitação
+O campo de busca avisa 300 ms depois da última tecla (Enter busca na hora). Antes,
+cada tecla refazia a consulta e recriava todos os cartões; os cartões antigos,
+soltos do pai antes do `deleteLater`, chegavam a piscar como janelas próprias no
+Windows. Agora eles são escondidos antes de soltar, a lista redesenha uma vez só
+(`setUpdatesEnabled`) e o painel não empilha recargas enquanto uma está correndo.
+Nos testes a espera é zero (`CampoBusca.atraso_ms`).
+
+### Claude com acesso total, pelo MCP
+O escritório pediu o Claude podendo fazer tudo o que a tela faz. O servidor MCP
+chama a mesma camada de serviços (nada de SQL próprio), uma transação por
+ferramenta, e erro de negócio volta como mensagem. Não há modo somente leitura;
+as ferramentas que apagam ou desfazem levam `destructiveHint`. Cada chamada anota
+hora e ferramenta em `configuracao` (`mcp_ultimo_uso`), que é o que a tela usa para
+dizer se o Claude está usando — o servidor só existe enquanto o Claude o abre.
+
+- **Executável à parte** (`FinanceiroMetodosMCP.exe`, console): o programa de
+  janela do PyInstaller não tem entrada e saída padrão, que é por onde o MCP fala.
+- **SDK `mcp` 1.x** (`<2`): a 2.x trocou o `FastMCP` de nome e de API.
+- **Rascunho em `.eml`**, não na pasta Rascunhos do Outlook: criar rascunho pelo
+  Graph pede `Mail.ReadWrite`, e o aplicativo cadastrado tem `Mail.Read` e
+  `Mail.Send`. Trocar o escopo derrubaria a autorização de quem já entrou.
+- **WhatsApp não envia sozinho**: o link só deixa a mensagem escrita. A chave Pix
+  vai sozinha na última linha, porque da imagem o cliente não consegue copiar.
+- **Imagem na área de transferência por PowerShell** no Windows: a do Qt depende
+  do laço de mensagens, que o servidor sem janela não tem; o .NET copia e a
+  imagem fica lá depois que ele termina.
+- **`atualizar_cliente` reenvia os contatos**: o serviço trata a lista como a
+  verdade e apagaria os contatos se recebesse vazia.
+
+### Numeração das versões
+A 1.0.0 foi reaproveitada enquanto o sistema não estava em uso. Com ele em uso, a
+numeração passou a seguir as entregas (ver a especificação, seção 5): recurso
+novo sobe a versão do meio, correção sobe a última.

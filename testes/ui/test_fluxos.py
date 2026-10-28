@@ -2180,3 +2180,47 @@ def test_importacao_personalizada_da_tela(qtbot, contexto, tmp_path, monkeypatch
 
     novo = clientes.por_codigo(contexto.sessao, "300")
     assert novo is not None and len(novo.honorarios) == 1
+
+
+def test_aba_do_claude_testa_e_conecta(qtbot, contexto, tmp_path, monkeypatch):
+    from honorarios.servicos import conexao_claude
+    from honorarios.ui.comum import segundo_plano, widgets
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    arquivo = tmp_path / "claude_desktop_config.json"
+    monkeypatch.setattr(conexao_claude, "arquivo_do_desktop", lambda: arquivo)
+    monkeypatch.setattr(conexao_claude, "testar", lambda: 31)
+    monkeypatch.setattr(widgets, "informar", lambda *a, **k: None)
+
+    painel = PainelConfiguracoes(contexto, executor=segundo_plano.imediato)
+    qtbot.addWidget(painel)
+    assert painel.claude_desktop.text() == "não conectado"
+    assert painel.claude_uso.text() == "nunca usou"
+
+    painel._testar_claude()
+    assert painel.claude_servidor.text() == "funcionando · 31 ferramentas"
+    assert painel.botao_testar_claude.isEnabled()
+
+    painel._conectar_desktop()
+    assert arquivo.is_file()
+    assert painel.claude_desktop.text().startswith("conectado")
+
+
+def test_aba_do_claude_mostra_quando_o_servidor_falha(qtbot, contexto, monkeypatch):
+    from honorarios.servicos import conexao_claude
+    from honorarios.ui.comum import segundo_plano, widgets
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    def quebra():
+        raise RuntimeError("banco fora do ar")
+
+    avisos = []
+    monkeypatch.setattr(conexao_claude, "testar", quebra)
+    monkeypatch.setattr(widgets, "aviso", lambda _p, texto, *_a: avisos.append(texto))
+
+    painel = PainelConfiguracoes(contexto, executor=segundo_plano.imediato)
+    qtbot.addWidget(painel)
+    painel._testar_claude()
+
+    assert painel.claude_servidor.text() == "não respondeu"
+    assert "banco fora do ar" in avisos[0]

@@ -12,6 +12,8 @@ dependencies = [
     "tzdata>=2024.1",
     "keyring>=25",
     "psycopg[binary]>=3.2",
+    # servidor MCP: o Claude lê e grava nos honorários (honorarios-mcp)
+    "mcp>=1.2,<2",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +29,7 @@ empacotar = [
 
 [project.scripts]
 honorarios = "honorarios.app:main"
+honorarios-mcp = "honorarios.mcp_servidor:main"
 
 [build-system]
 requires = ["setuptools>=68"]
