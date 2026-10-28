@@ -12,6 +12,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from honorarios.infra import carga_inicial, db
 
 
+@pytest.fixture(autouse=True)
+def busca_sem_espera(monkeypatch):
+    """Nos testes a busca vale na hora; a espera de digitação é só da tela real."""
+    from honorarios.ui.comum.campos import CampoBusca
+
+    monkeypatch.setattr(CampoBusca, "atraso_ms", 0)
+
+
 @pytest.fixture
 def pasta_dados(tmp_path, monkeypatch):
     monkeypatch.setenv("HONORARIOS_DADOS", str(tmp_path))

@@ -307,7 +307,12 @@ class PainelDeCartoes(QScrollArea):
             secao.titulo: self._limites.get(secao.titulo, self._limite_secao)
             for secao in secoes
         }
-        self._redesenhar()
+        # um redesenho só: sem isso cada cartão novo repinta a lista inteira
+        self.setUpdatesEnabled(False)
+        try:
+            self._redesenhar()
+        finally:
+            self.setUpdatesEnabled(True)
         if preservar_selecao:
             self._selecionados = [
                 cartao.dados.item
@@ -326,6 +331,9 @@ class PainelDeCartoes(QScrollArea):
             item = self._layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # esconder antes de soltar o pai: um widget sem pai vira janela
+                # própria, e sem o hide() ela chega a piscar na tela
+                widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
         self._cartoes.clear()

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from PySide6.QtCore import QDate, Qt, Signal
+from PySide6.QtCore import QDate, Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
@@ -233,10 +233,32 @@ class ValorDestaque(QLabel):
 
 
 class CampoBusca(QLineEdit):
+    """Campo de busca que só avisa depois que a pessoa para de digitar.
+
+    Cada tecla refazendo a consulta e a lista inteira deixava a tela pesada; com a
+    espera, "empresa" é uma busca só, não sete. Enter busca na hora. Com
+    ``atraso_ms`` em 0 (os testes) o sinal sai a cada mudança, sem timer.
+    """
+
     buscou = Signal(str)
+    atraso_ms = 300
 
     def __init__(self, dica: str = "Buscar…", parent=None) -> None:
         super().__init__(parent)
         self.setPlaceholderText(dica)
         self.setClearButtonEnabled(True)
-        self.textChanged.connect(self.buscou.emit)
+        self._espera = QTimer(self)
+        self._espera.setSingleShot(True)
+        self._espera.timeout.connect(self._avisar)
+        self.textChanged.connect(self._ao_mudar)
+        self.returnPressed.connect(self._avisar)
+
+    def _ao_mudar(self, _texto: str) -> None:
+        if self.atraso_ms <= 0:
+            self._avisar()
+        else:
+            self._espera.start(self.atraso_ms)
+
+    def _avisar(self) -> None:
+        self._espera.stop()
+        self.buscou.emit(self.text())

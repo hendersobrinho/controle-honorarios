@@ -14,6 +14,7 @@ from datetime import date
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QMenu,
     QPushButton,
@@ -214,6 +215,8 @@ class _PainelDeHonorarios(QWidget):
         super().__init__(parent)
         self.contexto = contexto
         self.linhas: list[LinhaHonorario] = []
+        self._recarregando = False
+        self._recarregar_de_novo = False
         self._montar()
         self.recarregar()
 
@@ -341,6 +344,25 @@ class _PainelDeHonorarios(QWidget):
         )
 
     def recarregar(self) -> None:
+        if self._recarregando:   # um sinal disparado durante o redesenho não empilha outro
+            self._recarregar_de_novo = True
+            return
+        self._recarregando = True
+        # ocupado, sem alarde: cursor de espera e "Buscando…" no rodapé, nada de janela
+        self.resumo.setText("Buscando…")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            while True:
+                self._recarregar_de_novo = False
+                self._recarregar_agora()
+                if not self._recarregar_de_novo:
+                    break
+        finally:
+            QApplication.restoreOverrideCursor()
+            self._recarregando = False
+        self._atualizar_resumo()
+
+    def _recarregar_agora(self) -> None:
         self.contexto.atualizar()
         self.linhas = self._consultar()
         secoes = [
@@ -354,7 +376,6 @@ class _PainelDeHonorarios(QWidget):
             for grupo in self._agrupar(self.linhas)
         ]
         self.lista.definir_secoes(secoes)
-        self._atualizar_resumo()
 
     def _atualizar_resumo(self) -> None:
         total = servico.total_de(self.linhas)
