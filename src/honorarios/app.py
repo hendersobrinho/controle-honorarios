@@ -21,6 +21,27 @@ def preparar_banco() -> None:
         carga_inicial.aplicar(sessao)
 
 
+def ligar_ao_claude(log) -> None:
+    """No instalado, deixa o servidor MCP gravado em cada Claude do computador.
+
+    Toda abertura confere (e só regrava o que mudou): instalar o Claude depois do
+    sistema, ou reinstalar o sistema em outra pasta, não exige nada de ninguém. Do
+    código-fonte não grava nada: lá vale o ``.mcp.json`` do projeto.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        from .servicos import conexao_claude
+
+        registro_claude = conexao_claude.registrar_em_todos()
+        for arquivo in registro_claude.gravados:
+            log.info("Servidor MCP gravado em %s", arquivo)
+        for falha in registro_claude.falhas:
+            log.warning("Servidor MCP não gravado: %s", falha)
+    except Exception:  # noqa: BLE001 - o Claude é extra: nunca impede o sistema de abrir
+        log.exception("Falha ao gravar o servidor MCP no Claude")
+
+
 def primeiro_uso() -> bool:
     """Instalado e sem pasta de dados escolhida: pergunta onde fica o banco.
 
@@ -102,6 +123,7 @@ def main(argumentos: list[str] | None = None) -> int:
             db.encerrar()
             abertura.show()
 
+    ligar_ao_claude(log)
     contexto = Contexto(sessao=db.sessao(), data_referencia=hoje())
     janela = JanelaPrincipal(contexto, progresso=abertura.avancar)
     abertura.avancar(100, "Pronto")

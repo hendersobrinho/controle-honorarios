@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.3.0
+# Especificação — Financeiro Métodos 1.3.1
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.3.0 (outubro de 2026) |
+| **Versão** | 1.3.1 (outubro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -119,6 +119,7 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 13 | Conta Microsoft guardada no cofre do Windows em pedaços (corrige o erro 1783 do CredWrite), prévia da importação conferida em memória | 1.1.1 | concluída |
 | 14 | Identidade visual do Financeiro: ícone canhoto, abertura, menu lateral navy de tamanho fixo, PDFs no papel do canhoto, imagem de cobrança e comprovante na identidade nova com o QR do Pix do escritório de fábrica, e o assistente do instalador com a marca | 1.2.0 | concluída |
 | 15 | Busca das telas de honorários sem travar (espera a digitação, redesenho único, "Buscando…" discreto) e integração com o Claude: servidor MCP com 38 ferramentas (consulta e gravação com as regras das telas, e-mail do financeiro, cobrança no WhatsApp), aba Configurações → Claude (MCP) e o `FinanceiroMetodosMCP.exe` no instalador | 1.3.0 | concluída |
+| 16 | O servidor MCP se grava sozinho, a cada abertura, em todo Claude do computador: Claude Desktop comum, Claude Desktop da Microsoft Store (que lê de dentro do pacote) e Claude Code; a aba do Claude passa a mostrar onde está gravado | 1.3.1 | concluída |
 
 Cada fase com recurso novo sobe a versão do meio; correção sobe a última. A 1.0.0
 chegou a ser reaproveitada para as fases 12 e 13 enquanto o sistema não estava
@@ -154,9 +155,13 @@ transação própria.
 
 Não há modo somente leitura (pedido do escritório). As ferramentas que apagam
 ou desfazem levam `destructiveHint`, para o Claude pedir confirmação. A cada
-chamada o servidor anota a hora e a ferramenta; a aba **Configurações → Claude
-(MCP)** mostra esse último uso, testa o servidor como o Claude o abriria e grava
-o sistema na configuração do Claude Desktop (sem mexer nos outros servidores).
+chamada o servidor anota a hora e a ferramenta. O programa instalado, ao abrir,
+grava o servidor em cada Claude do computador, sem mexer nos outros servidores:
+Claude Desktop comum (`%APPDATA%\Claude`), Claude Desktop da Microsoft Store (o
+Windows desvia o `%APPDATA%` dele para dentro do pacote, em
+`%LOCALAPPDATA%\Packages\Claude_…\LocalCache\Roaming\Claude`) e Claude Code
+(`.claude.json` do usuário). A aba **Configurações → Claude (MCP)** mostra onde
+está gravado e o último uso.
 
 O rascunho direto na pasta Rascunhos do Outlook exigiria a permissão
 `Mail.ReadWrite` no aplicativo da Microsoft, que hoje tem só `Mail.Read` e

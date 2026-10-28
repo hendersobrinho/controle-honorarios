@@ -9,7 +9,7 @@
 Registra honorários, calcula o juros de atraso dia a dia, prepara a cobrança pronta para
 o WhatsApp e acompanha a conversa de cobrança por e-mail com o financeiro.
 
-![Versão 1.3.0](https://img.shields.io/badge/vers%C3%A3o-1.3.0-F9B259)
+![Versão 1.3.1](https://img.shields.io/badge/vers%C3%A3o-1.3.1-F9B259)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-203461?logo=python&logoColor=white)
 ![PySide6](https://img.shields.io/badge/PySide6-Qt%206-4BBDCD?logo=qt&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-banco%20do%20escrit%C3%B3rio-203461?logo=postgresql&logoColor=white)
@@ -168,11 +168,12 @@ poder pedir confirmação.
   de cobrança copiada para colar com Ctrl+V. O WhatsApp não aceita envio automático: quem aperta
   Enviar é você; a cobrança só é registrada quando pedido.
 
-Para ligar: **Configurações → Claude (MCP)**. Lá ficam o **Testar conexão** (abre o servidor
-como o Claude abriria e confere a resposta), o **Conectar ao Claude Desktop** (grava o sistema
-na configuração dele, sem mexer nos outros servidores; depois é só reabrir o Claude) e o
-**Copiar comando do Claude Code**. A aba também mostra a última vez que o Claude usou uma
-ferramenta. No instalado, o servidor é o `FinanceiroMetodosMCP.exe`, ao lado do programa; no
+Não há o que configurar: o programa instalado, toda vez que abre, grava o servidor
+(`FinanceiroMetodosMCP.exe`, ao lado do programa) em cada Claude do computador, sem mexer nos
+outros servidores — o Claude Desktop do instalador comum (`%APPDATA%\Claude`), o da Microsoft
+Store (que lê de dentro do pacote, em `%LOCALAPPDATA%\Packages\Claude_…\LocalCache\Roaming\Claude`)
+e o Claude Code (`.claude.json` do usuário). Depois é só reabrir o Claude. **Configurações →
+Claude (MCP)** mostra onde está gravado e a última vez que o Claude usou uma ferramenta. No
 código, `.venv/bin/python -m honorarios.mcp_servidor` (o `.mcp.json` já o registra aqui).
 
 O servidor usa o mesmo banco do programa (a conexão do primeiro uso; `HONORARIOS_DADOS` aponta

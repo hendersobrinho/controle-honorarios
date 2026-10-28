@@ -1,25 +1,17 @@
-"""Ligar o sistema ao Claude: o servidor MCP, onde registrá-lo e se está em uso.
+"""Ligar o sistema ao Claude: onde gravar o servidor MCP e se o Claude está usando.
 
-O Claude (Desktop ou Code) é quem abre o servidor (``mcp_servidor``) quando precisa;
-o sistema não fica "conectado" o tempo todo. Por isso a tela mostra três coisas:
-
-- **o servidor funciona?** — ``testar`` abre o servidor como o Claude abriria e
-  pede a lista de ferramentas;
-- **o Claude Desktop sabe dele?** — ``registrado_no_desktop`` e
-  ``registrar_no_desktop`` (o arquivo de configuração do Claude Desktop);
-- **o Claude usou?** — ``ultimo_uso``: cada chamada de ferramenta anota a hora
-  no banco.
-
-``testar`` faz rede de processo e roda fora da tela; o resto é rápido.
+O Claude (Desktop ou Code) é quem abre o servidor (``mcp_servidor``) quando precisa,
+lendo o comando do arquivo de configuração dele. ``registrar_em_todos`` grava o
+servidor em cada Claude do computador (Desktop comum, Desktop da Microsoft Store e
+Claude Code); o programa instalado faz isso sozinho toda vez que abre.
+``ultimo_uso`` diz quando o Claude chamou uma ferramenta pela última vez.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import shlex
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -45,12 +37,6 @@ class Comando:
     def como_json(self) -> dict:
         return {"command": self.executavel, "args": self.argumentos}
 
-    def linha(self) -> str:
-        partes = [self.executavel, *self.argumentos]
-        if sys.platform == "win32":   # caminho com espaço: aspas duplas, do jeito do Windows
-            return subprocess.list2cmdline(partes)
-        return " ".join(shlex.quote(parte) for parte in partes)
-
 
 def comando_do_servidor() -> Comando:
     """Como abrir o servidor: o .exe próprio no instalado, o Python do projeto no código."""
@@ -60,15 +46,19 @@ def comando_do_servidor() -> Comando:
     return Comando(sys.executable, ["-m", "honorarios.mcp_servidor"])
 
 
-def comando_claude_code() -> str:
-    """Linha para colar no terminal e registrar no Claude Code (vale para todos os projetos)."""
-    return f"claude mcp add --scope user {NOME_SERVIDOR} -- {comando_do_servidor().linha()}"
+# ---------------------------------------------------------- onde o Claude procura
+def _appdata() -> Path:
+    return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
 
 
-# ---------------------------------------------------------------- Claude Desktop
+def _localappdata() -> Path:
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+
+
 def arquivo_do_desktop() -> Path:
+    """O arquivo do Claude Desktop instalado pelo instalador comum."""
     if sys.platform == "win32":
-        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+        base = _appdata()
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
@@ -76,48 +66,136 @@ def arquivo_do_desktop() -> Path:
     return base / "Claude" / "claude_desktop_config.json"
 
 
-def _ler_desktop(arquivo: Path) -> dict:
+def arquivos_do_desktop() -> list[Path]:
+    """Todos os arquivos que um Claude Desktop deste computador pode estar lendo.
+
+    O Claude Desktop da Microsoft Store (pacote MSIX) não enxerga o ``%APPDATA%``
+    de verdade: o Windows desvia a pasta para dentro do pacote
+    (``%LOCALAPPDATA%\\Packages\\Claude_…\\LocalCache\\Roaming\\Claude``). Gravar só no
+    ``%APPDATA%\\Claude`` deixa esse Claude sem o servidor. Por isso vale cada
+    instalação encontrada; sem nenhuma, o lugar do instalador comum.
+    """
+    comum = arquivo_do_desktop()
+    achados = [comum] if comum.parent.is_dir() else []
+    if sys.platform == "win32":
+        pacotes = _localappdata() / "Packages"
+        if pacotes.is_dir():
+            for pacote in sorted(pacotes.glob("Claude_*")):
+                achados.append(pacote / "LocalCache" / "Roaming" / "Claude" /
+                               "claude_desktop_config.json")
+    return achados or [comum]
+
+
+def arquivo_do_claude_code() -> Path | None:
+    """O ``.claude.json`` do Claude Code (servidores do usuário), se ele estiver instalado."""
+    pasta = os.environ.get("CLAUDE_CONFIG_DIR")
+    arquivo = Path(pasta) / ".claude.json" if pasta else Path.home() / ".claude.json"
+    return arquivo if arquivo.is_file() else None
+
+
+# ------------------------------------------------------------------ gravar
+def _ler_json(arquivo: Path) -> dict:
     if not arquivo.is_file():
         return {}
     try:
-        dados = json.loads(arquivo.read_text(encoding="utf-8") or "{}")
+        dados = json.loads(arquivo.read_text(encoding="utf-8-sig") or "{}")
     except (OSError, ValueError) as falha:
         raise ErroDeNegocio(
-            f"Não consegui ler a configuração do Claude Desktop ({arquivo}): {falha}. "
+            f"Não consegui ler a configuração do Claude ({arquivo}): {falha}. "
             "Corrija o arquivo ou apague-o e tente de novo."
         ) from falha
     if not isinstance(dados, dict):
-        raise ErroDeNegocio(f"A configuração do Claude Desktop ({arquivo}) não é um objeto JSON.")
+        raise ErroDeNegocio(f"A configuração do Claude ({arquivo}) não é um objeto JSON.")
     return dados
 
 
-def registrado_no_desktop(arquivo: Path | None = None) -> bool:
-    """O Claude Desktop tem o servidor, apontando para este programa?"""
+def _gravar_json(arquivo: Path, dados: dict) -> None:
+    """Grava por cima de uma vez (arquivo temporário + troca), sem deixar meio escrito."""
+    arquivo.parent.mkdir(parents=True, exist_ok=True)
+    if arquivo.is_file():
+        shutil.copy2(arquivo, arquivo.with_name(arquivo.name + ".bak"))
+    temporario = arquivo.with_name(arquivo.name + ".tmp")
+    temporario.write_text(json.dumps(dados, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(temporario, arquivo)
+
+
+def _servidores(dados: dict, arquivo: Path) -> dict:
+    servidores = dados.setdefault("mcpServers", {})
+    if not isinstance(servidores, dict):
+        raise ErroDeNegocio(f"Em {arquivo}, mcpServers não é um objeto.")
+    return servidores
+
+
+def _aponta_para_nos(entrada) -> bool:
+    esperado = comando_do_servidor()
+    return isinstance(entrada, dict) and entrada.get("command") == esperado.executavel \
+        and list(entrada.get("args") or []) == esperado.argumentos
+
+
+def registrado_em(arquivo: Path) -> bool:
+    """O arquivo tem o servidor, apontando para este programa?"""
     try:
-        dados = _ler_desktop(arquivo or arquivo_do_desktop())
+        dados = _ler_json(arquivo)
     except ErroDeNegocio:
         return False
-    atual = (dados.get("mcpServers") or {}).get(NOME_SERVIDOR)
-    return atual == comando_do_servidor().como_json()
+    return _aponta_para_nos((dados.get("mcpServers") or {}).get(NOME_SERVIDOR))
+
+
+def registrado_no_desktop(arquivo: Path | None = None) -> bool:
+    arquivos = [arquivo] if arquivo else arquivos_do_desktop()
+    return any(registrado_em(a) for a in arquivos)
 
 
 def registrar_no_desktop(arquivo: Path | None = None) -> Path:
     """Põe (ou corrige) o servidor na configuração do Claude Desktop, sem mexer nos outros.
 
-    Guarda uma cópia ``.bak`` do arquivo antes. O Claude Desktop só lê a
-    configuração ao abrir: é preciso fechá-lo e abrir de novo.
+    Guarda uma cópia ``.bak`` antes. O Claude Desktop só lê a configuração ao abrir.
     """
     arquivo = arquivo or arquivo_do_desktop()
-    dados = _ler_desktop(arquivo)
-    servidores = dados.setdefault("mcpServers", {})
-    if not isinstance(servidores, dict):
-        raise ErroDeNegocio("Na configuração do Claude Desktop, mcpServers não é um objeto.")
-    servidores[NOME_SERVIDOR] = comando_do_servidor().como_json()
-    arquivo.parent.mkdir(parents=True, exist_ok=True)
-    if arquivo.is_file():
-        shutil.copy2(arquivo, arquivo.with_suffix(".json.bak"))
-    arquivo.write_text(json.dumps(dados, indent=2, ensure_ascii=False), encoding="utf-8")
+    dados = _ler_json(arquivo)
+    entrada = comando_do_servidor().como_json()
+    if _servidores(dados, arquivo).get(NOME_SERVIDOR) != entrada:
+        dados["mcpServers"][NOME_SERVIDOR] = entrada
+        _gravar_json(arquivo, dados)
     return arquivo
+
+
+def registrar_no_claude_code(arquivo: Path) -> Path:
+    """Servidor do usuário no Claude Code (vale em qualquer pasta), como o ``claude mcp add``."""
+    dados = _ler_json(arquivo)
+    entrada = {"type": "stdio", **comando_do_servidor().como_json(), "env": {}}
+    if not _aponta_para_nos(_servidores(dados, arquivo).get(NOME_SERVIDOR)):
+        dados["mcpServers"][NOME_SERVIDOR] = entrada
+        _gravar_json(arquivo, dados)
+    return arquivo
+
+
+@dataclass
+class Registro:
+    gravados: list[Path]
+    falhas: list[str]
+
+
+def registrar_em_todos() -> Registro:
+    """Grava o servidor em todo Claude deste computador: Desktop (comum e da Store) e Code.
+
+    O programa instalado chama ao abrir, então a conexão se mantém sozinha (até depois
+    de reinstalar em outra pasta). Uma configuração quebrada não impede as outras.
+    """
+    alvos = [(registrar_no_desktop, a) for a in arquivos_do_desktop()]
+    code = arquivo_do_claude_code()
+    if code is not None:
+        alvos.append((registrar_no_claude_code, code))
+    resultado = Registro([], [])
+    for registrar, arquivo in alvos:
+        try:
+            resultado.gravados.append(registrar(arquivo))
+        except (ErroDeNegocio, OSError) as falha:
+            resultado.falhas.append(f"{arquivo}: {falha}")
+    if not resultado.gravados and resultado.falhas:
+        raise ErroDeNegocio("Não consegui gravar o servidor no Claude.\n" +
+                            "\n".join(resultado.falhas))
+    return resultado
 
 
 # -------------------------------------------------------------------- uso e teste
@@ -136,41 +214,3 @@ def ultimo_uso(sessao: Session) -> Uso | None:
     except ValueError:
         return None
     return Uso(quando, configuracoes.obter(sessao, CHAVE_ULTIMA_FERRAMENTA))
-
-
-def testar(espera: float = 30) -> int:
-    """Abre o servidor como o Claude abriria e devolve quantas ferramentas ele oferece.
-
-    Roda fora da thread da tela (abre processo e espera a resposta).
-    """
-    import asyncio
-
-    try:
-        from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
-    except ImportError as falha:
-        raise ErroDeNegocio(
-            "O suporte ao MCP não está instalado (pip install -e .[mcp])."
-        ) from falha
-
-    comando = comando_do_servidor()
-    if getattr(sys, "frozen", False) and not Path(comando.executavel).is_file():
-        raise ErroDeNegocio(
-            f"Não achei {EXECUTAVEL_MCP} na pasta do programa. Reinstale o Financeiro."
-        )
-    parametros = StdioServerParameters(
-        command=comando.executavel, args=comando.argumentos, env=dict(os.environ)
-    )
-
-    async def conversar() -> int:
-        async with stdio_client(parametros) as (leitura, escrita):
-            async with ClientSession(leitura, escrita) as sessao:
-                await sessao.initialize()
-                return len((await sessao.list_tools()).tools)
-
-    try:
-        return asyncio.run(asyncio.wait_for(conversar(), espera))
-    except TimeoutError as falha:
-        raise ErroDeNegocio(
-            f"O servidor não respondeu em {espera:.0f} segundos. Confira a conexão com o banco."
-        ) from falha

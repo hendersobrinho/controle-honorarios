@@ -35,7 +35,7 @@ from ...dominio.valores import formatar_data_hora
 from ...servicos import backup as servico_backup
 from ...servicos import configuracoes as servico
 from ...servicos import tipos as servico_tipos
-from ..comum import segundo_plano, widgets
+from ..comum import widgets
 from ..comum.campos import ComboEnum
 from ..comum.tabelas import (
     Coluna,
@@ -50,10 +50,9 @@ from ..contexto import Contexto
 class PainelConfiguracoes(QWidget):
     titulo = "Configurações"
 
-    def __init__(self, contexto: Contexto, parent=None, executor=None) -> None:
+    def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
         self.contexto = contexto
-        self.executor = executor or segundo_plano.executar
         self._montar()
         self.recarregar()
 
@@ -501,39 +500,29 @@ class PainelConfiguracoes(QWidget):
         pagina = QWidget()
         layout = QVBoxLayout(pagina)
         explicacao = widgets.rotulo_fraco(
-            "Com o Claude ligado ao sistema, ele consulta e grava nos honorários pela "
-            "conversa: busca clientes, vê quem está em atraso, dá baixa, lança honorário, "
-            "lê os e-mails do financeiro e responde (rascunho ou envio), e prepara a "
-            "cobrança no WhatsApp — com as mesmas regras das telas. "
-            "O Claude abre o sistema sozinho quando precisa; não é preciso deixar nada aberto."
+            "O Claude consulta e grava nos honorários pela conversa: busca clientes, vê quem "
+            "está em atraso, dá baixa, lança honorário, lê os e-mails do financeiro e "
+            "responde, e prepara a cobrança no WhatsApp — com as mesmas regras das telas.\n\n"
+            "Não precisa configurar nada: toda vez que abre, o sistema se grava no Claude "
+            "Desktop e no Claude Code deste computador. Se o Claude estava aberto, feche-o "
+            "por completo (inclusive o ícone perto do relógio) e abra de novo."
         )
         layout.addWidget(explicacao)
 
         grupo = QGroupBox("Situação")
         situacao = QFormLayout(grupo)
-        self.claude_servidor = widgets.rotulo_valor("não testado")
-        situacao.addRow("Servidor do sistema:", self.claude_servidor)
-        self.claude_desktop = widgets.rotulo_valor("—")
-        situacao.addRow("Claude Desktop:", self.claude_desktop)
+        self.claude_onde = widgets.rotulo_valor("—")
+        self.claude_onde.setWordWrap(True)
+        situacao.addRow("Gravado em:", self.claude_onde)
         self.claude_uso = widgets.rotulo_valor("—")
         situacao.addRow("Último uso pelo Claude:", self.claude_uso)
         layout.addWidget(grupo)
 
         botoes = QHBoxLayout()
-        self.botao_testar_claude = widgets.QPushButton("Testar conexão")
-        self.botao_testar_claude.setObjectName("primario")
-        self.botao_testar_claude.setToolTip(
-            "Abre o servidor como o Claude abriria e confere se ele responde"
-        )
-        self.botao_testar_claude.clicked.connect(self._testar_claude)
-        conectar = widgets.QPushButton("Conectar ao Claude Desktop")
-        conectar.setToolTip("Grava o sistema na configuração do Claude Desktop")
-        conectar.clicked.connect(self._conectar_desktop)
-        copiar = widgets.QPushButton("Copiar comando do Claude Code")
-        copiar.setToolTip("Para colar no terminal e ligar o Claude Code")
-        copiar.clicked.connect(self._copiar_comando_claude)
-        for botao in (self.botao_testar_claude, conectar, copiar):
-            botoes.addWidget(botao)
+        gravar = widgets.QPushButton("Gravar de novo")
+        gravar.setToolTip("Grava o sistema de novo em cada Claude deste computador")
+        gravar.clicked.connect(self._gravar_no_claude)
+        botoes.addWidget(gravar)
         botoes.addStretch(1)
         layout.addLayout(botoes)
 
@@ -549,60 +538,30 @@ class PainelConfiguracoes(QWidget):
     def _mostrar_situacao_claude(self) -> None:
         from ...servicos import conexao_claude
 
-        self.claude_desktop.setText(
-            "conectado (o servidor está na configuração)"
-            if conexao_claude.registrado_no_desktop()
-            else "não conectado"
-        )
+        arquivos = list(conexao_claude.arquivos_do_desktop())
+        code = conexao_claude.arquivo_do_claude_code()
+        if code is not None:
+            arquivos.append(code)
+        gravados = [str(a) for a in arquivos if conexao_claude.registrado_em(a)]
+        self.claude_onde.setText("\n".join(gravados) if gravados else "em nenhum Claude ainda")
         uso = conexao_claude.ultimo_uso(self.contexto.sessao)
         self.claude_uso.setText(
             f"{formatar_data_hora(uso.quando)} · {uso.ferramenta}" if uso else "nunca usou"
         )
 
-    def _testar_claude(self) -> None:
+    def _gravar_no_claude(self) -> None:
         from ...servicos import conexao_claude
 
-        self.botao_testar_claude.setEnabled(False)
-        self.claude_servidor.setText("testando…")
-
-        def terminou(quantidade) -> None:
-            self.botao_testar_claude.setEnabled(True)
-            self.claude_servidor.setText(f"funcionando · {quantidade} ferramentas")
-            self._mostrar_situacao_claude()
-
-        def falhou(falha) -> None:
-            self.botao_testar_claude.setEnabled(True)
-            self.claude_servidor.setText("não respondeu")
-            widgets.aviso(self, f"O servidor do sistema não respondeu: {falha}",
-                          "Conexão com o Claude")
-
-        self.executor(conexao_claude.testar, terminou, falhou)
-
-    def _conectar_desktop(self) -> None:
-        from ...servicos import conexao_claude
-
-        deu_certo, arquivo = widgets.executar(self, conexao_claude.registrar_no_desktop)
+        deu_certo, registro = widgets.executar(self, conexao_claude.registrar_em_todos)
         if not deu_certo:
             return
         self._mostrar_situacao_claude()
-        widgets.informar(
-            self,
-            f"Pronto: o sistema foi gravado em {arquivo}.\n\nFeche o Claude Desktop por "
-            "completo (inclusive o ícone perto do relógio) e abra de novo para ele "
-            "carregar as ferramentas.",
-            "Claude Desktop",
-        )
-
-    def _copiar_comando_claude(self) -> None:
-        from ...servicos import conexao_claude
-
-        comando = conexao_claude.comando_claude_code()
-        widgets.copiar(comando)
-        widgets.informar(
-            self,
-            f"Comando copiado. Cole no terminal (onde o Claude Code está instalado):\n\n{comando}",
-            "Claude Code",
-        )
+        texto = "Gravado em:\n" + "\n".join(str(a) for a in registro.gravados)
+        if registro.falhas:
+            texto += "\n\nNão consegui gravar em:\n" + "\n".join(registro.falhas)
+        texto += ("\n\nFeche o Claude por completo (inclusive o ícone perto do relógio) e "
+                  "abra de novo para ele carregar as ferramentas.")
+        widgets.informar(self, texto, "Claude")
 
     # ----------------------------------------------------------------- dados
     def recarregar(self) -> None:

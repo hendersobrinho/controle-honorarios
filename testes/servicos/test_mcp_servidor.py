@@ -163,11 +163,118 @@ def test_configuracao_do_desktop_quebrada_nao_e_sobrescrita(tmp_path):
     assert arquivo.read_text() == "{ isso não é json"
 
 
-def test_testar_abre_o_servidor_de_verdade(pasta_dados):
+def test_o_servidor_responde_pelo_protocolo(pasta_dados):
+    """Sobe o servidor noutro processo, como o Claude faz, com o SQLite do teste."""
+    import os
+
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
     from honorarios.servicos import conexao_claude
 
-    # o servidor sobe noutro processo, com o SQLite da pasta do teste (HONORARIOS_DADOS)
-    assert conexao_claude.testar() >= 30
+    comando = conexao_claude.comando_do_servidor()
+    parametros = StdioServerParameters(command=comando.executavel, args=comando.argumentos,
+                                       env=dict(os.environ))
+
+    async def conversar() -> int:
+        async with stdio_client(parametros) as (leitura, escrita):
+            async with ClientSession(leitura, escrita) as sessao:
+                await sessao.initialize()
+                return len((await sessao.list_tools()).tools)
+
+    assert asyncio.run(asyncio.wait_for(conversar(), 60)) >= 38
+
+
+@pytest.fixture
+def computador(tmp_path, monkeypatch):
+    """Um Windows de mentira: AppData comum, pacote da Store e o .claude.json do Code."""
+    import sys
+
+    from honorarios.servicos import conexao_claude
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "usuario"))
+    exe = conexao_claude.Comando("C:/Financeiro/FinanceiroMetodosMCP.exe", [])
+    monkeypatch.setattr(conexao_claude, "comando_do_servidor", lambda: exe)
+    return tmp_path
+
+
+def test_claude_da_store_le_de_dentro_do_pacote(computador):
+    from honorarios.servicos import conexao_claude
+
+    loja = computador / "Local" / "Packages" / "Claude_pzs8sxrjxfjjc"
+    loja.mkdir(parents=True)
+
+    arquivos = conexao_claude.arquivos_do_desktop()
+
+    assert arquivos == [loja / "LocalCache" / "Roaming" / "Claude" / "claude_desktop_config.json"]
+
+
+def test_sem_claude_nenhum_grava_no_lugar_do_instalador_comum(computador):
+    from honorarios.servicos import conexao_claude
+
+    assert conexao_claude.arquivos_do_desktop() == [
+        computador / "Roaming" / "Claude" / "claude_desktop_config.json"]
+
+
+def test_registrar_em_todos_grava_no_desktop_na_store_e_no_code(computador):
+    import json
+
+    from honorarios.servicos import conexao_claude
+
+    (computador / "Roaming" / "Claude").mkdir(parents=True)
+    (computador / "Local" / "Packages" / "Claude_pzs8sxrjxfjjc").mkdir(parents=True)
+    code = computador / "usuario" / ".claude.json"
+    code.parent.mkdir()
+    code.write_text(json.dumps({"numStartups": 7, "mcpServers": {"outro": {"command": "x"}}}))
+
+    registro = conexao_claude.registrar_em_todos()
+
+    assert len(registro.gravados) == 3 and not registro.falhas
+    for arquivo in registro.gravados:
+        assert conexao_claude.registrado_em(arquivo)
+    dados = json.loads(code.read_text())
+    assert dados["numStartups"] == 7 and dados["mcpServers"]["outro"] == {"command": "x"}
+    assert dados["mcpServers"][conexao_claude.NOME_SERVIDOR] == {
+        "type": "stdio", "command": "C:/Financeiro/FinanceiroMetodosMCP.exe", "args": [],
+        "env": {}}
+
+
+def test_configuracao_quebrada_nao_impede_as_outras(computador):
+    import json
+
+    from honorarios.servicos import conexao_claude
+
+    quebrado = computador / "Roaming" / "Claude" / "claude_desktop_config.json"
+    quebrado.parent.mkdir(parents=True)
+    quebrado.write_text("{ isso não é json")
+    code = computador / "usuario" / ".claude.json"
+    code.parent.mkdir()
+    code.write_text(json.dumps({}))
+
+    registro = conexao_claude.registrar_em_todos()
+
+    assert registro.gravados == [code]
+    assert "Não consegui ler" in registro.falhas[0]
+    assert quebrado.read_text() == "{ isso não é json"
+
+
+def test_programa_instalado_se_grava_no_claude_ao_abrir(computador, monkeypatch):
+    import logging
+    import sys
+
+    from honorarios import app
+    from honorarios.servicos import conexao_claude
+
+    destino = computador / "Roaming" / "Claude" / "claude_desktop_config.json"
+    app.ligar_ao_claude(logging.getLogger("teste"))
+    assert not destino.exists()   # do código-fonte não grava nada
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    app.ligar_ao_claude(logging.getLogger("teste"))
+    assert conexao_claude.registrado_em(destino)
 
 
 # ----------------------------------------------------------- e-mail do financeiro

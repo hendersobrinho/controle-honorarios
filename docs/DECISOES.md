@@ -563,6 +563,13 @@ dizer se o Claude está usando — o servidor só existe enquanto o Claude o abr
 - **Imagem na área de transferência por PowerShell** no Windows: a do Qt depende
   do laço de mensagens, que o servidor sem janela não tem; o .NET copia e a
   imagem fica lá depois que ele termina.
+- **Grava sozinho, em todo Claude do computador**: a primeira versão gravava só em
+  `%APPDATA%\Claude`, e o Claude Desktop da Microsoft Store não lê de lá (o
+  Windows desvia o `%APPDATA%` do pacote MSIX para
+  `%LOCALAPPDATA%\Packages\Claude_…\LocalCache\Roaming\Claude`). Agora o
+  programa instalado grava, a cada abertura, no Desktop comum, no da Store e no
+  `.claude.json` do Claude Code — só onde mudou, com `.bak` e troca atômica do
+  arquivo. Os botões de testar e de copiar o comando saíram: não dependiam deles.
 - **`atualizar_cliente` reenvia os contatos**: o serviço trata a lista como a
   verdade e apagaria os contatos se recebesse vazia.
 

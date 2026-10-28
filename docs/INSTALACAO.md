@@ -60,10 +60,12 @@ atual. Para cópias do servidor em si, o `pg_dump` agendado no computador do
 banco continua sendo o recomendado.
 
 **Claude (MCP).** O instalador põe o `FinanceiroMetodosMCP.exe` ao lado do
-programa. Em cada computador que for usar o Claude: abra **Configurações → Claude
-(MCP)**, clique em **Testar conexão** e depois em **Conectar ao Claude Desktop**,
-feche o Claude Desktop por completo e abra de novo. Para o Claude Code, use
-**Copiar comando do Claude Code** e cole no terminal.
+programa, e o programa, toda vez que abre, se grava em cada Claude do computador
+(Claude Desktop comum, Claude Desktop da Microsoft Store e Claude Code). Abra o
+sistema uma vez depois de instalar (ou depois de instalar o Claude), feche o Claude
+por completo — inclusive o ícone perto do relógio — e abra de novo. **Configurações
+→ Claude (MCP)** mostra os arquivos onde ele está gravado; o log do sistema registra
+cada gravação.
 
 **Atualizar.** Suba o `__version__` em `src/honorarios/__init__.py` (é o único
 lugar: o `pyproject.toml`, o .exe e o instalador leem de lá), gere de novo e rode
