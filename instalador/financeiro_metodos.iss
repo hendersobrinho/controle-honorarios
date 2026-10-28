@@ -43,6 +43,10 @@ UninstallDisplayName={#Nome}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+; o assistente com a identidade do Financeiro (scripts/gerar_icones.py), uma imagem
+; por escala de tela do Windows
+WizardImageFile=assistente_100.bmp,assistente_125.bmp,assistente_150.bmp,assistente_175.bmp,assistente_200.bmp,assistente_225.bmp,assistente_250.bmp
+WizardSmallImageFile=assistente_pequeno_100.bmp,assistente_pequeno_125.bmp,assistente_pequeno_150.bmp,assistente_pequeno_175.bmp,assistente_pequeno_200.bmp,assistente_pequeno_225.bmp,assistente_pequeno_250.bmp
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes

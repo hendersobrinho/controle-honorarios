@@ -55,7 +55,7 @@ if sys.platform == "win32":
     )
 
 dados = [
-    # logo, ícone e fundo modelo da imagem de cobrança
+    # marca, ícone, logo da Métodos, fundo modelo e QR do Pix da imagem de cobrança
     (str(PACOTE / "recursos"), "honorarios/recursos"),
     # as migrations do banco vão como arquivos: o Alembic as lê do disco
     (str(PACOTE / "infra" / "migracoes"), "honorarios/infra/migracoes"),
