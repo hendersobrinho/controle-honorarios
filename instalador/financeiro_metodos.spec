@@ -71,7 +71,9 @@ ocultos += collect_submodules("keyring.backends")  # cofre de senhas do Windows
 ocultos += collect_submodules("alembic", filter=lambda nome: ".testing" not in nome)
 ocultos += collect_submodules("psycopg")           # o banco do escritório (PostgreSQL)
 ocultos += collect_submodules("psycopg_binary")
-ocultos += collect_submodules("mcp")              # o servidor do Claude (FinanceiroMetodosMCP)
+# o servidor do Claude (FinanceiroMetodosMCP), sem o mcp.cli: ele exige o typer e encerra
+# o processo quando ele falta — e o programa não usa a linha de comando do MCP
+ocultos += collect_submodules("mcp", filter=lambda nome: not nome.startswith("mcp.cli"))
 ocultos += ["sqlalchemy.dialects.sqlite", "sqlalchemy.dialects.postgresql",
             "sqlalchemy.dialects.postgresql.psycopg", "logging.config"]
 

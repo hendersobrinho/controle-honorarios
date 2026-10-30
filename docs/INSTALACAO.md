@@ -90,7 +90,7 @@ no canto e nas notificações. O `AppId` fixo faz o Windows reconhecer a instala
 anterior; o banco e os backups não são tocados. O registro da última instalação
 fica em `atualizacao.log`, na pasta de dados.
 
-A primeira versão com esse botão (1.5.0) precisa ser instalada à mão uma vez; dali
+A primeira versão com esse botão (1.5.1) precisa ser instalada à mão uma vez; dali
 em diante, o botão resolve.
 
 ## Desenvolvimento

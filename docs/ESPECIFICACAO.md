@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.5.0
+# Especificação — Financeiro Métodos 1.5.1
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.5.0 (outubro de 2026) |
+| **Versão** | 1.5.1 (outubro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -127,6 +127,7 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 16 | O servidor MCP se grava sozinho, a cada abertura, em todo Claude do computador: Claude Desktop comum, Claude Desktop da Microsoft Store (que lê de dentro do pacote) e Claude Code; a aba do Claude passa a mostrar onde está gravado | 1.3.1 | concluída |
 | 17 | Claude com acesso a todo o cadastro e ao banco: contatos um a um e em lote cruzando a lista das empresas com o cadastro, planilhas e layouts da importação personalizada, tipos, grupos e formas de envio, geração dos contratos, acordo, renegociação, backup e SQL direto (consulta e gravação, com log) — 61 ferramentas | 1.4.0 | concluída |
 | 18 | Tela Cobrar refeita em passos (honorários, conferência dos juros, datas, mensagem e imagem): a conta de cada honorário por extenso, juros digitado à mão, "valores atualizados até" (hoje ou outra data) separado do "vencimento (pagar até)" — corrige a imagem que cobrava juros até o prazo —, lembrete com o vencimento escolhido e prévia da imagem na própria tela; o MCP ganha as mesmas opções. Atualização pelo próprio sistema (Configurações → Atualizações: consulta o GitHub, baixa, confere o SHA-256, instala em silêncio e reabre; aviso de versão nova ao abrir) e o GitHub Actions que gera e publica o instalador a cada tag | 1.5.0 | concluída |
+| 19 | Empacotamento do MCP sem o `mcp.cli` (exigia o `typer` e derrubava o PyInstaller no Windows limpo do GitHub Actions): primeira versão publicada pela automação | 1.5.1 | concluída |
 
 Cada fase com recurso novo sobe a versão do meio; correção sobe a última. A 1.0.0
 chegou a ser reaproveitada para as fases 12 e 13 enquanto o sistema não estava
