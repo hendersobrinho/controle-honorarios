@@ -58,12 +58,15 @@ from ..comum.tabelas import (
     coluna_data,
     coluna_inteiro,
     coluna_moeda,
+    distribuir_sobra,
     preparar_tabela,
 )
 from ..contexto import Contexto
 
 ABA_MENSAGEM, ABA_IMAGEM = 0, 1
-LINHAS_VISIVEIS = 6   # a lista cresce até aqui; depois, rola
+ALTURA_COMPACTA = 760   # abaixo disso (notebook), as dicas dos passos somem
+LARGURA_MINIMA_HONORARIO = 110   # o nome inteiro fica na dica e na conferência
+LINHAS_MINIMAS = 4   # a lista mostra pelo menos isto; com mais espaço, mais
 
 
 def _rotulo(linha: LinhaHonorario) -> str:
@@ -94,6 +97,7 @@ def _etapa(numero: int, titulo: str, dica: str = "") -> tuple[QFrame, QVBoxLayou
     textos.setSpacing(1)
     rotulo = QLabel(titulo)
     rotulo.setObjectName("etapaTitulo")
+    rotulo.setToolTip(dica)   # na tela baixa a dica some; no título ela continua
     textos.addWidget(rotulo)
     if dica:
         explicacao = QLabel(dica)
@@ -163,12 +167,54 @@ class DialogoCobrar(QDialog):
         self._espera_imagem.timeout.connect(self._atualizar_imagem)
         self.setObjectName("dialogoCobrar")
         self.setWindowTitle(f"Cobrar – {cliente.nome}")
-        self.resize(1300, 880)
+        self._tamanho_inicial()
         self._montar()
         self._escolher_para_editar(-1)
         self._gerar()
 
     # ================================================================== layout
+    def resizeEvent(self, evento) -> None:  # noqa: N802 - nome da API do Qt
+        super().resizeEvent(evento)
+        compacta = self.height() < ALTURA_COMPACTA
+        for dica in self.findChildren(QLabel, "etapaDica"):
+            dica.setVisible(not compacta)
+        # a largura da tabela só se acerta depois do layout: confere logo em seguida
+        QTimer.singleShot(0, self._encaixar_colunas)
+
+    def _encaixar_colunas(self) -> None:
+        """Lista estreita: some o "Venceu em" (está na conferência) e o total fica à vista."""
+        if not hasattr(self, "tabela"):
+            return
+        indice = next(i for i, c in enumerate(self.modelo.colunas) if c.titulo == "Venceu em")
+        esticada = self.tabela.coluna_esticada
+        outras = sum(self.tabela.columnWidth(i) for i in range(len(self.modelo.colunas))
+                     if i not in (indice, esticada))
+        cabe = outras + self._largura_vencimento + LARGURA_MINIMA_HONORARIO \
+            <= self.tabela.viewport().width()
+        if self.tabela.isColumnHidden(indice) == cabe:
+            self.tabela.setColumnHidden(indice, not cabe)
+            if cabe:
+                self.tabela.setColumnWidth(indice, self._largura_vencimento)
+        distribuir_sobra(self.tabela)
+
+    def showEvent(self, evento) -> None:  # noqa: N802 - nome da API do Qt
+        """Ao aparecer, já no tamanho final: 58% da largura para a lista, 42% para o resto."""
+        super().showEvent(evento)
+        if not self._proporcao_feita:
+            self._proporcao_feita = True
+            largura = self.divisor.width() - self.divisor.handleWidth()
+            esquerda = int(largura * 0.58)
+            self.divisor.setSizes([esquerda, largura - esquerda])
+
+    def _tamanho_inicial(self) -> None:
+        """1320×900, ou o que couber na tela (notebook de 1366×768, por exemplo)."""
+        tela = self.screen().availableGeometry() if self.screen() else None
+        largura, altura = 1320, 900
+        if tela is not None and not tela.isEmpty():
+            largura = min(largura, int(tela.width() * 0.96))
+            altura = min(altura, int(tela.height() * 0.94))
+        self.resize(largura, altura)
+
     def _montar(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 14)
@@ -185,13 +231,15 @@ class DialogoCobrar(QDialog):
             aviso.setWordWrap(True)
             layout.addWidget(aviso)
 
-        divisor = QSplitter(Qt.Orientation.Horizontal)
-        divisor.setChildrenCollapsible(False)
-        divisor.setHandleWidth(14)
-        divisor.addWidget(self._coluna_esquerda())
-        divisor.addWidget(self._coluna_direita())
-        divisor.setSizes([760, 520])
-        layout.addWidget(divisor, 1)
+        self.divisor = QSplitter(Qt.Orientation.Horizontal)
+        self.divisor.setChildrenCollapsible(False)
+        self.divisor.setHandleWidth(14)
+        self.divisor.addWidget(self._coluna_esquerda())
+        self.divisor.addWidget(self._coluna_direita())
+        self.divisor.setStretchFactor(0, 58)
+        self.divisor.setStretchFactor(1, 42)
+        self._proporcao_feita = False
+        layout.addWidget(self.divisor, 1)
 
         rodape = QHBoxLayout()
         self.aviso = QLabel("")
@@ -258,17 +306,16 @@ class DialogoCobrar(QDialog):
         topo.addWidget(resumo, 0, Qt.AlignmentFlag.AlignTop)
         return topo
 
-    # ----------------------------------------------------------- 1, 2 e 3
+    # ------------------------------------------------- esquerda: o que se cobra
     def _coluna_esquerda(self) -> QWidget:
         coluna = QWidget()
         layout = QVBoxLayout(coluna)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        # as datas são criadas antes da lista: o cálculo dela depende da data
-        datas = self._etapa_datas()
-        layout.addWidget(self._etapa_honorarios())
-        layout.addWidget(self._etapa_conferencia(), 1)
-        layout.addWidget(datas)
+        # as datas (que ficam à direita) nascem antes da lista: a conta depende delas
+        self._cartao_datas = self._etapa_datas()
+        layout.addWidget(self._etapa_honorarios(), 3)
+        layout.addWidget(self._etapa_conferencia(), 2)
         return coluna
 
     def _etapa_honorarios(self) -> QFrame:
@@ -285,6 +332,8 @@ class DialogoCobrar(QDialog):
         # a coluna que estica é a do honorário, que muda de lugar com a do titular
         indice = next(i for i, c in enumerate(self.modelo.colunas) if c.titulo == "Honorário")
         self.tabela = preparar_tabela(QTableView(), esticar=indice)
+        # sem espaço, o nome do honorário encolhe (com "…") e o total continua à vista
+        self.tabela.largura_minima_esticada = LARGURA_MINIMA_HONORARIO
         self.tabela.setModel(self.modelo)
         self.tabela.setSortingEnabled(False)
         self.tabela.setSelectionMode(QTableView.SelectionMode.SingleSelection)
@@ -294,7 +343,9 @@ class DialogoCobrar(QDialog):
             lambda atual, _anterior: self._escolher_para_editar(atual.row()))
         self.tabela.doubleClicked.connect(lambda *_: self.juros_editor.setFocus())
         ajustar_colunas(self.tabela, self.modelo.colunas)
-        corpo.addWidget(self.tabela)
+        self._largura_vencimento = self.tabela.columnWidth(
+            next(i for i, c in enumerate(self.modelo.colunas) if c.titulo == "Venceu em"))
+        corpo.addWidget(self.tabela, 1)
         self.incluir_vinculados = QCheckBox(
             f"Incluir {len(self.linhas_vinculados)} honorário(s) de "
             f"{len({linha.cliente.id for linha in self.linhas_vinculados})} pessoa(s) "
@@ -307,12 +358,16 @@ class DialogoCobrar(QDialog):
         return cartao
 
     def _ajustar_altura_da_lista(self) -> None:
-        """A lista do tamanho dos honorários: sem espaço vazio, rolando passado o limite."""
-        linhas = max(1, min(self.modelo.rowCount(), LINHAS_VISIVEIS))
+        """A lista nunca fica menor que algumas linhas; o resto do espaço é dela também.
+
+        Altura travada não serve: com a letra maior do Windows (125%, 150%) a conta
+        não bate e a lista ficava curta demais até para rolar.
+        """
+        linhas = max(1, min(self.modelo.rowCount(), LINHAS_MINIMAS))
         altura = (self.tabela.horizontalHeader().sizeHint().height()
                   + self.tabela.verticalHeader().defaultSectionSize() * linhas
-                  + 2 * self.tabela.frameWidth() + 2)
-        self.tabela.setFixedHeight(altura)
+                  + 2 * self.tabela.frameWidth() + 4)
+        self.tabela.setMinimumHeight(altura)
 
     def _etapa_conferencia(self) -> QFrame:
         cartao, corpo, _ = _etapa(
@@ -322,7 +377,7 @@ class DialogoCobrar(QDialog):
         self.conferencia = QTextBrowser()
         self.conferencia.setObjectName("conferencia")
         self.conferencia.setOpenLinks(False)
-        self.conferencia.setMinimumHeight(130)
+        self.conferencia.setMinimumHeight(100)
         corpo.addWidget(self.conferencia, 1)
 
         editor = QFrame()
@@ -349,9 +404,11 @@ class DialogoCobrar(QDialog):
     def _etapa_datas(self) -> QFrame:
         cartao, corpo, _ = _etapa(
             3, "Datas",
-            "Os juros vão até a data dos valores. O vencimento é o prazo para pagar que "
-            "aparece na imagem e no lembrete: ele não aumenta os juros.")
+            "Os juros vão até a data dos valores. O vencimento é só o prazo para pagar "
+            "(na imagem e no lembrete): não aumenta os juros.")
         formulario = QFormLayout()
+        # tela estreita (notebook): o rótulo sobe para cima do campo em vez de espremer
+        formulario.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         formulario.setHorizontalSpacing(14)
         formulario.setVerticalSpacing(10)
         hoje = self.contexto.data_referencia
@@ -408,19 +465,28 @@ class DialogoCobrar(QDialog):
             coluna_inteiro("Atraso", lambda linha: linha.atualizacao.dias_atraso, cor=cor,
                            dica=lambda linha: f"{linha.atualizacao.dias_atraso} dia(s) de "
                                               "atraso"),
-            coluna_moeda("Valor", lambda linha: linha.atualizacao.saldo),
             Coluna("Juros", juros, alinhamento=Qt.AlignmentFlag.AlignRight
                    | Qt.AlignmentFlag.AlignVCenter, dica=dica_juros),
             coluna_moeda("Total", lambda linha: linha.atualizacao.total, negrito=True),
         ]
 
-    # --------------------------------------------------------------------- 4
+    # ---------------------------------------------- direita: como vai para o cliente
     def _coluna_direita(self) -> QWidget:
+        coluna = QWidget()
+        layout = QVBoxLayout(coluna)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        layout.addWidget(self._cartao_datas)
+        layout.addWidget(self._etapa_cliente(), 1)
+        return coluna
+
+    def _etapa_cliente(self) -> QFrame:
         cartao, corpo, _ = _etapa(
             4, "Para o cliente",
-            "Confira a mensagem e a imagem antes de copiar: elas já usam as datas e os "
-            "valores ao lado.")
+            "Confira a mensagem e a imagem antes de copiar: elas já usam as datas acima "
+            "e os valores ao lado.")
         opcoes = QFormLayout()
+        opcoes.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         opcoes.setHorizontalSpacing(14)
         opcoes.setVerticalSpacing(10)
         contatos = [c for c in self.cliente.contatos if c.ativo]
@@ -630,6 +696,7 @@ class DialogoCobrar(QDialog):
         self.modelo.definir_itens(self.linhas)
         ajustar_colunas(self.tabela, self.modelo.colunas)
         self._ajustar_altura_da_lista()
+        self._encaixar_colunas()
         self._gerar()
 
     def _recalcular(self) -> None:

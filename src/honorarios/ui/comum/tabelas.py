@@ -427,7 +427,11 @@ def ajustar_colunas(visao, colunas: Sequence[Coluna], folga: int = 18) -> None:
 
 
 def distribuir_sobra(visao) -> None:
-    """Dá à coluna esticada o espaço que sobra na largura atual da tabela."""
+    """Dá à coluna esticada o espaço que sobra na largura atual da tabela.
+
+    Com ``visao.largura_minima_esticada``, ela também encolhe (com "…") até esse
+    mínimo quando falta espaço, em vez de empurrar as outras colunas para fora.
+    """
     esticar = getattr(visao, "coluna_esticada", None)
     natural = getattr(visao, "largura_natural_esticada", None)
     modelo = visao.model()
@@ -436,8 +440,9 @@ def distribuir_sobra(visao) -> None:
     quantidade = modelo.columnCount()
     if esticar >= quantidade:
         return
+    minimo = getattr(visao, "largura_minima_esticada", None) or natural
     outras = sum(visao.columnWidth(i) for i in range(quantidade) if i != esticar)
-    visao.setColumnWidth(esticar, max(natural, visao.viewport().width() - outras))
+    visao.setColumnWidth(esticar, max(minimo, visao.viewport().width() - outras))
 
 
 class _AoRedimensionar(QObject):

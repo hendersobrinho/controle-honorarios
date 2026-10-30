@@ -300,8 +300,11 @@ padrão fica destacado e aparece **Limpar filtros**.
 
 ### A tela Cobrar
 
-Tudo numa tela só, em passos numerados — à esquerda, o que se cobra e a conta;
-à direita, o que vai para o cliente. No alto, à direita, a soma de sempre à vista:
+Tudo numa tela só, em passos numerados — à esquerda, o que se cobra (a lista e a
+conferência da conta); à direita, as datas e o que vai para o cliente. A janela se
+ajusta à tela: num notebook, as frases de ajuda dos passos ficam no título (passe o
+mouse) e a coluna "Venceu em" sai da lista (o vencimento continua na conferência),
+para o total ficar sempre à vista. No alto, à direita, a soma de sempre à vista:
 **valor + juros = total a cobrar**.
 
 1. **Quais honorários vão na cobrança** — marque e desmarque. A lista mostra o

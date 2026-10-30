@@ -2265,3 +2265,33 @@ def test_aba_do_claude_mostra_onde_esta_gravado(qtbot, contexto, tmp_path, monke
 
     assert painel.claude_onde.text() == str(arquivo)
     assert str(arquivo) in mensagens[0]
+
+
+def test_cobrar_se_ajusta_a_tela_pequena(qtbot, contexto, cliente_com_debito):
+    """Notebook: as dicas somem, o "Venceu em" se esconde e o total fica à vista."""
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from honorarios.ui.dialogos.cobrar import DialogoCobrar
+
+    dialogo = DialogoCobrar(contexto, cliente_com_debito, linhas_do(contexto.sessao,
+                                                                    cliente_com_debito))
+    qtbot.addWidget(dialogo)
+    colunas = [c.titulo for c in dialogo.modelo.colunas]
+    vencimento = colunas.index("Venceu em")
+
+    dialogo.resize(1320, 900)
+    dialogo.show()
+    QApplication.processEvents()
+    QApplication.processEvents()
+    assert all(d.isVisible() for d in dialogo.findChildren(QLabel, "etapaDica"))
+    assert not dialogo.tabela.isColumnHidden(vencimento)
+    assert dialogo.tabela.minimumHeight() > 0
+
+    dialogo.resize(900, 600)
+    QApplication.processEvents()
+    QApplication.processEvents()
+    assert not any(d.isVisible() for d in dialogo.findChildren(QLabel, "etapaDica"))
+    assert dialogo.tabela.isColumnHidden(vencimento)
+    total = colunas.index("Total")
+    assert dialogo.tabela.columnViewportPosition(total) + dialogo.tabela.columnWidth(total) \
+        <= dialogo.tabela.viewport().width()
