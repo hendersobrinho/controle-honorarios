@@ -195,6 +195,63 @@ def com_juros_manual(atualizacao: Atualizacao, juros: Decimal | None) -> Atualiz
                    juros_calculado=calculado)
 
 
+@dataclass(frozen=True)
+class FaixaDaConta:
+    """Um trecho com o mesmo juros por dia: "10 dias × R$ 1,01 por dia = R$ 10,10"."""
+
+    dias: int
+    valor_dia: Decimal
+    proporcao: Decimal
+    juros: Decimal
+    inicio: date
+    fim: date
+
+    @property
+    def conta(self) -> str:
+        texto = f"{self.dias} dia{'s' if self.dias > 1 else ''} × " \
+                f"{formatar_moeda(self.valor_dia)} por dia"
+        if self.proporcao != 1:
+            texto += f" × {self.proporcao * 100:.0f}% (só o saldo, após pagamento parcial)"
+        return texto
+
+    @property
+    def periodo(self) -> str:
+        return f"{formatar_data(self.inicio)} a {formatar_data(self.fim)}"
+
+
+@dataclass(frozen=True)
+class ContaDosJuros:
+    """A conta dos juros em partes, para a tela mostrar e destacar cada uma."""
+
+    atualizacao: Atualizacao
+    faixas: tuple[FaixaDaConta, ...] = ()
+    ja_cobrado: Decimal = ZERO      # juros já cobrados/abonados em pagamentos parciais
+
+    @property
+    def no_prazo(self) -> bool:
+        return not self.atualizacao.congelado and self.atualizacao.dias_atraso == 0
+
+    @property
+    def calculado(self) -> Decimal:
+        atual = self.atualizacao
+        return atual.juros_calculado if atual.juros_manual else atual.juros
+
+    @property
+    def mostra_soma(self) -> bool:
+        return len(self.faixas) > 1 or self.ja_cobrado > 0
+
+
+def conta_dos_juros(atualizacao: Atualizacao) -> ContaDosJuros:
+    faixas = tuple(
+        FaixaDaConta(s.dias, s.valor_dia, s.proporcao, arredondar(s.juros), s.inicio, s.fim)
+        for s in atualizacao.segmentos
+    )
+    bruto = arredondar(sum((s.juros for s in atualizacao.segmentos), start=ZERO))
+    conta = ContaDosJuros(atualizacao, faixas)
+    ja_cobrado = bruto - conta.calculado if faixas else ZERO
+    return replace(conta, ja_cobrado=max(ZERO, ja_cobrado))
+
+
 def explicar(atualizacao: Atualizacao) -> list[str]:
     """A conta dos juros em palavras, para conferir na tela de cobrança.
 
@@ -203,28 +260,17 @@ def explicar(atualizacao: Atualizacao) -> list[str]:
     """
     if atualizacao.congelado:
         return [f"{atualizacao.status.rotulo}: sem juros a cobrar."]
+    conta = conta_dos_juros(atualizacao)
     linhas = []
-    if atualizacao.dias_atraso == 0:
+    if conta.no_prazo:
         linhas.append("Ainda no prazo: sem juros.")
-    else:
-        bruto = ZERO
-        for segmento in atualizacao.segmentos:
-            conta = (f"{segmento.dias} dia{'s' if segmento.dias > 1 else ''} × "
-                     f"{formatar_moeda(segmento.valor_dia)} por dia")
-            if segmento.proporcao != 1:
-                conta += f" × {segmento.proporcao * 100:.0f}% (só o saldo, após pagamento parcial)"
-            conta += (f" = {formatar_moeda(arredondar(segmento.juros))}"
-                      f"  ({formatar_data(segmento.inicio)} a {formatar_data(segmento.fim)})")
-            linhas.append(conta)
-            bruto += segmento.juros
-        calculado = atualizacao.juros_calculado if atualizacao.juros_manual \
-            else atualizacao.juros
-        ja_cobrado = arredondar(bruto) - calculado
-        if ja_cobrado > 0:
-            linhas.append(f"− {formatar_moeda(ja_cobrado)} de juros já cobrados ou abonados "
-                          "em pagamentos parciais")
-        if len(atualizacao.segmentos) > 1 or ja_cobrado > 0:
-            linhas.append(f"Juros calculados: {formatar_moeda(calculado)}")
+    for faixa in conta.faixas:
+        linhas.append(f"{faixa.conta} = {formatar_moeda(faixa.juros)}  ({faixa.periodo})")
+    if conta.ja_cobrado > 0:
+        linhas.append(f"− {formatar_moeda(conta.ja_cobrado)} de juros já cobrados ou abonados "
+                      "em pagamentos parciais")
+    if conta.mostra_soma:
+        linhas.append(f"Juros calculados: {formatar_moeda(conta.calculado)}")
     if atualizacao.juros_manual:
         linhas.append(f"Juros digitados à mão: {formatar_moeda(atualizacao.juros)} "
                       f"(o cálculo dava {formatar_moeda(atualizacao.juros_calculado)})")

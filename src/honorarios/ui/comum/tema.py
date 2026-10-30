@@ -432,4 +432,60 @@ def folha_de_estilo(tema: str = "claro") -> str:
     }}
     QTabBar::tab:!selected {{ margin-top: 3px; }}
     QStatusBar {{ color: {c["texto_fraco"]}; }}
+    /* tela Cobrar: passos em cartões numerados */
+    QDialog#dialogoCobrar {{ background: {c["fundo"]}; }}
+    QFrame#etapa {{
+        background: {c["superficie"]};
+        border: 1px solid {c["borda"]};
+        border-radius: 12px;
+    }}
+    QFrame#etapa QLabel {{ background: transparent; }}
+    QFrame#etapa QLabel#etapaNumero {{
+        background: {c["destaque"]};
+        color: #ffffff;
+        border-radius: 12px;
+        min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px;
+        font-size: 12px;
+        font-weight: 700;
+    }}
+    QLabel#etapaTitulo {{ font-size: 14px; font-weight: 700; }}
+    QLabel#etapaDica {{ color: {c["texto_fraco"]}; font-size: 12px; }}
+    QFrame#resumoCobranca {{
+        background: {c["superficie"]};
+        border: 1px solid {c["borda"]};
+        border-left: 4px solid {c["marca"]};
+        border-radius: 12px;
+    }}
+    QFrame#resumoCobranca QLabel {{ background: transparent; }}
+    QLabel#resumoRotulo {{ color: {c["texto_fraco"]}; font-size: 11px; }}
+    QLabel#resumoValor {{ font-size: 15px; font-weight: 600; }}
+    QLabel#resumoSinal {{ color: {c["texto_fraco"]}; font-size: 15px; }}
+    QTextBrowser#conferencia {{
+        background: {c["faixa"]};
+        border: none;
+        border-radius: 8px;
+        padding: 4px;
+    }}
+    QFrame#editorJuros {{
+        background: {c["faixa"]};
+        border: 1px dashed {c["borda"]};
+        border-radius: 8px;
+    }}
+    QFrame#editorJuros QLabel {{ background: transparent; }}
+    QPushButton#segmento {{
+        background: {c["superficie"]};
+        color: {c["texto"]};
+        border: 1px solid {c["borda"]};
+        border-radius: 12px;
+        padding: 4px 14px;
+    }}
+    QPushButton#segmento:hover {{ border-color: {c["destaque_texto"]}; }}
+    QPushButton#segmento:checked {{
+        background: {c["destaque"]};
+        color: #ffffff;
+        border-color: {c["destaque"]};
+    }}
+    QPushButton#segmento:disabled {{ color: {c["texto_fraco"]}; background: {c["faixa"]}; }}
+    QLabel#previaImagem {{ background: {c["faixa"]}; border-radius: 8px; padding: 10px; }}
+    QLabel#statusCobranca {{ color: {c["destaque_texto"]}; font-weight: 600; }}
     """

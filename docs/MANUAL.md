@@ -301,7 +301,8 @@ padrão fica destacado e aparece **Limpar filtros**.
 ### A tela Cobrar
 
 Tudo numa tela só, em passos numerados — à esquerda, o que se cobra e a conta;
-à direita, o que vai para o cliente.
+à direita, o que vai para o cliente. No alto, à direita, a soma de sempre à vista:
+**valor + juros = total a cobrar**.
 
 1. **Quais honorários vão na cobrança** — marque e desmarque. A lista mostra o
    vencimento, os dias de atraso, o valor, os juros e o total de cada um.
@@ -310,7 +311,7 @@ Tudo numa tela só, em passos numerados — à esquerda, o que se cobra e a cont
    R$ 1.558,30" (com troca de juros por dia ou pagamento parcial, a conta mostra
    cada parte). Para cobrar **outro valor de juros**, clique no honorário na lista
    e digite em "Juros a cobrar…"; ele fica marcado com ✎ e a conferência mostra o
-   que o cálculo dava. **Usar o juros calculado** desfaz. O juros digitado vale
+   que o cálculo dava. **Usar o calculado** desfaz. O juros digitado vale
    para a mensagem, a imagem, o acordo e o registro da cobrança — só nesta
    cobrança; nada muda no cadastro.
 3. **Datas**
@@ -320,7 +321,7 @@ Tudo numa tela só, em passos numerados — à esquerda, o que se cobra e a cont
      lembrete. **Não aumenta os juros.** Sozinho, ele é a data dos valores — ou,
      quando nada marcado está atrasado, o vencimento do próprio honorário (a
      competência que vence no mês seguinte, por exemplo). Dá para escolher outro;
-     **Automático** volta ao padrão.
+     **Voltar ao automático** volta ao padrão.
 4. **Mensagem e imagem** — para quem vai, o **tipo de mensagem** (**Cobrança**,
    para o que está em atraso, ou **Lembrete**, para o que ainda está no prazo — o
    sistema escolhe sozinho e dá para trocar) e as abas **Mensagem de texto** (dá
@@ -333,10 +334,11 @@ passado o vencimento, o acordo deixa de valer e os juros voltam a correr desde o
 vencimento original. O acordo é registrado ao copiar ou salvar a imagem, e o
 cartão do honorário mostra "Acordo até dd/mm" enquanto ele vale.
 
-Embaixo: **Copiar mensagem**, **Abrir no WhatsApp**, **Copiar imagem** (para colar
-no WhatsApp com Ctrl+V), **Copiar chave Pix** (para mandar como texto logo depois
-da imagem: o cliente toca e copia), **Salvar imagem…** e **Marcar como cobrado**.
-Copiar não registra a cobrança.
+Cada aba tem os seus botões: na **Mensagem de texto**, **Copiar mensagem** e
+**Abrir no WhatsApp**; na **Imagem**, **Copiar imagem** (para colar no WhatsApp com
+Ctrl+V), **Copiar chave Pix** (para mandar como texto logo depois da imagem: o
+cliente toca e copia) e **Salvar imagem…**. Embaixo fica só **Marcar como
+cobrado**. Copiar não registra a cobrança.
 
 ### Imagem da cobrança
 

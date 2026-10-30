@@ -7,8 +7,8 @@ Tudo numa tela só, em passos numerados:
    opção de digitar outro valor de juros à mão.
 3. **Datas**: até quando os valores são atualizados (hoje, ou outra data) e o
    vencimento — o "pagar até" da imagem e do lembrete, que não mexe nos juros.
-4. **Mensagem e imagem**, já com essas datas e esses valores, para conferir
-   antes de copiar.
+4. **Para o cliente**: a mensagem e a imagem, já com essas datas e esses
+   valores, para conferir antes de copiar.
 
 Copiar não registra nada — o registro acontece só em "Marcar como cobrado",
 porque copiar e não enviar é situação comum.
@@ -17,6 +17,7 @@ porque copiar e não enviar é situação comum.
 from __future__ import annotations
 
 from decimal import Decimal
+from html import escape
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QImage, QPixmap
@@ -26,15 +27,16 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
-    QGroupBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
-    QRadioButton,
+    QPushButton,
     QScrollArea,
     QSplitter,
     QTableView,
     QTabWidget,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -46,7 +48,7 @@ from ...servicos import calculo, cobrancas, imagem_cobranca
 from ...servicos import clientes as servico_clientes
 from ...servicos.erros import ErroDeNegocio
 from ...servicos.honorarios import LinhaHonorario
-from ..comum import cores, widgets
+from ..comum import cores, tema, widgets
 from ..comum.campos import CampoData, CampoMoeda, ComboRegistros, ValorDestaque
 from ..comum.imagem_cobranca import copiar_imagem, renderizar
 from ..comum.tabelas import (
@@ -61,6 +63,7 @@ from ..comum.tabelas import (
 from ..contexto import Contexto
 
 ABA_MENSAGEM, ABA_IMAGEM = 0, 1
+LINHAS_VISIVEIS = 6   # a lista cresce até aqui; depois, rola
 
 
 def _rotulo(linha: LinhaHonorario) -> str:
@@ -69,6 +72,63 @@ def _rotulo(linha: LinhaHonorario) -> str:
     if not competencia or competencia.startswith(honorario.tipo.nome):
         return competencia or honorario.tipo.nome
     return f"{honorario.tipo.nome} · {competencia}"
+
+
+def _etapa(numero: int, titulo: str, dica: str = "") -> tuple[QFrame, QVBoxLayout, QHBoxLayout]:
+    """Cartão de um passo: número no círculo, título e a dica embaixo.
+
+    Devolve o cartão, o layout do corpo e a linha do topo (para links à direita).
+    """
+    cartao = QFrame()
+    cartao.setObjectName("etapa")
+    corpo = QVBoxLayout(cartao)
+    corpo.setContentsMargins(16, 14, 16, 14)
+    corpo.setSpacing(10)
+    topo = QHBoxLayout()
+    topo.setSpacing(10)
+    circulo = QLabel(str(numero))
+    circulo.setObjectName("etapaNumero")
+    circulo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    topo.addWidget(circulo, 0, Qt.AlignmentFlag.AlignTop)
+    textos = QVBoxLayout()
+    textos.setSpacing(1)
+    rotulo = QLabel(titulo)
+    rotulo.setObjectName("etapaTitulo")
+    textos.addWidget(rotulo)
+    if dica:
+        explicacao = QLabel(dica)
+        explicacao.setObjectName("etapaDica")
+        explicacao.setWordWrap(True)
+        textos.addWidget(explicacao)
+    topo.addLayout(textos, 1)
+    corpo.addLayout(topo)
+    return cartao, corpo, topo
+
+
+def _segmentos(dono, *textos: str) -> tuple[list[QPushButton], QHBoxLayout]:
+    """Botões que se acendem, um de cada vez (escolha entre poucas opções)."""
+    grupo = QButtonGroup(dono)
+    linha = QHBoxLayout()
+    linha.setSpacing(6)
+    botoes = []
+    for texto in textos:
+        botao = QPushButton(texto)
+        botao.setObjectName("segmento")
+        botao.setCheckable(True)
+        botao.setCursor(Qt.CursorShape.PointingHandCursor)
+        grupo.addButton(botao)
+        linha.addWidget(botao)
+        botoes.append(botao)
+    botoes[0].setChecked(True)
+    return botoes, linha
+
+
+def _link(texto: str, funcao) -> QPushButton:
+    botao = QPushButton(texto)
+    botao.setObjectName("linkFiltro")
+    botao.setCursor(Qt.CursorShape.PointingHandCursor)
+    botao.clicked.connect(lambda _=False: funcao())
+    return botao
 
 
 class DialogoCobrar(QDialog):
@@ -101,8 +161,9 @@ class DialogoCobrar(QDialog):
         self._espera_imagem.setSingleShot(True)
         self._espera_imagem.setInterval(250)
         self._espera_imagem.timeout.connect(self._atualizar_imagem)
+        self.setObjectName("dialogoCobrar")
         self.setWindowTitle(f"Cobrar – {cliente.nome}")
-        self.resize(1280, 860)
+        self.resize(1300, 880)
         self._montar()
         self._escolher_para_editar(-1)
         self._gerar()
@@ -110,11 +171,9 @@ class DialogoCobrar(QDialog):
     # ================================================================== layout
     def _montar(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.addWidget(widgets.Cabecalho(
-            f"Cobrar {self.cliente.nome}",
-            f"Código {self.cliente.codigo} · {self.cliente.tipo_pessoa.rotulo}",
-        ))
+        layout.setContentsMargins(18, 16, 18, 14)
+        layout.setSpacing(12)
+        layout.addLayout(self._topo())
 
         suspensao = servico_clientes.suspensao(self.cliente, self.contexto.data_referencia)
         if suspensao:
@@ -128,80 +187,114 @@ class DialogoCobrar(QDialog):
 
         divisor = QSplitter(Qt.Orientation.Horizontal)
         divisor.setChildrenCollapsible(False)
+        divisor.setHandleWidth(14)
         divisor.addWidget(self._coluna_esquerda())
         divisor.addWidget(self._coluna_direita())
-        divisor.setSizes([760, 480])
+        divisor.setSizes([760, 520])
         layout.addWidget(divisor, 1)
-        layout.addLayout(self._barra_de_acoes())
+
+        rodape = QHBoxLayout()
+        self.aviso = QLabel("")
+        self.aviso.setObjectName("statusCobranca")
+        self.aviso.setWordWrap(True)
+        rodape.addWidget(self.aviso, 1)
+        fechar = widgets.QPushButton("Fechar")
+        fechar.clicked.connect(self.reject)
+        registrar = widgets.QPushButton("Marcar como cobrado")
+        registrar.setObjectName("primario")
+        registrar.setShortcut("Ctrl+Return")
+        registrar.setToolTip("Registra a cobrança dos honorários marcados (Ctrl+Enter)")
+        registrar.clicked.connect(self._registrar)
+        rodape.addWidget(fechar)
+        rodape.addWidget(registrar)
+        layout.addLayout(rodape)
+
+    def _topo(self) -> QHBoxLayout:
+        """Quem está sendo cobrado e, à direita, a soma: valor + juros = total."""
+        topo = QHBoxLayout()
+        topo.setSpacing(16)
+        cabecalho = widgets.Cabecalho(
+            f"Cobrar {self.cliente.nome}",
+            f"Código {self.cliente.codigo} · {self.cliente.tipo_pessoa.rotulo}",
+        )
+        topo.addWidget(cabecalho, 1)
+
+        resumo = QFrame()
+        resumo.setObjectName("resumoCobranca")
+        caixa = QVBoxLayout(resumo)
+        caixa.setContentsMargins(16, 10, 18, 10)
+        caixa.setSpacing(2)
+        soma = QHBoxLayout()
+        soma.setSpacing(14)
+
+        def coluna(rotulo: str, valor: QLabel) -> QVBoxLayout:
+            bloco = QVBoxLayout()
+            bloco.setSpacing(0)
+            titulo = QLabel(rotulo)
+            titulo.setObjectName("resumoRotulo")
+            bloco.addWidget(titulo)
+            bloco.addWidget(valor)
+            return bloco
+
+        def sinal(texto: str) -> QLabel:
+            rotulo = QLabel(texto)
+            rotulo.setObjectName("resumoSinal")
+            return rotulo
+
+        self.resumo_valor = QLabel("—")
+        self.resumo_valor.setObjectName("resumoValor")
+        self.resumo_juros = QLabel("—")
+        self.resumo_juros.setObjectName("resumoValor")
+        self.total = ValorDestaque()
+        soma.addLayout(coluna("Valor", self.resumo_valor))
+        soma.addWidget(sinal("+"), 0, Qt.AlignmentFlag.AlignBottom)
+        soma.addLayout(coluna("Juros", self.resumo_juros))
+        soma.addWidget(sinal("="), 0, Qt.AlignmentFlag.AlignBottom)
+        soma.addLayout(coluna("Total a cobrar", self.total))
+        caixa.addLayout(soma)
+        self.resumo_totais = QLabel("")
+        self.resumo_totais.setObjectName("resumoRotulo")
+        caixa.addWidget(self.resumo_totais)
+        topo.addWidget(resumo, 0, Qt.AlignmentFlag.AlignTop)
+        return topo
 
     # ----------------------------------------------------------- 1, 2 e 3
     def _coluna_esquerda(self) -> QWidget:
         coluna = QWidget()
         layout = QVBoxLayout(coluna)
-        layout.setContentsMargins(0, 0, 6, 0)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        # as datas são criadas antes da lista: o cálculo dela depende da data
+        datas = self._etapa_datas()
+        layout.addWidget(self._etapa_honorarios())
+        layout.addWidget(self._etapa_conferencia(), 1)
+        layout.addWidget(datas)
+        return coluna
 
-        # 3. datas
-        datas_grupo = QGroupBox("3. Datas")
-        datas = QFormLayout(datas_grupo)
-        valores = QHBoxLayout()
-        hoje = self.contexto.data_referencia
-        self.usar_hoje = QRadioButton(f"Hoje ({formatar_data(hoje)})")
-        self.usar_outra_data = QRadioButton("Outra data:")
-        grupo_datas = QButtonGroup(self)
-        grupo_datas.addButton(self.usar_hoje)
-        grupo_datas.addButton(self.usar_outra_data)
-        self.usar_hoje.setChecked(True)
-        self.data_referencia = CampoData(hoje)
-        self.data_referencia.setEnabled(False)
-        self.usar_hoje.toggled.connect(self._trocar_data_dos_valores)
-        self.data_referencia.dateChanged.connect(self._data_digitada)
-        for widget in (self.usar_hoje, self.usar_outra_data, self.data_referencia):
-            valores.addWidget(widget)
-        valores.addStretch(1)
-        datas.addRow("Valores atualizados até:", valores)
-        venc = QHBoxLayout()
-        self.pagar_ate = CampoData(hoje)
-        self.pagar_ate.dateChanged.connect(self._vencimento_digitado)
-        venc.addWidget(self.pagar_ate)
-        self.botao_vencimento = widgets.QPushButton("Automático")
-        self.botao_vencimento.setToolTip(
-            "Volta ao padrão: a data dos valores, ou o vencimento do honorário quando "
-            "ele ainda está no prazo")
-        self.botao_vencimento.clicked.connect(self._vencimento_automatico)
-        venc.addWidget(self.botao_vencimento)
-        venc.addStretch(1)
-        datas.addRow("Vencimento (pagar até):", venc)
-        explicacao = widgets.rotulo_fraco(
-            "Os juros vão até a data dos valores. O vencimento é o prazo para pagar que "
-            "aparece na imagem (e no lembrete): não aumenta os juros."
-        )
-        datas.addRow(explicacao)
-
-        # 1. honorários
-        grupo = QGroupBox("1. Quais honorários vão na cobrança")
-        caixa = QVBoxLayout(grupo)
+    def _etapa_honorarios(self) -> QFrame:
+        cartao, corpo, topo = _etapa(
+            1, "Quais honorários vão na cobrança",
+            "Marque os que entram. Clique num honorário para conferir ou mudar os juros.")
+        topo.addWidget(_link("Marcar todos", lambda: (self.modelo.marcar_todos(True),
+                                                      self._gerar())),
+                       0, Qt.AlignmentFlag.AlignTop)
+        topo.addWidget(_link("Desmarcar todos", lambda: (self.modelo.marcar_todos(False),
+                                                         self._gerar())),
+                       0, Qt.AlignmentFlag.AlignTop)
         self.modelo = ModeloTabelaMarcavel(self._colunas(), self.linhas)
         # a coluna que estica é a do honorário, que muda de lugar com a do titular
         indice = next(i for i, c in enumerate(self.modelo.colunas) if c.titulo == "Honorário")
         self.tabela = preparar_tabela(QTableView(), esticar=indice)
         self.tabela.setModel(self.modelo)
         self.tabela.setSortingEnabled(False)
-        self.tabela.setMinimumHeight(140)
+        self.tabela.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        self.tabela.verticalHeader().setDefaultSectionSize(30)
         self.modelo.dataChanged.connect(lambda *_: self._gerar())
         self.tabela.selectionModel().currentRowChanged.connect(
             lambda atual, _anterior: self._escolher_para_editar(atual.row()))
         self.tabela.doubleClicked.connect(lambda *_: self.juros_editor.setFocus())
         ajustar_colunas(self.tabela, self.modelo.colunas)
-        caixa.addWidget(self.tabela)
-        linha = QHBoxLayout()
-        todos = widgets.QPushButton("Marcar todos")
-        todos.clicked.connect(lambda: (self.modelo.marcar_todos(True), self._gerar()))
-        nenhum = widgets.QPushButton("Desmarcar todos")
-        nenhum.clicked.connect(lambda: (self.modelo.marcar_todos(False), self._gerar()))
-        linha.addWidget(todos)
-        linha.addWidget(nenhum)
-        linha.addStretch(1)
-        caixa.addLayout(linha)
+        corpo.addWidget(self.tabela)
         self.incluir_vinculados = QCheckBox(
             f"Incluir {len(self.linhas_vinculados)} honorário(s) de "
             f"{len({linha.cliente.id for linha in self.linhas_vinculados})} pessoa(s) "
@@ -209,46 +302,82 @@ class DialogoCobrar(QDialog):
         )
         self.incluir_vinculados.setVisible(bool(self.linhas_vinculados))
         self.incluir_vinculados.toggled.connect(self._alternar_vinculados)
-        caixa.addWidget(self.incluir_vinculados)
-        layout.addWidget(grupo, 3)
+        corpo.addWidget(self.incluir_vinculados)
+        self._ajustar_altura_da_lista()
+        return cartao
 
-        # 2. conferência
-        grupo = QGroupBox("2. Conferência dos juros")
-        caixa = QVBoxLayout(grupo)
-        caixa.addWidget(widgets.rotulo_fraco(
+    def _ajustar_altura_da_lista(self) -> None:
+        """A lista do tamanho dos honorários: sem espaço vazio, rolando passado o limite."""
+        linhas = max(1, min(self.modelo.rowCount(), LINHAS_VISIVEIS))
+        altura = (self.tabela.horizontalHeader().sizeHint().height()
+                  + self.tabela.verticalHeader().defaultSectionSize() * linhas
+                  + 2 * self.tabela.frameWidth() + 2)
+        self.tabela.setFixedHeight(altura)
+
+    def _etapa_conferencia(self) -> QFrame:
+        cartao, corpo, _ = _etapa(
+            2, "Conferência dos juros",
             "Juros = juros por dia do cliente × dias de atraso. Confira a conta de cada "
-            "honorário marcado; para cobrar outro valor de juros, clique no honorário na "
-            "lista acima e digite abaixo."
-        ))
-        self.conferencia = QPlainTextEdit()
-        self.conferencia.setReadOnly(True)
-        self.conferencia.setMinimumHeight(120)
-        caixa.addWidget(self.conferencia, 1)
-        editar = QHBoxLayout()
-        self.editado_rotulo = QLabel("Juros a cobrar do honorário selecionado:")
-        editar.addWidget(self.editado_rotulo)
+            "honorário marcado.")
+        self.conferencia = QTextBrowser()
+        self.conferencia.setObjectName("conferencia")
+        self.conferencia.setOpenLinks(False)
+        self.conferencia.setMinimumHeight(130)
+        corpo.addWidget(self.conferencia, 1)
+
+        editor = QFrame()
+        editor.setObjectName("editorJuros")
+        linha = QHBoxLayout(editor)
+        linha.setContentsMargins(12, 8, 12, 8)
+        linha.setSpacing(10)
+        self.editado_rotulo = QLabel("")
+        self.editado_rotulo.setTextFormat(Qt.TextFormat.RichText)
+        self.editado_rotulo.setWordWrap(True)
+        linha.addWidget(self.editado_rotulo, 1)
         self.juros_editor = CampoMoeda()
-        self.juros_editor.setToolTip("Digite o juros e tecle Enter (ou saia do campo)")
+        self.juros_editor.setMinimumWidth(130)
+        self.juros_editor.setToolTip("Digite os juros e tecle Enter (ou saia do campo)")
         self.juros_editor.editingFinished.connect(self._aplicar_juros_digitado)
-        editar.addWidget(self.juros_editor)
-        self.botao_calculado = widgets.QPushButton("Usar o juros calculado")
+        linha.addWidget(self.juros_editor)
+        self.botao_calculado = widgets.QPushButton("Usar o calculado")
+        self.botao_calculado.setToolTip("Desfaz os juros digitados e volta à conta do sistema")
         self.botao_calculado.clicked.connect(self._voltar_ao_calculado)
-        editar.addWidget(self.botao_calculado)
-        editar.addStretch(1)
-        caixa.addLayout(editar)
-        layout.addWidget(grupo, 3)
+        linha.addWidget(self.botao_calculado)
+        corpo.addWidget(editor)
+        return cartao
 
-        layout.addWidget(datas_grupo)
-
-        # totais
-        totais = QHBoxLayout()
-        self.resumo_totais = widgets.rotulo_fraco("")
-        totais.addWidget(self.resumo_totais, 1)
-        totais.addWidget(QLabel("Total a cobrar:"))
-        self.total = ValorDestaque()
-        totais.addWidget(self.total)
-        layout.addLayout(totais)
-        return coluna
+    def _etapa_datas(self) -> QFrame:
+        cartao, corpo, _ = _etapa(
+            3, "Datas",
+            "Os juros vão até a data dos valores. O vencimento é o prazo para pagar que "
+            "aparece na imagem e no lembrete: ele não aumenta os juros.")
+        formulario = QFormLayout()
+        formulario.setHorizontalSpacing(14)
+        formulario.setVerticalSpacing(10)
+        hoje = self.contexto.data_referencia
+        (self.usar_hoje, self.usar_outra_data), valores = _segmentos(
+            self, f"Hoje ({formatar_data(hoje)})", "Outra data")
+        self.data_referencia = CampoData(hoje)
+        self.data_referencia.setEnabled(False)
+        self.usar_hoje.toggled.connect(self._trocar_data_dos_valores)
+        self.data_referencia.dateChanged.connect(self._data_digitada)
+        valores.addWidget(self.data_referencia)
+        valores.addStretch(1)
+        formulario.addRow("Valores atualizados até:", valores)
+        venc = QHBoxLayout()
+        venc.setSpacing(6)
+        self.pagar_ate = CampoData(hoje)
+        self.pagar_ate.dateChanged.connect(self._vencimento_digitado)
+        venc.addWidget(self.pagar_ate)
+        self.botao_vencimento = _link("Voltar ao automático", self._vencimento_automatico)
+        self.botao_vencimento.setToolTip(
+            "A data dos valores ou, quando nada marcado está atrasado, o vencimento do "
+            "próprio honorário")
+        venc.addWidget(self.botao_vencimento)
+        venc.addStretch(1)
+        formulario.addRow("Vencimento (pagar até):", venc)
+        corpo.addLayout(formulario)
+        return cartao
 
     def _colunas(self) -> list[Coluna]:
         cor = lambda linha: cores.cor_de_linha(linha)  # noqa: E731
@@ -265,7 +394,7 @@ class DialogoCobrar(QDialog):
 
         def juros(linha):
             texto = formatar_moeda(linha.atualizacao.juros)
-            return f"{texto} ✎" if linha.atualizacao.juros_manual else texto
+            return f"✎ {texto}" if linha.atualizacao.juros_manual else texto
 
         def dica_juros(linha):
             if linha.atualizacao.juros_manual:
@@ -287,12 +416,13 @@ class DialogoCobrar(QDialog):
 
     # --------------------------------------------------------------------- 4
     def _coluna_direita(self) -> QWidget:
-        coluna = QWidget()
-        layout = QVBoxLayout(coluna)
-        layout.setContentsMargins(6, 0, 0, 0)
-        grupo = QGroupBox("4. Mensagem e imagem")
-        caixa = QVBoxLayout(grupo)
+        cartao, corpo, _ = _etapa(
+            4, "Para o cliente",
+            "Confira a mensagem e a imagem antes de copiar: elas já usam as datas e os "
+            "valores ao lado.")
         opcoes = QFormLayout()
+        opcoes.setHorizontalSpacing(14)
+        opcoes.setVerticalSpacing(10)
         contatos = [c for c in self.cliente.contatos if c.ativo]
         self.combo_contato = ComboRegistros(
             contatos,
@@ -307,93 +437,87 @@ class DialogoCobrar(QDialog):
             self.combo_contato.definir(principal.id)
         self.combo_contato.currentIndexChanged.connect(lambda *_: self._gerar())
         opcoes.addRow("Enviar para:", self.combo_contato)
-
-        tipos = QHBoxLayout()
-        self.tipo_cobranca = QRadioButton("Cobrança (em atraso)")
-        self.lembrete = QRadioButton("Lembrete (ainda no prazo)")
-        grupo_tipo = QButtonGroup(self)
-        grupo_tipo.addButton(self.tipo_cobranca)
-        grupo_tipo.addButton(self.lembrete)
-        self.tipo_cobranca.setChecked(True)
+        (self.tipo_cobranca, self.lembrete), tipos = _segmentos(
+            self, "Cobrança (em atraso)", "Lembrete (no prazo)")
         self.lembrete.toggled.connect(self._tipo_escolhido)
-        tipos.addWidget(self.tipo_cobranca)
-        tipos.addWidget(self.lembrete)
         tipos.addStretch(1)
         opcoes.addRow("Tipo de mensagem:", tipos)
         self.citar_empresa = QCheckBox("Citar o nome da empresa na mensagem")
         self.citar_empresa.toggled.connect(lambda *_: self._gerar())
         opcoes.addRow("", self.citar_empresa)
-        caixa.addLayout(opcoes)
+        corpo.addLayout(opcoes)
 
         self.abas = QTabWidget()
-        texto = QWidget()
-        caixa_texto = QVBoxLayout(texto)
-        caixa_texto.setContentsMargins(0, 6, 0, 0)
+        self.abas.addTab(self._aba_mensagem(), "Mensagem de texto")
+        self.abas.addTab(self._aba_imagem(), "Imagem")
+        self.abas.currentChanged.connect(lambda *_: self._pedir_imagem())
+        corpo.addWidget(self.abas, 1)
+        dica = widgets.rotulo_fraco(
+            "A resposta do cliente se anota depois, na tela Cobranças enviadas.")
+        corpo.addWidget(dica)
+        return cartao
+
+    def _aba_mensagem(self) -> QWidget:
+        pagina = QWidget()
+        caixa = QVBoxLayout(pagina)
+        caixa.setContentsMargins(10, 10, 10, 10)
         self.texto = QPlainTextEdit()
         self.texto.setPlaceholderText(
             "A mensagem aparece aqui e pode ser editada antes de copiar.")
-        caixa_texto.addWidget(self.texto, 1)
-        self.abas.addTab(texto, "Mensagem de texto")
+        caixa.addWidget(self.texto, 1)
+        botoes = QHBoxLayout()
+        botoes.addStretch(1)
+        copiar = widgets.QPushButton("Copiar mensagem")
+        copiar.setShortcut("Ctrl+M")
+        copiar.setToolTip("Copia o texto (Ctrl+M). Copiar não registra a cobrança.")
+        copiar.clicked.connect(self._copiar)
+        whatsapp = widgets.QPushButton("Abrir no WhatsApp")
+        whatsapp.setShortcut("Ctrl+W")
+        whatsapp.setToolTip("Abre a conversa com a mensagem já escrita (Ctrl+W)")
+        whatsapp.clicked.connect(self._abrir_whatsapp)
+        botoes.addWidget(copiar)
+        botoes.addWidget(whatsapp)
+        caixa.addLayout(botoes)
+        return pagina
 
-        imagem = QWidget()
-        caixa_imagem = QVBoxLayout(imagem)
-        caixa_imagem.setContentsMargins(0, 6, 0, 0)
+    def _aba_imagem(self) -> QWidget:
+        pagina = QWidget()
+        caixa = QVBoxLayout(pagina)
+        caixa.setContentsMargins(10, 10, 10, 10)
         self.previa = QLabel()
+        self.previa.setObjectName("previaImagem")
         self.previa.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.previa.setWordWrap(True)
-        rolagem = QScrollArea()
-        rolagem.setWidgetResizable(True)
-        rolagem.setWidget(self.previa)
-        caixa_imagem.addWidget(rolagem, 1)
+        self.rolagem_imagem = QScrollArea()
+        self.rolagem_imagem.setWidgetResizable(True)
+        self.rolagem_imagem.setFrameShape(QFrame.Shape.NoFrame)
+        self.rolagem_imagem.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.rolagem_imagem.setWidget(self.previa)
+        caixa.addWidget(self.rolagem_imagem, 1)
         self.imagem_info = widgets.rotulo_fraco("")
-        caixa_imagem.addWidget(self.imagem_info)
+        caixa.addWidget(self.imagem_info)
         self.acordo = QCheckBox("Guardar como acordo: pagando até o vencimento, vale este total")
         self.acordo.setToolTip(
             "Congela os juros na data dos valores: pagando até o vencimento, a baixa "
             "sugere este total. Depois do vencimento, os juros voltam a correr desde o "
             "vencimento original. É guardado quando a imagem é copiada ou salva.")
-        caixa_imagem.addWidget(self.acordo)
-        self.abas.addTab(imagem, "Imagem")
-        self.abas.currentChanged.connect(lambda *_: self._pedir_imagem())
-        caixa.addWidget(self.abas, 1)
-        layout.addWidget(grupo, 1)
-        layout.addWidget(widgets.rotulo_fraco(
-            "A resposta do cliente se anota depois, na tela Cobranças enviadas."))
-        return coluna
-
-    def _barra_de_acoes(self) -> QHBoxLayout:
-        acoes = QHBoxLayout()
-        self.aviso = widgets.rotulo_fraco("")
-        acoes.addWidget(self.aviso, 1)
-        botoes = (
-            ("Copiar mensagem", "Ctrl+M", self._copiar, "Copia o texto (não registra)"),
-            ("Abrir no WhatsApp", "Ctrl+W", self._abrir_whatsapp,
-             "Abre a conversa com a mensagem escrita"),
-            ("Copiar imagem", "Ctrl+I", self.copiar_imagem,
-             "Copia a imagem para colar no WhatsApp (Ctrl+V)"),
-            ("Copiar chave Pix", "", self.copiar_chave,
-             "Para mandar como mensagem depois da imagem: o cliente toca e copia"),
-            ("Salvar imagem…", "", self._salvar_imagem, "Salva a imagem em PNG"),
-        )
-        for texto, atalho, funcao, dica in botoes:
-            botao = widgets.QPushButton(texto)
-            if atalho:
-                botao.setShortcut(atalho)
-            botao.setToolTip(dica)
-            botao.clicked.connect(lambda _=False, f=funcao: f())
-            acoes.addWidget(botao)
-            if texto == "Copiar chave Pix":
-                self.botao_chave = botao
-        registrar = widgets.QPushButton("Marcar como cobrado")
-        registrar.setObjectName("primario")
-        registrar.setShortcut("Ctrl+Return")
-        registrar.setToolTip("Registra a cobrança dos honorários marcados")
-        registrar.clicked.connect(self._registrar)
-        fechar = widgets.QPushButton("Fechar")
-        fechar.clicked.connect(self.reject)
-        acoes.addWidget(registrar)
-        acoes.addWidget(fechar)
-        return acoes
+        caixa.addWidget(self.acordo)
+        botoes = QHBoxLayout()
+        botoes.addStretch(1)
+        salvar = widgets.QPushButton("Salvar imagem…")
+        salvar.clicked.connect(self._salvar_imagem)
+        self.botao_chave = widgets.QPushButton("Copiar chave Pix")
+        self.botao_chave.setToolTip(
+            "Para mandar como mensagem depois da imagem: o cliente toca e copia")
+        self.botao_chave.clicked.connect(lambda _=False: self.copiar_chave())
+        copiar = widgets.QPushButton("Copiar imagem")
+        copiar.setShortcut("Ctrl+I")
+        copiar.setToolTip("Copia a imagem para colar no WhatsApp com Ctrl+V (Ctrl+I)")
+        copiar.clicked.connect(lambda _=False: self.copiar_imagem())
+        for botao in (salvar, self.botao_chave, copiar):
+            botoes.addWidget(botao)
+        caixa.addLayout(botoes)
+        return pagina
 
     # ================================================================== estado
     def _data_dos_valores(self):
@@ -453,12 +577,14 @@ class DialogoCobrar(QDialog):
     def _escolher_para_editar(self, indice: int) -> None:
         linha = self.modelo.item(indice) if indice >= 0 else None
         self._editada = linha
-        self.juros_editor.setEnabled(linha is not None)
-        self.botao_calculado.setEnabled(linha is not None and linha.atualizacao.juros_manual)
+        self.juros_editor.setVisible(linha is not None)
+        self.botao_calculado.setVisible(linha is not None)
         if linha is None:
-            self.editado_rotulo.setText("Juros a cobrar do honorário selecionado:")
+            self.editado_rotulo.setText(
+                "✎ Para cobrar outro valor de juros, clique no honorário na lista acima.")
             return
-        self.editado_rotulo.setText(f"Juros a cobrar de {_rotulo(linha)}:")
+        self.botao_calculado.setEnabled(linha.atualizacao.juros_manual)
+        self.editado_rotulo.setText(f"✎ Juros a cobrar de <b>{escape(_rotulo(linha))}</b>:")
         self.juros_editor.blockSignals(True)
         self.juros_editor.definir(linha.atualizacao.juros)
         self.juros_editor.blockSignals(False)
@@ -503,6 +629,7 @@ class DialogoCobrar(QDialog):
         self.linhas = proprios + (self.linhas_vinculados if marcado else [])
         self.modelo.definir_itens(self.linhas)
         ajustar_colunas(self.tabela, self.modelo.colunas)
+        self._ajustar_altura_da_lista()
         self._gerar()
 
     def _recalcular(self) -> None:
@@ -533,6 +660,7 @@ class DialogoCobrar(QDialog):
         marcados = self.modelo.marcados()
         if not self._pagar_ate_a_mao:
             self.pagar_ate.definir(self._vencimento_padrao(marcados))
+        self.botao_vencimento.setVisible(self._pagar_ate_a_mao)
         algum_em_atraso = any(linha.atualizacao.dias_atraso > 0 for linha in marcados)
         self.tipo_cobranca.setEnabled(algum_em_atraso)
         self.tipo_cobranca.setToolTip("" if algum_em_atraso else
@@ -541,7 +669,7 @@ class DialogoCobrar(QDialog):
             (self.tipo_cobranca if algum_em_atraso else self.lembrete).setChecked(True)
 
         selecao = self._selecao()
-        self.total.definir(selecao.total)
+        self._mostrar_resumo(marcados)
         self._mostrar_conferencia(marcados)
         self._imagem_em_dia = False
         self._pedir_imagem()
@@ -556,26 +684,64 @@ class DialogoCobrar(QDialog):
             self.texto.setPlainText("")
             self.aviso.setText(str(falha))
 
-    def _mostrar_conferencia(self, marcados: list[LinhaHonorario]) -> None:
-        if not marcados:
-            self.conferencia.setPlainText("Marque ao menos um honorário.")
-            self.resumo_totais.setText("")
-            return
-        blocos = []
-        for linha in marcados:
-            titular = "" if linha.cliente.id == self.cliente.id else f"{linha.cliente.nome}: "
-            cabeca = (f"{titular}{_rotulo(linha)} — venceu em "
-                      f"{formatar_data(linha.honorario.vencimento)}")
-            blocos.append("\n".join([cabeca] + [f"   {texto}" for texto in
-                                                calculo.explicar(linha.atualizacao)]))
-        self.conferencia.setPlainText("\n\n".join(blocos))
+    def _mostrar_resumo(self, marcados: list[LinhaHonorario]) -> None:
         valor = sum((linha.atualizacao.saldo for linha in marcados), start=ZERO)
         juros = sum((linha.atualizacao.juros for linha in marcados), start=ZERO)
+        self.resumo_valor.setText(formatar_moeda(valor))
+        self.resumo_juros.setText(formatar_moeda(juros))
+        self.total.definir(valor + juros)
         manuais = sum(1 for linha in marcados if linha.atualizacao.juros_manual)
         self.resumo_totais.setText(
-            f"{len(marcados)} honorário(s) · valor {formatar_moeda(valor)} + juros "
-            f"{formatar_moeda(juros)}, até {formatar_data(self._data_dos_valores())}"
-            + (f" · {manuais} com juros digitado à mão" if manuais else ""))
+            f"{len(marcados)} honorário(s) · valores até "
+            f"{formatar_data(self._data_dos_valores())}"
+            + (f" · {manuais} com juros à mão" if manuais else ""))
+
+    def _mostrar_conferencia(self, marcados: list[LinhaHonorario]) -> None:
+        if not marcados:
+            self.conferencia.setHtml("<p>Marque ao menos um honorário.</p>")
+            return
+        paleta = tema.CORES.get(cores.tema_atual(), tema.CORES["claro"])
+        fraco, destaque = paleta["texto_fraco"], paleta["destaque_texto"]
+        blocos = []
+        for linha in marcados:
+            atual = linha.atualizacao
+            conta = calculo.conta_dos_juros(atual)
+            titular = "" if linha.cliente.id == self.cliente.id else f"{linha.cliente.nome}: "
+            situacao = f"venceu em {formatar_data(linha.honorario.vencimento)}"
+            if atual.dias_atraso:
+                situacao += f" · {atual.dias_atraso} dias de atraso"
+            partes = [f"<b>{escape(titular + _rotulo(linha))}</b>"
+                      f"<span style='color:{fraco}'> &nbsp;· {situacao}</span>"]
+            if conta.no_prazo:
+                partes.append(f"<span style='color:{paleta['pago']}'>"
+                              "Ainda no prazo: sem juros.</span>")
+            for faixa in conta.faixas:
+                partes.append(f"{faixa.conta} = <b style='color:{destaque}'>"
+                              f"{formatar_moeda(faixa.juros)}</b>"
+                              f"<span style='color:{fraco}'> &nbsp;({faixa.periodo})</span>")
+            if conta.ja_cobrado > 0:
+                partes.append(f"<span style='color:{fraco}'>− "
+                              f"{formatar_moeda(conta.ja_cobrado)} de juros já cobrados ou "
+                              "abonados em pagamentos parciais</span>")
+            if conta.mostra_soma:
+                partes.append(f"Juros calculados: <b>{formatar_moeda(conta.calculado)}</b>")
+            if atual.juros_manual:
+                partes.append(
+                    f"<span style='background:{paleta['marca']};"
+                    f"color:{paleta['texto_sobre_marca']}'>&nbsp;✎ Juros digitados à mão: "
+                    f"{formatar_moeda(atual.juros)}&nbsp;</span>"
+                    f"<span style='color:{fraco}'> (o cálculo dava "
+                    f"{formatar_moeda(conta.calculado)})</span>")
+            partes.append(f"<span style='color:{fraco}'>{formatar_moeda(atual.saldo)} + "
+                          f"{formatar_moeda(atual.juros)} de juros = </span>"
+                          f"<b>{formatar_moeda(atual.total)}</b>")
+            blocos.append(
+                f"<table width='100%' cellspacing='0' cellpadding='9' "
+                f"style='margin-bottom:6px'><tr><td bgcolor='{paleta['superficie']}'>"
+                + "<br>".join(partes) + "</td></tr></table>")
+        rolagem = self.conferencia.verticalScrollBar().value()
+        self.conferencia.setHtml("".join(blocos))
+        self.conferencia.verticalScrollBar().setValue(rolagem)
 
     # ------------------------------------------------------------------ imagem
     def _pedir_imagem(self) -> None:
@@ -604,8 +770,10 @@ class DialogoCobrar(QDialog):
             return False
         self.dados_imagem = dados
         self._imagem_em_dia = True
+        # na largura da aba (menos a margem e a barra de rolagem vertical)
+        largura = max(260, self.rolagem_imagem.viewport().width() - 40)
         self.previa.setPixmap(QPixmap.fromImage(self.imagem).scaledToWidth(
-            500, Qt.TransformationMode.SmoothTransformation))
+            largura, Qt.TransformationMode.SmoothTransformation))
         info = (f"Valores atualizados até {dados.campos['data']} · vencimento "
                 f"{dados.campos['vencimento']} · total {dados.campos['total']}.")
         if dados.qrcode is None:
