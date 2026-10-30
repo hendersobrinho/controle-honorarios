@@ -637,6 +637,19 @@ antigos; "Dar baixa em todas" resolve o acúmulo do começo. O trimestre conta d
 competência de entrada porque o escritório não usa o trimestre do ano, e a tarefa
 nasce no dia seguinte ao fim do trimestre ("quando completar").
 
+### Campos de data e valor de digitação livre
+O `QDateEdit` divide a data em seções (dia, mês, ano): não deixa apagar nem digitar
+a data inteira de uma vez, e cada tecla cai numa seção. O `QDoubleSpinBox` mistura
+"R$" e separador de milhar com o que se digita e muda o valor com a rodinha do
+mouse. Os dois foram trocados por `QLineEdit` (`CampoData`, `CampoNumero` e as
+subclasses `CampoMoeda`/`CampoTaxa`, em `ui/comum/campos.py`), com a mesma interface
+de antes (`valor`, `definir`, `dateChanged`, `valueChanged`, limites), para nenhuma
+tela mudar. A leitura fica no domínio (`ler_data_livre`, `ler_numero_livre`), com
+testes: com vírgula e ponto, o último é o decimal; só com ponto, três dígitos depois
+dele é milhar ("1.234") e menos é decimal ("1.01"); letra no meio é erro, não se
+adivinha. Valor inválido não trava a digitação nem troca o valor: a borda fica
+vermelha e o anterior continua até corrigir.
+
 ### Numeração das versões
 A 1.0.0 foi reaproveitada enquanto o sistema não estava em uso. Com ele em uso, a
 numeração passou a seguir as entregas (ver a especificação, seção 5): recurso

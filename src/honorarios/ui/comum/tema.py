@@ -176,6 +176,10 @@ def folha_de_estilo(tema: str = "claro") -> str:
     QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QPlainTextEdit:focus {{
         border-color: {c["destaque_texto"]};
     }}
+    QLineEdit[invalido="true"] {{
+        border: 1px solid {c["atrasado"]};
+        background: {c["faixa"]};
+    }}
 
     QTableView, QTreeView {{
         background: {c["superficie"]};

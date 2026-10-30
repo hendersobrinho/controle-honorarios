@@ -51,6 +51,14 @@ o que para é a cobrança.
 
 ### Escolher cliente e alterar juros
 
+Os campos de **data** e de **valor** são de digitação livre. Data: `30/10/2026`,
+`30102026`, `30/10/26`, `30-10` (o ano atual) ou `hoje` — as barras entram
+sozinhas, e o calendário fica no botãozinho dentro do campo. Valor: `1.234,56`,
+`1234,56`, `1234.56` ou `2`; o "R$" e os pontos aparecem ao sair do campo, e ao
+entrar nele o número fica selecionado para digitar por cima. O que não faz
+sentido (31/02, letra no valor) deixa o campo com borda vermelha e a explicação
+ao passar o mouse; o valor anterior continua valendo até corrigir.
+
 Onde se escolhe um cliente (contrato, honorário avulso, extrato, empresa que
 paga), há um campo de busca: digite nome (sem se preocupar com acento), código
 ou parte do CPF/CNPJ e aperte Enter. Com o código exato ou um resultado só, a

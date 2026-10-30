@@ -67,6 +67,85 @@ def ler_data(texto: str) -> date:
     raise ValueError(f"Data inválida: {texto!r}. Use o formato dd/mm/aaaa.")
 
 
+def ler_data_livre(texto: str | None, referencia: date | None = None) -> date | None:
+    """A data do jeito que se digita: 30/10/2026, 30/10/26, 30102026, 301026, 30-10,
+    3/1/2026, 2026-10-30 ou "hoje". Sem ano, vale o de ``referencia``. Vazio → None.
+    """
+    texto = (texto or "").strip().lower()
+    if not texto:
+        return None
+    referencia = referencia or hoje()
+    if texto in ("h", "hj", "hoje"):
+        return referencia
+    try:
+        if re.fullmatch(r"\d{4}-\d{1,2}-\d{1,2}", texto):
+            ano, mes, dia = (int(p) for p in texto.split("-"))
+            return date(ano, mes, dia)
+        partes = [p for p in re.split(r"[/\-. ]+", texto) if p]
+        if not all(p.isdigit() for p in partes):
+            raise ValueError
+        if len(partes) == 1:
+            numeros = partes[0]
+            if len(numeros) not in (4, 6, 8):
+                raise ValueError
+            partes = [numeros[:2], numeros[2:4]] + ([numeros[4:]] if len(numeros) > 4 else [])
+        if len(partes) not in (2, 3):
+            raise ValueError
+        dia, mes = int(partes[0]), int(partes[1])
+        ano = int(partes[2]) if len(partes) == 3 else referencia.year
+        if ano < 100:
+            ano += 2000
+        return date(ano, mes, dia)
+    except ValueError:
+        raise ValueError(f"Data inválida: {texto!r}. Use dia/mês/ano, como 30/10/2026.") from None
+
+
+def ler_numero_livre(texto: str | None, casas: int = 2) -> Decimal:
+    """O número do jeito que se digita: "1.234,56", "1234,56", "1234.56", "R$ 2", "1,5".
+
+    Com vírgula e ponto, o último é o decimal. Só com ponto: três dígitos depois dele
+    é milhar ("1.234" = mil duzentos e trinta e quatro); senão é decimal ("1.01").
+    Vazio → zero.
+    """
+    if re.search(r"[^\d,.\-\sR$%]", texto or ""):   # letra no meio: avisa, não adivinha
+        raise ValueError(f"Valor inválido: {texto!r}.")
+    limpo = re.sub(r"[^\d,.\-]", "", texto or "")
+    if not re.search(r"\d", limpo):
+        if re.sub(r"[\sR$%]", "", texto or ""):   # escreveu algo que não é número
+            raise ValueError(f"Valor inválido: {texto!r}.")
+        return Decimal(0).quantize(Decimal(1).scaleb(-casas))
+    negativo = limpo.startswith("-")
+    limpo = limpo.replace("-", "")
+    if "," in limpo and "." in limpo:
+        decimal = "," if limpo.rfind(",") > limpo.rfind(".") else "."
+        if limpo.count(decimal) > 1:   # "1,2.3,4": centavos em dois lugares
+            raise ValueError(f"Valor inválido: {texto!r}.")
+    elif "," in limpo:
+        if limpo.count(",") > 1:
+            raise ValueError(f"Valor inválido: {texto!r}.")
+        decimal = ","
+    elif "." in limpo:
+        # "1.234.567" e "1.234" são milhar; "1.01" e "1.5" são decimal
+        milhar = limpo.count(".") > 1 or len(limpo.rsplit(".", 1)[1]) == 3
+        decimal = "" if milhar else "."
+    else:
+        decimal = ""
+    if decimal:
+        inteiro, _, fracao = limpo.rpartition(decimal)
+        inteiro = re.sub(r"[,.]", "", inteiro)
+        if re.search(r"[,.]", fracao):
+            raise ValueError(f"Valor inválido: {texto!r}.")
+        normal = f"{inteiro or '0'}.{fracao}"
+    else:
+        normal = re.sub(r"[,.]", "", limpo)
+    try:
+        valor = Decimal(normal)
+    except InvalidOperation:
+        raise ValueError(f"Valor inválido: {texto!r}.") from None
+    valor = -valor if negativo else valor
+    return valor.quantize(Decimal(1).scaleb(-casas), rounding=ROUND_HALF_UP)
+
+
 def dia_do_mes(ano: int, mes: int, dia: int) -> date:
     """Data do dia informado, recuando quando o mês é curto (31 em fevereiro)."""
     import calendar

@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
-    QDoubleSpinBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -49,6 +48,7 @@ from ...dominio.valores import (
 from ...servicos import analise_juros as servico
 from ...servicos.analise_juros import AnaliseJuros, percentual
 from ..comum import cores, tema, widgets
+from ..comum.campos import CampoTaxa
 from ..comum.cartoes import CartaoRegistro, DadosCartao, DataCartao
 from ..comum.grafico_meses import GraficoMeses
 from ..comum.grafico_ranking import GraficoRanking, fonte_ajustada
@@ -189,11 +189,7 @@ class TabelaCenarios(QWidget):
         linha = QHBoxLayout()
         if por_cliente:
             linha.addWidget(QLabel("Testar outro juros ao dia:"))
-            self.valor = QDoubleSpinBox()
-            self.valor.setPrefix("R$ ")
-            self.valor.setDecimals(2)
-            self.valor.setRange(0.0, 100000.0)
-            self.valor.setSingleStep(0.10)
+            self.valor = CampoTaxa()
         else:
             linha.addWidget(QLabel("Testar outro aumento, para todos:"))
             self.valor = QSpinBox()

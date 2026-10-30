@@ -134,3 +134,45 @@ def test_ler_data():
     assert ler_data("08/09/2026") == date(2026, 9, 8)
     with pytest.raises(ValueError):
         ler_data("31/02/2026")
+
+
+# ------------------------------------------------- o que se digita nos campos
+@pytest.mark.parametrize("texto, esperado", [
+    ("30/10/2026", date(2026, 10, 30)), ("30/10/26", date(2026, 10, 30)),
+    ("30102026", date(2026, 10, 30)), ("301026", date(2026, 10, 30)),
+    ("30-10-2026", date(2026, 10, 30)), ("30.10.2026", date(2026, 10, 30)),
+    ("3/1/2026", date(2026, 1, 3)), ("30/10", date(2026, 10, 30)), ("3010", date(2026, 10, 30)),
+    ("2026-10-30", date(2026, 10, 30)), ("hoje", date(2026, 10, 30)), ("", None),
+])
+def test_data_digitada_livre(texto, esperado):
+    from honorarios.dominio.valores import ler_data_livre
+
+    assert ler_data_livre(texto, date(2026, 10, 30)) == esperado
+
+
+@pytest.mark.parametrize("texto", ["31/02/2026", "30/13/2026", "99", "abc", "1/2/3/4"])
+def test_data_impossivel_explica(texto):
+    from honorarios.dominio.valores import ler_data_livre
+
+    with pytest.raises(ValueError, match="Data inválida"):
+        ler_data_livre(texto, date(2026, 10, 30))
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("1.234,56", "1234.56"), ("1234,56", "1234.56"), ("1234.56", "1234.56"),
+    ("R$ 2", "2.00"), ("1,5", "1.50"), ("1.01", "1.01"), ("1.234", "1234.00"),
+    ("1.234.567", "1234567.00"), ("12.345,6", "12345.60"), ("", "0.00"),
+    ("R$ 1.507,80", "1507.80"), ("0,005", "0.01"),
+])
+def test_numero_digitado_livre(texto, esperado):
+    from honorarios.dominio.valores import ler_numero_livre
+
+    assert ler_numero_livre(texto) == Decimal(esperado)
+
+
+@pytest.mark.parametrize("texto", ["abc", "1,2,3", "1,2.3,4", "1.5x", "12a3"])
+def test_numero_que_nao_e_numero_explica(texto):
+    from honorarios.dominio.valores import ler_numero_livre
+
+    with pytest.raises(ValueError, match="Valor inválido"):
+        ler_numero_livre(texto)

@@ -2464,3 +2464,95 @@ def test_tarefas_baixa_em_todas(qtbot, contexto, cliente_com_debito, monkeypatch
     assert painel.lista.itens_da_secao("Para fazer") == []
     assert len(painel.lista.itens_da_secao("Feitas")) == 3
     assert not painel.botao_todas.isEnabled()
+
+
+# ------------------------------------------------- campos de data e de valor
+def test_campo_de_data_aceita_digitacao_livre(qtbot):
+    from PySide6.QtCore import Qt
+
+    from honorarios.ui.comum.campos import CampoData
+
+    campo = CampoData(date(2026, 1, 1))
+    qtbot.addWidget(campo)
+    mudou = []
+    campo.dateChanged.connect(lambda dia: mudou.append(dia))
+
+    campo.clear()
+    qtbot.keyClicks(campo, "30102026")            # sem barras: elas entram sozinhas
+    assert campo.text() == "30/10/2026"
+    assert campo.valor() == date(2026, 10, 30) and mudou   # já vale, sem sair do campo
+
+    campo.selectAll()
+    qtbot.keyClicks(campo, "31/02/2026")
+    qtbot.keyClick(campo, Qt.Key.Key_Return)
+    assert campo.property("invalido") and "Data inválida" in campo.toolTip()
+    assert campo.valor() == date(2026, 10, 30)   # o valor bom continua
+
+    campo.selectAll()
+    qtbot.keyClicks(campo, "5/11/26")
+    qtbot.keyClick(campo, Qt.Key.Key_Return)
+    assert campo.text() == "05/11/2026" and not campo.property("invalido")
+
+    campo.clear()                                 # obrigatória: apagar volta a que estava
+    qtbot.keyClick(campo, Qt.Key.Key_Return)
+    assert campo.valor() == date(2026, 11, 5) and campo.text() == "05/11/2026"
+
+
+def test_campo_de_data_opcional_pode_ficar_vazio_e_respeita_limite(qtbot):
+    from PySide6.QtCore import QDate, Qt
+
+    from honorarios.ui.comum.campos import CampoData, CampoDataOpcional
+
+    opcional = CampoDataOpcional(date(2026, 3, 1))
+    qtbot.addWidget(opcional)
+    opcional.clear()
+    qtbot.keyClick(opcional, Qt.Key.Key_Return)
+    assert opcional.valor() is None and opcional.text() == ""
+
+    limitado = CampoData(date(2026, 1, 10))
+    qtbot.addWidget(limitado)
+    limitado.setMaximumDate(QDate(2026, 1, 31))
+    limitado.selectAll()
+    qtbot.keyClicks(limitado, "15/02/2026")
+    qtbot.keyClick(limitado, Qt.Key.Key_Return)
+    assert "não pode passar de 31/01/2026" in limitado.toolTip()
+    assert limitado.valor() == date(2026, 1, 10)
+
+
+def test_campo_de_valor_aceita_digitacao_livre(qtbot):
+    from PySide6.QtCore import Qt
+
+    from honorarios.ui.comum.campos import CampoMoeda, CampoTaxa
+
+    campo = CampoMoeda(Decimal("10"))
+    qtbot.addWidget(campo)
+    assert campo.text() == "R$ 10,00"
+    valores = []
+    campo.valueChanged.connect(valores.append)
+
+    campo.selectAll()
+    qtbot.keyClicks(campo, "1.234,5")
+    assert campo.valor() == Decimal("1234.50") and valores[-1] == 1234.5   # já vale
+    qtbot.keyClick(campo, Qt.Key.Key_Return)
+    assert campo.text() == "R$ 1.234,50"
+
+    campo.selectAll()
+    qtbot.keyClicks(campo, "abc")
+    qtbot.keyClick(campo, Qt.Key.Key_Return)
+    assert campo.property("invalido") and campo.valor() == Decimal("1234.50")
+
+    campo.selectAll()
+    qtbot.keyClicks(campo, "-5")
+    assert "negativo" in campo.toolTip()
+
+    campo.clear()                                 # apagar tudo é zero
+    qtbot.keyClick(campo, Qt.Key.Key_Return)
+    assert campo.valor() == Decimal("0.00") and not campo.property("invalido")
+
+    taxa = CampoTaxa(Decimal("1.01"))
+    qtbot.addWidget(taxa)
+    assert taxa.text() == "R$ 1,01 / dia"
+    taxa.selectAll()
+    qtbot.keyClicks(taxa, "2.5")
+    qtbot.keyClick(taxa, Qt.Key.Key_Return)
+    assert taxa.valor() == Decimal("2.50") and taxa.text() == "R$ 2,50 / dia"
