@@ -25,7 +25,7 @@ from ...dominio.enums import SituacaoCliente, SubtipoCliente, TipoPessoa
 from ...dominio.valores import formatar_moeda, formatar_telefone
 from ...servicos import clientes
 from ..comum import widgets
-from ..comum.campos import CampoDocumento, CampoTaxa, ComboEnum
+from ..comum.campos import CampoDataOpcional, CampoDocumento, CampoTaxa, ComboEnum
 from ..comum.seletor_cliente import CampoCliente
 from ..contexto import Contexto
 
@@ -67,6 +67,12 @@ class DialogoCliente(QDialog):
         formulario.addRow("Subtipo:", self.subtipo)
         self.situacao = ComboEnum(SituacaoCliente, SituacaoCliente.ATIVO)
         formulario.addRow("Situação:", self.situacao)
+        self.cliente_desde = CampoDataOpcional()
+        self.cliente_desde.setToolTip(
+            "Opcional. Quando a empresa virou cliente do escritório: o trimestre do "
+            "honorário trimestral conta da competência desta data (tela Tarefas)."
+        )
+        formulario.addRow("Cliente do escritório desde:", self.cliente_desde)
         self.empresa = CampoCliente(
             self.contexto.sessao,
             tipo_pessoa=TipoPessoa.PJ,
@@ -90,17 +96,11 @@ class DialogoCliente(QDialog):
         linha.addWidget(QLabel("Valor por dia de atraso:"))
         self.juros = CampoTaxa(Decimal("0.00"))
         linha.addWidget(self.juros)
-        # no cliente já cadastrado o valor muda por aqui, com vigência e histórico
-        self.botao_juros = widgets.QPushButton("Alterar juros ao dia…")
-        self.botao_juros.setObjectName("primario")
-        self.botao_juros.clicked.connect(self._alterar_juros)
-        self.botao_juros.setVisible(False)
-        linha.addWidget(self.botao_juros)
         linha.addStretch(1)
         caixa_juros.addLayout(linha)
         self.nota_juros = widgets.rotulo_fraco(
-            "Obrigatório. Depois do cadastro, o valor muda pelo botão \"Alterar juros "
-            "ao dia\", que guarda a data de vigência e o histórico."
+            "Obrigatório. É o juros da empresa: vale para tudo o que está em aberto dela, "
+            "e mudar aqui muda o de todos. Honorário já pago não muda."
         )
         caixa_juros.addWidget(self.nota_juros)
         dados_layout.addWidget(grupo_juros)
@@ -325,30 +325,13 @@ class DialogoCliente(QDialog):
         self.subtipo.definir(cliente.subtipo)
         self.situacao.definir(cliente.situacao)
         self.empresa.definir(cliente.empresa_id)
+        self.cliente_desde.definir(cliente.cliente_desde)
         self.observacoes.setPlainText(cliente.observacoes)
-        self._mostrar_juros()
+        self.juros.definir(clientes.juros_atual(cliente))
         for contato in cliente.contatos:
             self._nova_linha(contato)
         self._ajustar_subtipo()
         self._mostrar_contratos()
-
-    def _mostrar_juros(self) -> None:
-        atual = clientes.juros_atual(self.cliente)
-        self.juros.definir(atual)
-        self.juros.setEnabled(False)
-        self.botao_juros.setVisible(True)
-        historico = len(self.cliente.juros)
-        self.nota_juros.setText(
-            f"Vigente hoje: {formatar_moeda(atual)} por dia · "
-            f"{historico} registro(s) no histórico. A mudança vale a partir da data "
-            "que você escolher, nunca para trás."
-        )
-
-    def _alterar_juros(self) -> None:
-        from .juros import DialogoJuros
-
-        if DialogoJuros(self.contexto, self.cliente, self).exec():
-            self._mostrar_juros()
 
     def _texto(self, linha: int, coluna: int) -> str:
         item = self.contatos.item(linha, coluna)
@@ -376,9 +359,10 @@ class DialogoCliente(QDialog):
             subtipo=self.subtipo.valor(),
             situacao=self.situacao.valor(),
             observacoes=self.observacoes.toPlainText(),
-            juros_dia=self.juros.valor() if self.cliente is None else None,
+            juros_dia=self.juros.valor(),
             contatos=contatos,
             empresa_id=self.empresa.valor(),
+            cliente_desde=self.cliente_desde.valor(),
         )
 
     def _salvar(self) -> None:

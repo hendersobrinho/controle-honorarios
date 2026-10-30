@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from honorarios.servicos import calculo, clientes, cobrancas, imagem_cobranca, pagamentos
+from honorarios.servicos import calculo, cobrancas, imagem_cobranca, pagamentos
 from testes import fabricas
 
 
@@ -32,8 +32,13 @@ def test_juros_e_juros_por_dia_vezes_os_dias(devedor):
 
 
 def test_conta_com_troca_de_juros_por_dia(sessao, devedor):
+    """Dados de antes da 1.6.0 podem ter duas vigências: a conta mostra cada faixa."""
+    from honorarios.infra.modelos import ClienteJuros
+
     cliente, honorario = devedor
-    clientes.registrar_juros(sessao, cliente, "2.00", date(2026, 9, 25))
+    cliente.juros.append(ClienteJuros(valor_dia=Decimal("2.00"),
+                                      vigencia_inicio=date(2026, 9, 25)))
+    sessao.flush()
     atual = calculo.atualizar(honorario, date(2026, 9, 29))
     assert atual.juros == Decimal("15.05")   # 5 × 1,01 + 5 × 2,00
     conta = calculo.explicar(atual)

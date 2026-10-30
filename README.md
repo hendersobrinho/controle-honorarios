@@ -9,7 +9,7 @@
 Registra honorários, calcula o juros de atraso dia a dia, prepara a cobrança pronta para
 o WhatsApp e acompanha a conversa de cobrança por e-mail com o financeiro.
 
-![Versão 1.5.1](https://img.shields.io/badge/vers%C3%A3o-1.5.1-F9B259)
+![Versão 1.6.0](https://img.shields.io/badge/vers%C3%A3o-1.6.0-F9B259)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-203461?logo=python&logoColor=white)
 ![PySide6](https://img.shields.io/badge/PySide6-Qt%206-4BBDCD?logo=qt&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-banco%20do%20escrit%C3%B3rio-203461?logo=postgresql&logoColor=white)
@@ -49,7 +49,8 @@ juros, quem já foi cobrado e o que cada cliente respondeu.
 ### 💰 Cobrança
 - **Vencimentos** em três abas (A vencer, Atrasados e Pagos), ordenados pelo número da
   empresa e agrupados quando uma empresa tem mais de um honorário
-- Juros fixo em R$ por dia, por cliente, com histórico de vigência
+- Juros fixo em R$ por dia, por cliente: um valor só, que vale para tudo o que está em aberto
+- Tarefas de envio do honorário trimestral, com o trimestre contado da entrada da empresa
 - Mensagem de WhatsApp pronta e **imagem da cobrança** com QR code do Pix
 - Cobrança em lote, renegociação, acordo com prazo e abono justificado
 - Respostas dos clientes registradas: promessa, renegociação, contestação
@@ -236,8 +237,8 @@ novo quando os dados mudaram.
 
 ### Decisões que valem saber
 
-- **Juros** é um valor fixo em R$ por dia, com histórico de vigência. Uma mudança vale
-  **a partir da data dela**, nunca para trás.
+- **Juros** é um valor fixo em R$ por dia, um só por empresa. Mudar o valor muda o de
+  **tudo o que está em aberto**, inclusive os juros já corridos (o anterior fica no log).
 - **Dinheiro é `Decimal`** do começo ao fim. O arredondamento acontece uma vez só, no total.
 - **Baixa congela** data, dias de atraso, juros, desconto e total. Mudar o juros depois
   não altera o que já foi pago.

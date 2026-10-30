@@ -47,7 +47,7 @@ def test_baixa_total_congela_os_valores(sessao):
         10, Decimal("10.00"), Decimal("10.00"),
     )
     # mudar o juros do cliente depois não mexe no que foi pago
-    clientes.registrar_juros(sessao, cliente, Decimal("99.00"), date(2026, 8, 2), "teste")
+    clientes.definir_juros(sessao, cliente, Decimal("99.00"), "teste")
     sessao.commit()
     atualizacao = calculo.atualizar(honorario, date(2026, 12, 31))
     assert atualizacao.total == Decimal("1010.00")

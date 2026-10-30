@@ -43,6 +43,7 @@ from .paineis.importar import PainelImportar
 from .paineis.painel import PainelResumo
 from .paineis.rankings import PainelRankings
 from .paineis.relatorios import PainelRelatorios
+from .paineis.tarefas import PainelTarefas
 from .paineis.tipos_e_envio import PainelTiposEEnvio
 from .paineis.vencimentos import PainelVencimentos
 
@@ -122,6 +123,7 @@ class JanelaPrincipal(QMainWindow):
             ("COBRANÇA", (
                 PainelVencimentos,    # abas: A vencer, Atrasados, Pagos
                 PainelImpostoRenda,
+                PainelTarefas,        # envio do honorário trimestral
                 PainelAcompanhamento,
                 PainelEmailCobrancas,
             )),
@@ -244,7 +246,7 @@ class JanelaPrincipal(QMainWindow):
 
     def _atualizar_contadores(self) -> None:
         """Quantidade ao lado das telas de cobrança, para ver o volume sem abrir."""
-        from ..servicos import caixa_email
+        from ..servicos import caixa_email, tarefas
         from ..servicos import honorarios as servico_honorarios
 
         try:   # contado no banco: não carrega nem calcula os honorários
@@ -252,11 +254,14 @@ class JanelaPrincipal(QMainWindow):
                 self.contexto.sessao, self.contexto.data_referencia
             )
             emails = caixa_email.nao_lidos(self.contexto.sessao)
+            pendentes = tarefas.contar_pendentes(self.contexto.sessao,
+                                                 self.contexto.data_referencia)
         except Exception:  # noqa: BLE001 - contador nunca derruba a navegação
             return
         contagens = (
             (PainelVencimentos.titulo, contagem.atrasados),
             (PainelImpostoRenda.titulo, contagem.imposto_de_renda),
+            (PainelTarefas.titulo, pendentes),
             (PainelEmailCobrancas.titulo, emails),
         )
         for titulo, quantidade in contagens:

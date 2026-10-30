@@ -73,6 +73,8 @@ mcp = FastMCP(
         "com gravar=true).\n"
         "Planilhas: campos_de_importacao → salvar_layout_de_importacao → "
         "previa_de_importacao → importar_planilha.\n"
+        "Tarefas: listar_tarefas (envio do honorário trimestral, contado da entrada da "
+        "empresa) → dar_baixa_na_tarefa.\n"
         "Banco: esquema_do_banco e consultar_banco (só leitura) para o que as ferramentas "
         "não cobrem; executar_no_banco grava por fora das regras do sistema — último "
         "recurso, sempre com confirmação."
@@ -213,6 +215,7 @@ def _dados_cliente(c) -> dict:
         "cobranca_suspensa": c.suspensao_ativa(),
         "motivo_suspensao": c.motivo_suspensao or None,
         "suspensa_ate": _plano(c.suspensa_ate),
+        "cliente_desde": _plano(c.cliente_desde),
         "observacoes": c.observacoes,
     }
 
@@ -456,14 +459,18 @@ def criar_cliente(
     documento: str = "",
     observacoes: str = "",
     empresa_id: int | None = None,
+    cliente_desde: str | None = None,
 ) -> dict:
     """Cadastra um cliente. ``juros_dia`` é o juros de atraso em R$ por dia (obrigatório, sem
-    padrão). Pessoa física pode ser vinculada (empresa_id) à empresa PJ que paga por ela."""
+    padrão). Pessoa física pode ser vinculada (empresa_id) à empresa PJ que paga por ela.
+    ``cliente_desde``: quando virou cliente do escritório (o trimestre do honorário
+    trimestral conta dele)."""
     with _sessao(gravar=True) as sessao:
         criado = clientes.criar(sessao, clientes.DadosCliente(
             codigo=codigo, nome=nome, documento=documento,
             tipo_pessoa=_enum(TipoPessoa, tipo_pessoa), observacoes=observacoes,
             juros_dia=_valor(juros_dia), empresa_id=empresa_id,
+            cliente_desde=_data(cliente_desde),
         ))
         return _dados_cliente(criado)
 
@@ -479,9 +486,13 @@ def atualizar_cliente(
     observacoes: str | None = None,
     empresa_id: int | None = None,
     desvincular_empresa: bool = False,
+    cliente_desde: str | None = None,
+    sem_data_de_entrada: bool = False,
 ) -> dict:
     """Altera só os campos informados; os contatos ficam como estão. empresa_id vincula à
-    empresa; desvincular_empresa tira o vínculo. Para o juros use alterar_juros_cliente."""
+    empresa; desvincular_empresa tira o vínculo. ``cliente_desde`` é quando virou cliente
+    do escritório (base do trimestre nas tarefas); sem_data_de_entrada apaga a data. Para o
+    juros use alterar_juros_cliente."""
     with _sessao(gravar=True) as sessao:
         c = _cliente(sessao, cliente_id)
         dados = clientes.DadosCliente(
@@ -503,19 +514,19 @@ def atualizar_cliente(
                 for x in c.contatos
             ],
             empresa_id=None if desvincular_empresa else (empresa_id or c.empresa_id),
+            cliente_desde=None if sem_data_de_entrada else (_data(cliente_desde)
+                                                            or c.cliente_desde),
         )
         return _dados_cliente(clientes.atualizar(sessao, c, dados))
 
 
 @_ferramenta(GRAVA)
-def alterar_juros_cliente(
-    cliente_id: int, juros_dia: str, vigencia_inicio: str | None = None, motivo: str = ""
-) -> dict:
-    """Novo juros de atraso (R$ por dia) do cliente, valendo da vigência em diante (hoje se
-    vazia); o que já venceu antes continua com o juros da época."""
+def alterar_juros_cliente(cliente_id: int, juros_dia: str, motivo: str = "") -> dict:
+    """Novo juros de atraso (R$ por dia) da empresa. Vale para tudo o que está em aberto
+    dela, inclusive os juros já corridos; honorário pago não muda."""
     with _sessao(gravar=True) as sessao:
         c = _cliente(sessao, cliente_id)
-        clientes.registrar_juros(sessao, c, _valor(juros_dia), _data(vigencia_inicio), motivo)
+        clientes.definir_juros(sessao, c, _valor(juros_dia), motivo)
         return _dados_cliente(c)
 
 
@@ -1705,6 +1716,68 @@ def executar_no_banco(sql: str, parametros: dict | None = None) -> dict:
         sessao.add(LogAlteracao(entidade="banco", acao="SQL", resumo=sql.strip()[:4000],
                                 depois=json.dumps(_plano(parametros or {}), ensure_ascii=False)))
         return {"linhas_afetadas": afetadas, "retorno": retorno}
+
+
+# ---------------------------------------------------------------------- tarefas
+def _dados_tarefa(tarefa, referencia) -> dict:
+    return {"chave": tarefa.chave, "cliente_id": tarefa.cliente.id,
+            "cliente": f"{tarefa.cliente.codigo} – {tarefa.cliente.nome}",
+            "tipo": tarefa.contrato.tipo.nome, "trimestre": tarefa.periodo,
+            "enviar_desde": _plano(tarefa.prazo),
+            "dias_esperando": tarefa.dias_esperando(referencia),
+            "valor_contrato": _plano(tarefa.contrato.valor),
+            "baixa_em": _plano(tarefa.feita.concluida_em) if tarefa.feita else None,
+            "observacao": tarefa.feita.observacao if tarefa.feita else None}
+
+
+@_ferramenta(LEITURA)
+def listar_tarefas(data_referencia: str | None = None) -> dict:
+    """Tarefas de envio do honorário trimestral: o trimestre de cada empresa conta da
+    competência em que ela virou cliente do escritório (cliente_desde). Devolve as
+    pendentes, as próximas, as feitas (com baixa) e as empresas trimestrais sem data."""
+    from .servicos import tarefas
+
+    referencia = _data(data_referencia) or hoje()
+    with _sessao() as sessao:
+        quadro = tarefas.quadro(sessao, referencia)
+        return {
+            "pendentes": [_dados_tarefa(t, referencia) for t in quadro.pendentes],
+            "proximas": [_dados_tarefa(t, referencia) for t in quadro.proximas],
+            "feitas": [_dados_tarefa(t, referencia) for t in quadro.feitas],
+            "sem_data_de_entrada": [{"cliente_id": c.id, "cliente": f"{c.codigo} – {c.nome}"}
+                                    for c in quadro.sem_data],
+        }
+
+
+def _tarefa(sessao: Session, chave: str, referencia):
+    from .servicos import tarefas
+
+    quadro = tarefas.quadro(sessao, referencia)
+    for tarefa in quadro.pendentes + quadro.feitas:
+        if tarefa.chave == chave:
+            return tarefa
+    raise ValueError(f"Tarefa {chave!r} não encontrada (veja listar_tarefas).")
+
+
+@_ferramenta(GRAVA)
+def dar_baixa_na_tarefa(chave: str, observacao: str = "") -> dict:
+    """Dá baixa numa tarefa pendente (o honorário do trimestre foi enviado)."""
+    from .servicos import tarefas
+
+    with _sessao(gravar=True) as sessao:
+        tarefa = _tarefa(sessao, chave, hoje())
+        tarefas.concluir(sessao, tarefa, observacao)
+        return _dados_tarefa(tarefa, hoje())
+
+
+@_ferramenta(APAGA)
+def desfazer_baixa_da_tarefa(chave: str) -> str:
+    """Desfaz a baixa: a tarefa volta para as pendentes."""
+    from .servicos import tarefas
+
+    with _sessao(gravar=True) as sessao:
+        tarefas.reabrir(sessao, chave)
+        return f"Baixa de {chave} desfeita."
 
 
 def main() -> None:

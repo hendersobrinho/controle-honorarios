@@ -11,6 +11,7 @@ Para instalar e configurar, veja [INSTALACAO.md](INSTALACAO.md).
 | **Vencimentos → Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, pelo número da empresa (do menor para o maior; empresa com mais de um honorário fica agrupada, com o total), com cobrar, editar (valor, vencimento, descrição), **Confirmar pagamento** (botão verde em cada cartão em aberto, também em A vencer e Imposto de Renda), cobrança em lote e renegociação |
 | **Vencimentos → Pagos** | Os quitados, **uma competência por vez** (◀ ▶ e o menu com as competências que têm pagos; abre na mais recente). O histórico completo de cada empresa fica na ficha dela. Mostra se pagou em dia ou com atraso, os juros cobrados e o abono |
 | **Clientes de IR** | Cobrança própria dos clientes que só fazem IR com o escritório: em aberto (atrasados e a vencer) ou pagos, com filtro por ano do IR. Esses clientes não aparecem em Atrasados, A vencer e Pagos |
+| **Tarefas** | O envio do honorário trimestral. O trimestre de cada empresa conta da competência em que ela virou cliente (campo **Cliente do escritório desde**), não do trimestre do ano: entrou em 15/08 → 08, 09 e 10; depois 11, 12 e 01… No dia seguinte ao fim do trimestre nasce a tarefa **Para fazer**, com **Dar baixa** (verde) quando o honorário for enviado. Também mostra os **Próximos trimestres**, as **Feitas** (com **Desfazer baixa**) e as trimestrais **Sem data de entrada**, com o botão para preencher. Só entram os trimestres dos últimos 12 meses; **Dar baixa em todas** serve para o começo, para os que já tinham sido enviados. O número no menu é o de pendentes |
 | **Cobranças enviadas** | Cada mensagem enviada e o que o cliente respondeu, com período e agrupamento à escolha. É aqui que a resposta é anotada |
 | **Clientes** | Abas **Ativos**, **Imposto de Renda** (quem só tem honorário de IR) e **Inativos**; PF \| PJ \| Todos e busca sem acento/pontuação; ficha completa da empresa. Dívida e atraso não aparecem aqui (têm telas próprias). Aqui também se suspende e retoma a cobrança de um cliente. O cadastro tem as abas **Dados**, **Contatos** e **Honorário recorrente**: no cliente novo, o honorário mensal (ou trimestral…) é cadastrado junto; quem tem "Paga pela empresa" salva sem honorário; sem honorário e sem empresa pagadora, o sistema pergunta antes (cliente só de IR ou de avulsos). No cliente já cadastrado, a aba lista os recorrentes dele, com novo, editar, reajustar e suspender |
 | **Honorários** | A gestão dos honorários, em três abas (o recorrente se cadastra no cliente). **Mês a mês**: tudo o que foi emitido no mês (recorrente ou avulso), com ◀ ▶ e um menu para ir direto a qualquer mês, os totais (emitido, pago, em aberto, cancelados), filtros de origem e situação, e o aviso de contratos que ainda não geraram a competência — "Gerar competência" já abre no mês da tela. **Recorrentes**: contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia. **Avulsos**: lançar, corrigir e cancelar serviços que não vêm de contrato (IRPF, alteração contratual, atas…) e consultar o histórico por período, pagos ou não, com a situação de cada um. A cobrança desses honorários fica em Atrasados e A vencer |
@@ -26,7 +27,7 @@ A navegação é agrupada por momento do trabalho:
 
 - **Cobrança**: **Vencimentos** (abas A vencer, Atrasados e Pagos, com a
   quantidade em aberto em cada aba; o número no menu é o de atrasados), Clientes
-  de IR, Cobranças enviadas e Gerenciador de e-mail (com o número de e-mails não lidos).
+  de IR, Tarefas (com o número de pendentes), Cobranças enviadas e Gerenciador de e-mail (com o número de e-mails não lidos).
 - **Cadastros**.
 - **Gestão**.
 
@@ -55,9 +56,14 @@ paga), há um campo de busca: digite nome (sem se preocupar com acento), código
 ou parte do CPF/CNPJ e aperte Enter. Com o código exato ou um resultado só, a
 escolha é direta; senão abre a janela de busca, que filtra enquanto você digita.
 
-O juros ao dia muda pelo botão **Alterar juros ao dia…** no cadastro do cliente
-ou **Alterar juros** no topo da ficha. A mudança pede a data de vigência e vale
-só dali para frente.
+O juros ao dia é um valor só por empresa e se muda no próprio cadastro (campo
+**Valor por dia de atraso**) ou em **Alterar juros** no topo da ficha. O novo
+valor vale para **tudo o que está em aberto** da empresa, inclusive os juros já
+corridos; honorário já pago não muda. O valor anterior fica no log de alterações.
+
+No cadastro, **Cliente do escritório desde** (opcional) é a data em que a empresa
+virou cliente. Para quem tem honorário trimestral, é dela que conta o trimestre
+na tela **Tarefas**.
 
 ### Pessoa física que paga pela empresa
 
@@ -98,8 +104,9 @@ A conferência com o cadastro segue estas regras:
 - O cliente é reconhecido pelo **CPF/CNPJ**, depois pelo **código** e, sem
   nenhum dos dois, pelo **nome** (sem diferença de acento e maiúscula). PF ou PJ,
   quem já está cadastrado **não é cadastrado de novo**: recebe só o que a
-  planilha traz de diferente (nome, CPF/CNPJ que faltava, juros por dia — como
-  nova vigência a partir de hoje —, contato novo, observações acrescentadas,
+  planilha traz de diferente (nome, CPF/CNPJ que faltava, juros por dia — que passa
+  a valer para tudo em aberto —, data de entrada no escritório, contato novo,
+  observações acrescentadas,
   empresa que paga, suspensão da cobrança). O código do cadastro é mantido.
 - Código que já é de outro CPF/CNPJ trava a linha, para não misturar clientes.
 - O mesmo cliente pode aparecer em várias linhas (uma por honorário).

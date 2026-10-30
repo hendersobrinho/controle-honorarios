@@ -616,6 +616,27 @@ O instalador passou a ser gerado pelo GitHub Actions (`windows-latest`, Python
 igual ao `__version__`. Assim a versão publicada é sempre a do código da tag, e
 ninguém precisa gerar instalador no próprio computador.
 
+### Juros: um valor por empresa, sem vigência
+Até a 1.5 o juros ao dia tinha histórico de vigências: a mudança valia dali para
+frente e os dias anteriores ficavam com o valor antigo. O escritório pediu o
+contrário: o juros é o da empresa e vale para tudo o que está em aberto. A tabela
+`cliente_juros` continua, com uma linha só por cliente (`clientes.definir_juros`
+troca a linha; o anterior vai para o log). A migração `f2c6a9d41b83` deixou em
+cada cliente o valor que valia no dia. O cálculo segue sabendo somar faixas —
+ainda pode existir mais de uma linha em dados antigos ou importados — e a primeira
+linha vale também para os dias antes dela, como sempre.
+
+### Tarefas calculadas, só a baixa gravada
+As tarefas do honorário trimestral não são gravadas quando nascem: saem das regras
+(`servicos/tarefas.py`) a cada leitura, a partir de "Cliente do escritório desde" e
+dos contratos trimestrais ativos. Assim, corrigir a data de entrada de uma empresa
+refaz a conta sem sobrar tarefa errada. Só a baixa vira linha (`tarefa`, com a
+`chave` contrato + mês de início do trimestre), e desfazer é apagar a linha. A
+janela de 12 meses evita que a lista nasça com anos de pendências de clientes
+antigos; "Dar baixa em todas" resolve o acúmulo do começo. O trimestre conta da
+competência de entrada porque o escritório não usa o trimestre do ano, e a tarefa
+nasce no dia seguinte ao fim do trimestre ("quando completar").
+
 ### Numeração das versões
 A 1.0.0 foi reaproveitada enquanto o sistema não estava em uso. Com ele em uso, a
 numeração passou a seguir as entregas (ver a especificação, seção 5): recurso

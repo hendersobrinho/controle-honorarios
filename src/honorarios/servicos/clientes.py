@@ -50,6 +50,9 @@ class DadosCliente:
     juros_dia: Decimal | None = None
     contatos: list[DadosContato] | None = None
     empresa_id: int | None = None
+    # quando virou cliente do escritório (opcional): base do trimestre do honorário
+    # trimestral nas tarefas
+    cliente_desde: date | None = None
 
 
 @dataclass
@@ -198,11 +201,12 @@ def criar(sessao: Session, dados: DadosCliente) -> Cliente:
         situacao=dados.situacao,
         observacoes=dados.observacoes or "",
         empresa_id=dados.empresa_id,
+        cliente_desde=dados.cliente_desde,
     )
     sessao.add(cliente)
     sessao.flush()
     _aplicar_contatos(sessao, cliente, dados.contatos or [])
-    registrar_juros(sessao, cliente, dados.juros_dia, hoje(), "Cadastro inicial")
+    definir_juros(sessao, cliente, dados.juros_dia, "Cadastro inicial")
     sessao.add(
         LogAlteracao(
             entidade="cliente",
@@ -227,7 +231,10 @@ def atualizar(sessao: Session, cliente: Cliente, dados: DadosCliente) -> Cliente
     cliente.situacao = dados.situacao
     cliente.observacoes = dados.observacoes or ""
     cliente.empresa_id = dados.empresa_id
+    cliente.cliente_desde = dados.cliente_desde
     _aplicar_contatos(sessao, cliente, dados.contatos or [])
+    if dados.juros_dia is not None:   # None: o juros fica como está
+        definir_juros(sessao, cliente, dados.juros_dia)
     sessao.add(
         LogAlteracao(
             entidade="cliente",
@@ -357,14 +364,17 @@ def empresas_para_vinculo(sessao: Session, excluir_id: int | None = None) -> lis
 # ------------------------------------------------------------------------- juros
 
 
-def registrar_juros(
+def definir_juros(
     sessao: Session,
     cliente: Cliente,
     valor_dia: Decimal | str,
-    vigencia_inicio: date | None = None,
     motivo: str = "",
 ) -> ClienteJuros:
-    """Grava uma alteração de juros/dia. Vale a partir da vigência, nunca antes."""
+    """O juros ao dia do cliente: troca o valor, e ele vale para tudo o que está em aberto.
+
+    Não há mais vigência nem histórico de valores: o anterior fica só no log de
+    alterações. Honorário pago não muda (o que foi cobrado ficou na baixa).
+    """
     try:
         valor = Decimal(str(valor_dia).replace(",", "."))
     except (InvalidOperation, ValueError) as erro:
@@ -372,35 +382,25 @@ def registrar_juros(
     if valor < 0:
         raise ErroDeValidacao("O juros por dia não pode ser negativo.", "juros_dia")
 
-    inicio = vigencia_inicio or hoje()
-    anterior = calculo.taxa_vigente_em(cliente, inicio) if cliente.juros else None
-
-    existente = next(
-        (linha for linha in cliente.juros if linha.vigencia_inicio == inicio), None
-    )
-    if existente is not None:
-        existente.valor_dia = valor
-        existente.motivo = motivo or existente.motivo
-        existente.valor_anterior = anterior
-        sessao.flush()
-        return existente
-
-    linha = ClienteJuros(
-        cliente_id=cliente.id,
-        valor_dia=valor,
-        valor_anterior=anterior,
-        vigencia_inicio=inicio,
-        motivo=motivo,
-    )
+    atuais = list(cliente.juros)
+    anterior = calculo.taxa_vigente_em(cliente) if atuais else None
+    if len(atuais) == 1 and atuais[0].valor_dia == valor:
+        return atuais[0]   # nada mudou
+    for linha in atuais:
+        cliente.juros.remove(linha)   # delete-orphan apaga do banco
+    sessao.flush()
+    # uma linha só: a primeira vigência vale também para os dias antes dela
+    linha = ClienteJuros(valor_dia=valor, valor_anterior=anterior, vigencia_inicio=hoje(),
+                         motivo=motivo or "")
     cliente.juros.append(linha)
     sessao.add(
         LogAlteracao(
             entidade="cliente_juros",
             entidade_id=cliente.id,
             acao="JUROS",
-            antes=str(anterior or ""),
+            antes=str(anterior if anterior is not None else ""),
             depois=str(valor),
-            resumo=f"Vigência {inicio:%d/%m/%Y}: {motivo}",
+            resumo=f"{cliente.nome}: {motivo}" if motivo else cliente.nome,
         )
     )
     sessao.flush()

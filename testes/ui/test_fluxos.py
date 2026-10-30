@@ -502,10 +502,10 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
 
     janela = JanelaPrincipal(contexto)
     qtbot.addWidget(janela)
-    assert janela.telas.count() == 13
-    assert len(janela.linhas_de_tela) == 13
+    assert janela.telas.count() == 14
+    assert len(janela.linhas_de_tela) == 14
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
-    assert "Importação personalizada" in titulos
+    assert "Importação personalizada" in titulos and "Tarefas" in titulos
     assert "Gerenciador de e-mail" in titulos
     assert "Cobranças enviadas" in titulos and "Ranking dos atrasados" in titulos
     assert "Clientes de IR" in titulos and "Tipos e formas de envio" in titulos
@@ -908,19 +908,23 @@ def test_janela_de_busca_filtra_enquanto_digita(qtbot, contexto, cliente_com_deb
     assert dialogo.escolhido.codigo == "900"
 
 
-def test_cadastro_mostra_botao_de_alterar_juros(qtbot, contexto, cliente_com_debito):
+def test_cadastro_juros_livre_e_cliente_desde(qtbot, contexto, cliente_com_debito):
+    """O juros se edita no próprio cadastro e vale para tudo em aberto."""
+    from honorarios.servicos import clientes
     from honorarios.ui.dialogos.cliente import DialogoCliente
-
-    novo = DialogoCliente(contexto)
-    qtbot.addWidget(novo)
-    assert novo.juros.isEnabled()                 # no cadastro novo, digita-se o valor
-    assert not novo.botao_juros.isVisibleTo(novo)
 
     existente = DialogoCliente(contexto, cliente_com_debito)
     qtbot.addWidget(existente)
-    assert not existente.juros.isEnabled()        # depois, muda com vigência
-    assert existente.botao_juros.isVisibleTo(existente)
-    assert "Vigente hoje" in existente.nota_juros.text()
+    assert existente.juros.isEnabled()
+    assert "tudo o que está em aberto" in existente.nota_juros.text()
+    assert existente.cliente_desde.valor() is None
+
+    existente.juros.definir(Decimal("2.00"))
+    existente.cliente_desde.definir(date(2025, 8, 15))
+    existente._salvar()
+
+    assert clientes.juros_atual(cliente_com_debito) == Decimal("2.0000")
+    assert cliente_com_debito.cliente_desde == date(2025, 8, 15)
 
 
 def test_ficha_tem_botao_de_alterar_juros(qtbot, contexto, cliente_com_debito):
@@ -2395,3 +2399,56 @@ def test_opcao_de_avisar_ao_abrir_fica_gravada(qtbot, contexto):
     assert painel.atualizar_ao_abrir.isChecked()
     painel.atualizar_ao_abrir.setChecked(False)
     assert not configuracoes.obter_bool(contexto.sessao, atualizacao.CHAVE_AO_ABRIR, True)
+
+
+# ----------------------------------------------------------------- tarefas
+def test_tela_de_tarefas_da_baixa_e_desfaz(qtbot, contexto, cliente_com_debito):
+    from honorarios.dominio.enums import Periodicidade
+    from honorarios.ui.paineis.tarefas import PainelTarefas
+
+    cliente_com_debito.cliente_desde = date(2026, 5, 20)   # trimestres 05–07, 08–10…
+    fabricas.contrato(contexto.sessao, cliente_com_debito, valor="900.00",
+                      periodicidade=Periodicidade.TRIMESTRAL)
+    sem_data = fabricas.cliente(contexto.sessao, codigo="901", nome="SEM DATA LTDA",
+                                documento="")
+    fabricas.contrato(contexto.sessao, sem_data, periodicidade=Periodicidade.TRIMESTRAL)
+    contexto.salvar()
+
+    painel = PainelTarefas(contexto)   # referência da tela: 29/09/2026
+    qtbot.addWidget(painel)
+    assert [t.periodo for t in painel.lista.itens_da_secao("Para fazer")] == [
+        "05/2026 a 07/2026"]
+    assert [t.prazo for t in painel.lista.itens_da_secao("Próximos trimestres")] == [
+        date(2026, 11, 1)]
+    assert [c.nome for c in painel.lista.itens_da_secao("Sem data de entrada")] == [
+        "SEM DATA LTDA"]
+    assert "1</b> para fazer" in painel.resumo.text()
+
+    [tarefa] = painel.lista.itens_da_secao("Para fazer")
+    painel._dar_baixa(tarefa)
+    assert painel.lista.itens_da_secao("Para fazer") == []
+    [feita] = painel.lista.itens_da_secao("Feitas")
+    assert "Baixa" in painel.aviso.text()
+
+    painel._desfazer(feita)
+    assert len(painel.lista.itens_da_secao("Para fazer")) == 1
+
+
+def test_tarefas_baixa_em_todas(qtbot, contexto, cliente_com_debito, monkeypatch):
+    from honorarios.dominio.enums import Periodicidade
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.paineis.tarefas import PainelTarefas
+
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    cliente_com_debito.cliente_desde = date(2025, 11, 1)   # 11–01, 02–04, 05–07
+    fabricas.contrato(contexto.sessao, cliente_com_debito,
+                      periodicidade=Periodicidade.TRIMESTRAL)
+    contexto.salvar()
+    painel = PainelTarefas(contexto)
+    qtbot.addWidget(painel)
+    assert len(painel.lista.itens_da_secao("Para fazer")) == 3
+
+    painel._baixa_em_todas()
+    assert painel.lista.itens_da_secao("Para fazer") == []
+    assert len(painel.lista.itens_da_secao("Feitas")) == 3
+    assert not painel.botao_todas.isEnabled()

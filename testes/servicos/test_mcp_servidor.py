@@ -115,9 +115,28 @@ def test_atualizar_cliente_preserva_os_contatos(devedor):
     assert depois["observacoes"] == "só a observação mudou"
 
 
-def test_alterar_juros_vale_daqui_para_frente(devedor):
+def test_alterar_juros_vale_para_tudo_em_aberto(devedor):
+    antes = servidor.listar_honorarios(data_referencia="2026-09-29")["total"]
     novo = servidor.alterar_juros_cliente(devedor.id, "2,50", motivo="reajuste")
     assert novo["juros_dia"] == "2.50"
+    assert servidor.listar_honorarios(data_referencia="2026-09-29")["total"] != antes
+
+
+def test_tarefas_pelo_mcp(devedor, sessao):
+    from honorarios.dominio.enums import Periodicidade
+
+    fabricas.contrato(sessao, devedor, valor="900.00", periodicidade=Periodicidade.TRIMESTRAL)
+    servidor.atualizar_cliente(devedor.id, cliente_desde="2026-01-10")
+    assert servidor.obter_cliente(cliente_id=devedor.id)["cliente_desde"] == "2026-01-10"
+
+    quadro = servidor.listar_tarefas("2026-04-15")
+    [pendente] = quadro["pendentes"]
+    assert pendente["trimestre"] == "01/2026 a 03/2026"
+
+    feito = servidor.dar_baixa_na_tarefa(pendente["chave"], "enviado")
+    assert feito["observacao"] == "enviado"
+    assert servidor.listar_tarefas("2026-04-15")["pendentes"] == []
+    servidor.desfazer_baixa_da_tarefa(pendente["chave"])
 
 
 # ------------------------------------------------------------- conexão com o Claude

@@ -100,7 +100,9 @@ CAMPOS: tuple[Campo, ...] = (
     Campo("cliente_situacao", "Situação", GRUPO_CLIENTE, "situacao",
           "Ativo, Inativo ou Suspenso"),
     Campo("cliente_juros_dia", "Juros por dia (R$)", GRUPO_CLIENTE, "taxa",
-          "Ex.: 1,01. Mudança vira nova vigência a partir de hoje"),
+          "Ex.: 1,01. Vale para tudo o que está em aberto do cliente"),
+    Campo("cliente_desde", "Cliente do escritório desde", GRUPO_CLIENTE, "data",
+          "Data de entrada; o trimestre do honorário trimestral conta dela"),
     Campo("cliente_observacoes", "Observações do cliente", GRUPO_CLIENTE,
           dica="Acrescentadas às que o cliente já tem"),
     Campo("contato_nome", "Nome do contato", GRUPO_CONTATO),
@@ -777,7 +779,8 @@ def _validar_linha(linha: LinhaPersonalizada, aba: str) -> None:
 
 CAMPOS_CLIENTE = (
     "cliente_codigo", "cliente_nome", "cliente_documento", "cliente_tipo_pessoa",
-    "cliente_subtipo", "cliente_situacao", "cliente_juros_dia", "cliente_observacoes",
+    "cliente_subtipo", "cliente_situacao", "cliente_juros_dia", "cliente_desde",
+    "cliente_observacoes",
     "empresa_vinculo", "suspensao_motivo", "suspensao_ate",
 )
 
@@ -962,6 +965,7 @@ def _dados_de(cliente: Cliente) -> servico_clientes.DadosCliente:
             for c in cliente.contatos
         ],
         empresa_id=cliente.empresa_id,
+        cliente_desde=cliente.cliente_desde,
     )
 
 
@@ -987,6 +991,7 @@ def _mesclar(atual: servico_clientes.DadosCliente, plano: ClientePlanejado,
         ("cliente_subtipo", "subtipo", "subtipo"),
         ("cliente_situacao", "situacao", "situação"),
         ("cliente_juros_dia", "juros_dia", "juros/dia"),
+        ("cliente_desde", "cliente_desde", "cliente desde"),
     ):
         valor = valores.get(chave)
         if valor is not None and valor != getattr(atual, atributo):
@@ -1427,10 +1432,8 @@ def importar(sessao: Session, previa: Previa, atualizar_existentes: bool = True)
                     continue
                 novo, mudou = _mesclar(_dados_de(existente), plano, None)
                 if mudou:
-                    juros = novo.juros_dia
+                    # o juros vai junto: atualizar() troca o valor quando ele mudou
                     servico_clientes.atualizar(sessao, existente, novo)
-                    if "juros/dia" in mudou:
-                        servico_clientes.registrar_juros(sessao, existente, juros, hoje(), MOTIVO)
                     resultado.clientes_atualizados += 1
                 else:
                     resultado.clientes_sem_alteracao += 1

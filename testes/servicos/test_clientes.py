@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 
 from honorarios.dominio.enums import SituacaoCliente, TipoPessoa
 from honorarios.servicos import calculo, clientes
@@ -49,36 +50,44 @@ def test_juros_obrigatorio(sessao):
         clientes.criar(sessao, dados)
 
 
-def test_historico_de_juros_guarda_valor_anterior(sessao):
-    cliente = fabricas.cliente(sessao, juros_dia="0.50")
-    cliente.juros[0].vigencia_inicio = date(2026, 1, 1)
-    sessao.commit()
-    clientes.registrar_juros(
-        sessao, cliente, Decimal("1.00"), date(2026, 9, 15), "Reajuste do boleto"
-    )
-    sessao.commit()
-    assert len(cliente.juros) == 2
-    ultimo = cliente.juros[-1]
-    assert ultimo.valor_anterior == Decimal("0.5000")
-    assert ultimo.motivo == "Reajuste do boleto"
-    # a taxa de antes da mudança continua valendo para trás
-    assert calculo.taxa_vigente_em(cliente, date(2026, 9, 14)) == Decimal("0.5000")
-    assert calculo.taxa_vigente_em(cliente, date(2026, 9, 15)) == Decimal("1.0000")
+def test_juros_novo_vale_para_tudo_que_esta_em_aberto(sessao):
+    """Um valor só por empresa: trocar vale também para os juros já corridos."""
+    from honorarios.infra.modelos import LogAlteracao
 
-
-def test_registrar_juros_na_mesma_vigencia_corrige_a_linha(sessao):
     cliente = fabricas.cliente(sessao, juros_dia="0.50")
-    hoje_ = cliente.juros[0].vigencia_inicio
-    clientes.registrar_juros(sessao, cliente, Decimal("0.60"), hoje_, "Digitação errada")
+    honorario = fabricas.honorario(sessao, cliente, valor="1000.00",
+                                   vencimento=date(2026, 9, 1))
+    assert calculo.atualizar(honorario, date(2026, 9, 21)).juros == Decimal("10.00")
+
+    clientes.definir_juros(sessao, cliente, Decimal("1.00"), "Reajuste do boleto")
     sessao.commit()
+
     assert len(cliente.juros) == 1
-    assert clientes.juros_atual(cliente) == Decimal("0.6000")
+    assert clientes.juros_atual(cliente) == Decimal("1.0000")
+    assert calculo.atualizar(honorario, date(2026, 9, 21)).juros == Decimal("20.00")
+    log = sessao.scalars(select(LogAlteracao).where(LogAlteracao.acao == "JUROS")).all()
+    assert (Decimal(log[-1].antes), Decimal(log[-1].depois)) == (Decimal("0.5"), Decimal("1"))
 
 
-def test_juros_negativo_recusado(sessao):
-    cliente = fabricas.cliente(sessao)
+def test_juros_igual_nao_mexe_e_negativo_recusado(sessao):
+    cliente = fabricas.cliente(sessao, juros_dia="0.50")
+    linha = cliente.juros[0]
+    assert clientes.definir_juros(sessao, cliente, "0,50") is linha
     with pytest.raises(ErroDeValidacao, match="negativo"):
-        clientes.registrar_juros(sessao, cliente, Decimal("-1"))
+        clientes.definir_juros(sessao, cliente, Decimal("-1"))
+
+
+def test_juros_pelo_cadastro_e_cliente_desde(sessao):
+    cliente = fabricas.cliente(sessao, juros_dia="0.50")
+    dados = clientes.DadosCliente(
+        codigo=cliente.codigo, nome=cliente.nome, documento=cliente.documento,
+        juros_dia=Decimal("0.75"), cliente_desde=date(2024, 3, 10),
+        contatos=[clientes.DadosContato(id=c.id, nome=c.nome, telefone=c.telefone,
+                                        principal=c.principal) for c in cliente.contatos])
+    clientes.atualizar(sessao, cliente, dados)
+    sessao.commit()
+    assert clientes.juros_atual(cliente) == Decimal("0.7500")
+    assert cliente.cliente_desde == date(2024, 3, 10)
 
 
 def test_listar_com_busca_sem_acento_e_pontuacao(sessao):

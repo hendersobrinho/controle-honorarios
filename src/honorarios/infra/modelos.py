@@ -185,6 +185,9 @@ class Cliente(Base):
     suspensa_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspensa_ate: Mapped[date | None] = mapped_column(Date)
     motivo_suspensao: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # quando virou cliente do escritório: o trimestre do honorário trimestral conta
+    # a partir da competência desta data (ver servicos/tarefas.py)
+    cliente_desde: Mapped[date | None] = mapped_column(Date)
     criado_em: Mapped[datetime] = _criado_em()
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=agora_utc, onupdate=agora_utc, nullable=False
@@ -256,7 +259,12 @@ class ClienteContato(Base):
 
 
 class ClienteJuros(Base):
-    """Histórico de vigência do juros ao dia. Nunca é editado, só acrescentado."""
+    """O juros ao dia do cliente: uma linha só, que vale para tudo o que está em aberto.
+
+    A tabela já guardou um histórico de vigências; desde a 1.6.0 mudar o juros troca
+    o valor (``clientes.definir_juros``) e o log de alterações guarda o anterior. O
+    cálculo continua sabendo lidar com várias linhas (dados antigos, importação).
+    """
 
     __tablename__ = "cliente_juros"
     __table_args__ = (
@@ -447,6 +455,29 @@ class Honorario(Base):
         if self.competencia_ano:
             return f"{self.descricao or self.tipo.nome} {self.competencia_ano}".strip()
         return self.descricao
+
+
+class Tarefa(Base):
+    """Tarefa feita (com baixa). As pendentes não ficam gravadas: saem das regras
+    (``servicos/tarefas.py``) a cada leitura; só a baixa vira linha aqui.
+
+    ``chave`` identifica a tarefa (ex.: ``trimestre:12:2026-08``): dar baixa duas
+    vezes não duplica, e desfazer a baixa é apagar a linha.
+    """
+
+    __tablename__ = "tarefa"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chave: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("cliente.id"), index=True)
+    contrato_id: Mapped[int | None] = mapped_column(ForeignKey("contrato.id"))
+    descricao: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    periodo_inicio: Mapped[date | None] = mapped_column(Date)
+    periodo_fim: Mapped[date | None] = mapped_column(Date)
+    concluida_em: Mapped[datetime] = _criado_em()
+    observacao: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+    cliente: Mapped[Cliente] = relationship()
 
 
 class Notificacao(Base):

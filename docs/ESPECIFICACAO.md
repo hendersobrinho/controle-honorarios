@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.5.1
+# Especificação — Financeiro Métodos 1.6.0
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.5.1 (outubro de 2026) |
+| **Versão** | 1.6.0 (outubro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -44,11 +44,15 @@ no relatório.
 ## 2. Cálculo (item central, em `dominio/juros.py`)
 
 - Dias em atraso: `vencimento+1 … data de referência`.
-- Para cada dia vale o juros/dia vigente **naquele dia** (histórico do cliente).
+- O juros/dia é **um valor só por empresa**, que vale para todos os dias de atraso de
+  tudo o que está em aberto (desde a 1.6.0; antes havia vigências). Mudar o valor
+  muda o de tudo em aberto; honorário pago não muda. O cálculo ainda soma faixas
+  quando o banco tem mais de uma linha (dados antigos).
 - `juros = ROUND(Σ dias do segmento × taxa do segmento, 2)` — por segmentos, não
   dia a dia.
-- Exemplo verificado em teste: vencimento 01/09, 0,50/dia até 14/09 e 1,00 a
-  partir de 15/09, referência 20/09 → 13 × 0,50 + 6 × 1,00 = **R$ 12,50**.
+- Exemplo verificado em teste (faixas de dados antigos): vencimento 01/09, 0,50/dia
+  até 14/09 e 1,00 a partir de 15/09, referência 20/09 → 13 × 0,50 + 6 × 1,00 =
+  **R$ 12,50**.
 - Simulação por data em toda tela que mostra total (campo "Simular para").
 - Na tela Cobrar, os juros vão até **valores atualizados até** (hoje, ou outra
   data); o **vencimento (pagar até)** é só o prazo da imagem e do lembrete e não
@@ -128,6 +132,7 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 17 | Claude com acesso a todo o cadastro e ao banco: contatos um a um e em lote cruzando a lista das empresas com o cadastro, planilhas e layouts da importação personalizada, tipos, grupos e formas de envio, geração dos contratos, acordo, renegociação, backup e SQL direto (consulta e gravação, com log) — 61 ferramentas | 1.4.0 | concluída |
 | 18 | Tela Cobrar refeita em passos (honorários, conferência dos juros, datas, mensagem e imagem): a conta de cada honorário por extenso, juros digitado à mão, "valores atualizados até" (hoje ou outra data) separado do "vencimento (pagar até)" — corrige a imagem que cobrava juros até o prazo —, lembrete com o vencimento escolhido e prévia da imagem na própria tela; o MCP ganha as mesmas opções. Atualização pelo próprio sistema (Configurações → Atualizações: consulta o GitHub, baixa, confere o SHA-256, instala em silêncio e reabre; aviso de versão nova ao abrir) e o GitHub Actions que gera e publica o instalador a cada tag | 1.5.0 | concluída |
 | 19 | Empacotamento do MCP sem o `mcp.cli` (exigia o `typer` e derrubava o PyInstaller no Windows limpo do GitHub Actions): primeira versão publicada pela automação | 1.5.1 | concluída |
+| 20 | "Cliente do escritório desde" no cadastro (e na importação personalizada); tela **Tarefas** com o envio do honorário trimestral contado da competência de entrada da empresa (pendentes, próximos, feitas, sem data; baixa, baixa em todas e desfazer; contador no menu); juros de cada empresa simplificado para um valor só, que vale para tudo em aberto (a migração deixa o valor que vale hoje) | 1.6.0 | concluída |
 
 Cada fase com recurso novo sobe a versão do meio; correção sobe a última. A 1.0.0
 chegou a ser reaproveitada para as fases 12 e 13 enquanto o sistema não estava
@@ -154,7 +159,8 @@ transação própria.
 | Área | O que o Claude faz |
 |---|---|
 | Consulta | Resumo, clientes, honorários com juros na data, histórico de cobrança, prévia de baixa, rankings, tipos, contratos, configurações |
-| Cadastro | Cria, altera e exclui cliente (contatos preservados), vínculo PF → empresa, juros com vigência, suspende e retoma cobrança |
+| Cadastro | Cria, altera e exclui cliente (contatos preservados), vínculo PF → empresa, data de entrada no escritório, juros (um valor que vale para tudo em aberto), suspende e retoma cobrança |
+| Tarefas | Lista as tarefas de envio do honorário trimestral (pendentes, próximas, feitas, trimestrais sem data de entrada), dá baixa e desfaz |
 | Honorários | Lança, corrige, cancela; dá baixa (total, parcial, abono) e estorna |
 | Cobrança | Registra cobrança e promessa, estorna, gera o texto do modelo |
 | Contatos | Adiciona, atualiza e remove; cruza uma lista de contatos das empresas com o cadastro (código, CPF/CNPJ, telefone já cadastrado — com ou sem 55 e o 9 — ou nome exato) e grava os que baterem: telefone igual atualiza o contato, senão entra novo |
