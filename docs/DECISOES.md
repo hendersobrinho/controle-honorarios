@@ -291,8 +291,20 @@ modelo; o fundo escolhido antes fica guardado para "Voltar para o meu fundo". A
 logo da Métodos continua no pé (quem cobra é o escritório) e ganhou arquivo
 próprio, `recursos/metodos.svg`; a logo antiga do Financeiro (`logo.svg`) saiu.
 
+### Os juros vão até a data dos valores, nunca até o "pagar até"
+Na 1.0.1 a imagem passou a calcular os juros até o "pagar até": com o prazo dez
+dias à frente, a imagem já cobrava dez dias de juros que não tinham corrido — as
+duplicatas saíam maiores que a conta do sistema. Agora são duas datas separadas na
+tela Cobrar: **valores atualizados até** (hoje, ou outra data escolhida) é até onde
+vão os juros; **vencimento (pagar até)** é só o prazo, na imagem e no lembrete.
+A conta de cada honorário fica à vista ("dias × juros por dia = juros") e o juros
+pode ser digitado à mão, só para aquela cobrança: o total, a imagem, o acordo e o
+registro usam o digitado, e a conferência mostra o que o cálculo dava. A fórmula
+em si (`juros_dia × dias`, por faixa de vigência) foi conferida contra os 20
+honorários em aberto do banco de desenvolvimento e bateu em todos.
+
 ### Acordo de valor ("pague R$ X até tal data")
-A imagem separa a data dos valores ("atualizados em") do prazo ("pagar até").
+A imagem separa a data dos valores ("atualizados até") do prazo ("pagar até").
 Guardado como acordo (tabela `acordo_valor`, um por honorário), o valor congelado
 vale para pagamentos até o prazo: a prévia da baixa sugere o juros combinado e o
 texto do abono. Nada é alterado no honorário — passado o prazo, o acordo só deixa

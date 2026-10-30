@@ -10,11 +10,12 @@ from __future__ import annotations
 import math
 import xml.etree.ElementTree as ET
 
-from PySide6.QtCore import QByteArray, QPointF, QRectF, Qt
+from PySide6.QtCore import QByteArray, QMimeData, QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QColor,
     QFont,
     QFontMetricsF,
+    QGuiApplication,
     QImage,
     QLinearGradient,
     QPainter,
@@ -409,3 +410,13 @@ def renderizar_agradecimento(texto_svg: str, dados: DadosImagem,
            False, centro)
     pintor.end()
     return imagem
+
+
+def copiar_imagem(imagem: QImage, chave_pix: str = "") -> None:
+    """A imagem e, junto, a chave Pix como texto: Outlook e Telegram colam os dois; o
+    WhatsApp cola só a imagem — por isso a chave também tem botão próprio."""
+    dados = QMimeData()
+    dados.setImageData(imagem)
+    if chave_pix:
+        dados.setText(chave_pix)
+    QGuiApplication.clipboard().setMimeData(dados)

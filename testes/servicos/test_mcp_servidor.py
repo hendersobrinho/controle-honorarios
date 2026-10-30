@@ -543,3 +543,18 @@ def test_backup_pela_ferramenta(devedor, pasta_dados, monkeypatch):
 
     monkeypatch.setattr(backup, "caminho_banco", lambda: pasta_dados / "teste.db")
     assert Path(servidor.gerar_backup()).is_file()
+
+
+def test_cobranca_no_whatsapp_com_datas_e_juros_a_mao(devedor, monkeypatch):
+    monkeypatch.setattr(servidor, "_abrir", lambda _link: None)
+    monkeypatch.setattr(servidor, "_copiar_imagem", lambda *_: None)
+    honorario_id = servidor.listar_honorarios()["honorarios"][0]["id"]
+
+    feito = servidor.cobrar_por_whatsapp(
+        devedor.id, atualizado_ate="2026-09-29", vencimento="2026-10-20",
+        juros_manuais={str(honorario_id): "10,00"})
+
+    assert feito["total"] == "1010.00"
+    conta = feito["conta_dos_juros"][next(iter(feito["conta_dos_juros"]))]
+    assert any("Juros digitados à mão: R$ 10,00" in linha for linha in conta)
+    assert "conta_dos_juros" in servidor.obter_honorario(honorario_id)

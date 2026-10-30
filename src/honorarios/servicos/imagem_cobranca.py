@@ -295,9 +295,10 @@ def montar(
 ) -> DadosImagem:
     """Os dados da imagem para os honorários selecionados na tela de cobrança.
 
-    ``atualizado_em``: a data em que os valores são calculados (juros até ela).
-    ``vencimento``: até quando esse valor vale — a data "pagar até" da imagem. Sem
-    elas, as duas são a data de referência da cobrança.
+    ``vencimento``: o "pagar até" da imagem — só o prazo; não mexe no juros.
+    ``atualizado_em``: recalcula os valores nessa data. Sem ela, valem os valores
+    que já estão nas linhas da seleção (os da tela, com o juros digitado à mão),
+    calculados na data de referência da cobrança.
     """
     if not selecao.linhas:
         raise ErroDeValidacao("Marque ao menos um honorário para gerar a imagem.")
@@ -305,9 +306,12 @@ def montar(
     vencimento = vencimento or data
     if vencimento < data:
         raise ErroDeValidacao(
-            "O \"pagar até\" não pode ser antes da data em que os valores foram atualizados."
+            "O vencimento (pagar até) não pode ser antes da data dos valores."
         )
-    atualizacoes = [calculo.atualizar(linha.honorario, data) for linha in selecao.linhas]
+    if atualizado_em is None:
+        atualizacoes = [linha.atualizacao for linha in selecao.linhas]
+    else:
+        atualizacoes = [calculo.atualizar(linha.honorario, data) for linha in selecao.linhas]
     recebedor = configuracoes.recebedor(sessao)
     original = sum((atual.valor_original for atual in atualizacoes), start=ZERO)
     juros = sum((atual.juros for atual in atualizacoes), start=ZERO)

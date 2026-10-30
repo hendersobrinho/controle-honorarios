@@ -8,8 +8,9 @@ desde o vencimento original — nada precisa ser desfeito.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -21,9 +22,14 @@ from .erros import ErroDeValidacao
 
 
 def registrar(
-    sessao: Session, honorarios: Sequence[Honorario], data_base: date, valido_ate: date
+    sessao: Session, honorarios: Sequence[Honorario], data_base: date, valido_ate: date,
+    juros_manuais: Mapping[int, Decimal] | None = None,
 ) -> list[AcordoValor]:
-    """Um acordo por honorário, com o valor de ``data_base`` válido até ``valido_ate``."""
+    """Um acordo por honorário, com o valor de ``data_base`` válido até ``valido_ate``.
+
+    ``juros_manuais`` (id do honorário → juros) vale no lugar do calculado: é o que
+    a tela de cobrança mostrou quando a pessoa digitou o juros à mão.
+    """
     if valido_ate < data_base:
         raise ErroDeValidacao("O acordo não pode vencer antes da data dos valores.")
     criados = []
@@ -33,6 +39,8 @@ def registrar(
                 f"{honorario.tipo.nome} {honorario.competencia_rotulo} não está em aberto."
             )
         atual = calculo.atualizar(honorario, data_base)
+        if juros_manuais and honorario.id in juros_manuais:
+            atual = calculo.com_juros_manual(atual, juros_manuais[honorario.id])
         acordo = AcordoValor(
             data_base=data_base,
             valido_ate=valido_ate,

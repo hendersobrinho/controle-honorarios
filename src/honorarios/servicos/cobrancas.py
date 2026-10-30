@@ -8,7 +8,7 @@ não é enviar.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time
 from decimal import Decimal
 
@@ -47,6 +47,15 @@ class Selecao:
     data_referencia: date = field(default_factory=hoje)
     hora_referencia: time | None = None
     forcar_lembrete: bool = False
+    # o vencimento que o lembrete diz, quando a pessoa informou outro na tela (o
+    # honorário da competência que vence no mês seguinte, por exemplo)
+    vencimento_lembrete: date | None = None
+
+    @property
+    def lembrete(self) -> bool:
+        """Sai o lembrete (ainda no prazo) em vez da cobrança de atraso."""
+        return self.forcar_lembrete or not any(
+            linha.atualizacao.dias_atraso > 0 for linha in self.linhas)
 
     @property
     def total(self) -> Decimal:
@@ -102,9 +111,12 @@ def montar_contexto(sessao: Session, selecao: Selecao) -> ContextoMensagem:
         raise ErroDeValidacao("Selecione ao menos um honorário para cobrar.")
     contato = selecao.contato or selecao.cliente.contato_principal
     hora = selecao.hora_referencia or agora_local().time()
+    itens = [_item_de(linha, selecao.cliente) for linha in selecao.linhas]
+    if selecao.lembrete and selecao.vencimento_lembrete:
+        itens = [replace(item, vencimento=selecao.vencimento_lembrete) for item in itens]
     return ContextoMensagem(
         empresa=selecao.cliente.nome,
-        itens=[_item_de(linha, selecao.cliente) for linha in selecao.linhas],
+        itens=itens,
         recebedor=configuracoes.recebedor(sessao),
         data_referencia=selecao.data_referencia,
         hora_referencia=hora,

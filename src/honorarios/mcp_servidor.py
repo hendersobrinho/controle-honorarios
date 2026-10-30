@@ -358,6 +358,7 @@ def obter_honorario(honorario_id: int, data_referencia: str | None = None) -> di
         referencia = _data(data_referencia) or hoje()
         linha = servico.montar_linha(h, calculo.atualizar(h, referencia), referencia)
         dados = _dados_linha(linha)
+        dados["conta_dos_juros"] = calculo.explicar(linha.atualizacao)
         dados["pagamentos"] = [_dados_pagamento(p) for p in h.pagamentos]
         dados["historico_cobrancas"] = [
             {"id": c.id, "data_hora": _plano(c.data_hora), "canal": c.canal.value,
@@ -1052,14 +1053,14 @@ def _app_grafico():
     return QGuiApplication.instance()
 
 
-def _imagem_de_cobranca(sessao: Session, selecao, nome: str):
+def _imagem_de_cobranca(sessao: Session, selecao, nome: str, vencimento: date | None = None):
     """Gera o PNG da imagem de cobrança (o mesmo da tela) na pasta de exportações."""
     from .config import caminhos
     from .servicos import imagem_cobranca
     from .ui.comum.imagem_cobranca import renderizar
 
     _app_grafico()
-    dados = imagem_cobranca.montar(sessao, selecao)
+    dados = imagem_cobranca.montar(sessao, selecao, vencimento=vencimento)
     texto_svg = imagem_cobranca.caminho_fundo(sessao).read_text(encoding="utf-8")
     imagem = renderizar(texto_svg, dados)
     destino = caminhos.pasta_exportacoes() / f"{nome}.png"
@@ -1092,6 +1093,11 @@ def _copiar_imagem(imagem, arquivo) -> None:
     )
 
 
+def _rotulo_linha(linha) -> str:
+    h = linha.honorario
+    return f"{h.id} · {h.tipo.nome} {h.competencia_rotulo or h.descricao}".strip()
+
+
 @_ferramenta(GRAVA)
 def cobrar_por_whatsapp(
     cliente_id: int,
@@ -1102,28 +1108,45 @@ def cobrar_por_whatsapp(
     com_imagem: bool = True,
     abrir: bool = True,
     registrar: bool = False,
+    atualizado_ate: str | None = None,
+    vencimento: str | None = None,
+    juros_manuais: dict[str, str] | None = None,
+    lembrete: bool = False,
 ) -> dict:
     """Prepara a cobrança no WhatsApp do cliente (telefone do contato principal, ou do
     contato_id): a mensagem do modelo (ou ``texto``) com a chave Pix sozinha na última
     linha — para o cliente copiar, já que da imagem não dá — e abre o WhatsApp com tudo
     escrito. Com imagem, a imagem de cobrança (com o QR do Pix) fica copiada: no WhatsApp,
     Ctrl+V cola a imagem. O WhatsApp não deixa enviar sozinho: quem aperta Enviar é você.
-    ``registrar`` grava a cobrança (só quando ela for de fato enviada)."""
+    ``registrar`` grava a cobrança (só quando ela for de fato enviada).
+
+    Como na tela Cobrar: ``atualizado_ate`` é a data até onde vão os juros (hoje se
+    vazia); ``vencimento`` é o "pagar até" da imagem e do lembrete — não mexe nos juros;
+    ``juros_manuais`` ({id do honorário: juros}) cobra outro juros no lugar do
+    calculado; ``lembrete`` usa o modelo de lembrete (ainda no prazo)."""
     from .servicos import configuracoes as servico_config
 
     with _sessao(gravar=registrar) as sessao:
         c = _cliente(sessao, cliente_id)
-        referencia = hoje()
+        referencia = _data(atualizado_ate) or hoje()
         linhas = [_linha(sessao, i, referencia) for i in honorario_ids] if honorario_ids \
             else cobrancas.linhas_em_aberto_do_cliente(sessao, cliente_id, referencia)
         linhas = [linha for linha in linhas if linha.honorario.status.cobravel]
         if not linhas:
             raise ValueError(f"{c.nome} não tem honorário em aberto para cobrar.")
+        for chave, juros in (juros_manuais or {}).items():
+            linha = next((x for x in linhas if x.honorario.id == int(chave)), None)
+            if linha is None:
+                raise ValueError(f"O honorário {chave} não está nesta cobrança.")
+            linha.atualizacao = calculo.com_juros_manual(linha.atualizacao, _valor(juros))
         contato = next((x for x in c.contatos if x.id == contato_id), None) if contato_id \
             else c.contato_principal
         if contato_id and contato is None:
             raise ValueError(f"O contato {contato_id} não é de {c.nome}.")
-        selecao = cobrancas.Selecao(cliente=c, linhas=list(linhas), contato=contato)
+        prazo = _data(vencimento)
+        selecao = cobrancas.Selecao(cliente=c, linhas=list(linhas), contato=contato,
+                                    data_referencia=referencia, forcar_lembrete=lembrete,
+                                    vencimento_lembrete=prazo)
         mensagem = (texto or cobrancas.gerar_texto(sessao, selecao)).strip()
 
         recebedor = servico_config.recebedor(sessao)
@@ -1136,10 +1159,12 @@ def cobrar_por_whatsapp(
         resultado = {"cliente": c.nome, "telefone": contato.telefone if contato else None,
                      "contato": contato.tratamento_ou_nome if contato else None,
                      "mensagem": mensagem, "link": link, "imagem": None,
-                     "total": _plano(selecao.total)}
+                     "total": _plano(selecao.total),
+                     "conta_dos_juros": {_rotulo_linha(x): calculo.explicar(x.atualizacao)
+                                         for x in linhas}}
         if com_imagem:
             imagem, destino = _imagem_de_cobranca(
-                sessao, selecao, f"cobranca_{c.codigo}_{referencia:%Y-%m-%d}")
+                sessao, selecao, f"cobranca_{c.codigo}_{referencia:%Y-%m-%d}", prazo)
             try:
                 _copiar_imagem(imagem, destino)
                 resultado["imagem_copiada"] = True

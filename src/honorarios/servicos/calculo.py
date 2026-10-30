@@ -7,7 +7,7 @@ versões da regra.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
 
@@ -19,7 +19,7 @@ from ..dominio.juros import (
     calcular_juros_com_parciais,
     dias_em_atraso,
 )
-from ..dominio.valores import ZERO, dinheiro, hoje
+from ..dominio.valores import ZERO, arredondar, dinheiro, formatar_data, formatar_moeda, hoje
 from ..infra.modelos import Cliente, Honorario
 
 
@@ -37,10 +37,16 @@ class Atualizacao:
     dias_atraso: int
     segmentos: tuple[SegmentoJuros, ...] = field(default_factory=tuple)
     congelado: bool = False
+    # preenchido quando o juros foi digitado à mão: o que o cálculo dava
+    juros_calculado: Decimal | None = None
 
     @property
     def em_atraso(self) -> bool:
         return self.dias_atraso > 0 and not self.congelado
+
+    @property
+    def juros_manual(self) -> bool:
+        return self.juros_calculado is not None
 
     @property
     def parcialmente_pago(self) -> bool:
@@ -170,3 +176,58 @@ def total_em_aberto(
         (a.total for a in atualizacoes.values() if a.status is StatusPagamento.EM_ABERTO),
         start=ZERO,
     )
+
+
+def com_juros_manual(atualizacao: Atualizacao, juros: Decimal | None) -> Atualizacao:
+    """O mesmo honorário com o juros digitado à mão (None volta ao calculado).
+
+    O total passa a ser saldo + juros digitado; o calculado fica guardado para a
+    conferência mostrar a diferença.
+    """
+    calculado = atualizacao.juros_calculado if atualizacao.juros_manual else atualizacao.juros
+    if juros is None:
+        return replace(atualizacao, juros=calculado, total=atualizacao.saldo + calculado,
+                       juros_calculado=None)
+    juros = dinheiro(juros)
+    if juros < 0:
+        raise ValueError("O juros não pode ser negativo.")
+    return replace(atualizacao, juros=juros, total=atualizacao.saldo + juros,
+                   juros_calculado=calculado)
+
+
+def explicar(atualizacao: Atualizacao) -> list[str]:
+    """A conta dos juros em palavras, para conferir na tela de cobrança.
+
+    Uma linha por faixa de juros/dia ("10 dias × R$ 1,01 por dia = R$ 10,10"), o
+    abatimento de pagamento parcial, quando houver, e a soma final.
+    """
+    if atualizacao.congelado:
+        return [f"{atualizacao.status.rotulo}: sem juros a cobrar."]
+    linhas = []
+    if atualizacao.dias_atraso == 0:
+        linhas.append("Ainda no prazo: sem juros.")
+    else:
+        bruto = ZERO
+        for segmento in atualizacao.segmentos:
+            conta = (f"{segmento.dias} dia{'s' if segmento.dias > 1 else ''} × "
+                     f"{formatar_moeda(segmento.valor_dia)} por dia")
+            if segmento.proporcao != 1:
+                conta += f" × {segmento.proporcao * 100:.0f}% (só o saldo, após pagamento parcial)"
+            conta += (f" = {formatar_moeda(arredondar(segmento.juros))}"
+                      f"  ({formatar_data(segmento.inicio)} a {formatar_data(segmento.fim)})")
+            linhas.append(conta)
+            bruto += segmento.juros
+        calculado = atualizacao.juros_calculado if atualizacao.juros_manual \
+            else atualizacao.juros
+        ja_cobrado = arredondar(bruto) - calculado
+        if ja_cobrado > 0:
+            linhas.append(f"− {formatar_moeda(ja_cobrado)} de juros já cobrados ou abonados "
+                          "em pagamentos parciais")
+        if len(atualizacao.segmentos) > 1 or ja_cobrado > 0:
+            linhas.append(f"Juros calculados: {formatar_moeda(calculado)}")
+    if atualizacao.juros_manual:
+        linhas.append(f"Juros digitados à mão: {formatar_moeda(atualizacao.juros)} "
+                      f"(o cálculo dava {formatar_moeda(atualizacao.juros_calculado)})")
+    linhas.append(f"{formatar_moeda(atualizacao.saldo)} + {formatar_moeda(atualizacao.juros)}"
+                  f" de juros = {formatar_moeda(atualizacao.total)}")
+    return linhas

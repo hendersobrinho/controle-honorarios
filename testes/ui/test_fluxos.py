@@ -1268,67 +1268,130 @@ def test_imagem_desenha_fundo_lista_e_qr(qtbot, contexto, cliente_com_debito, tm
     assert tinta < pretos / 4
 
 
-def test_cobrar_gera_imagem_dos_honorarios_marcados(
-    qtbot, contexto, cliente_com_debito, monkeypatch
-):
+def test_cobrar_gera_imagem_dos_honorarios_marcados(qtbot, contexto, cliente_com_debito):
     from PySide6.QtGui import QGuiApplication
 
-    from honorarios.servicos import imagem_cobranca as servico_imagem
-    from honorarios.ui.dialogos import imagem_cobranca
-    from honorarios.ui.dialogos.cobrar import DialogoCobrar
+    from honorarios.ui.dialogos.cobrar import ABA_IMAGEM, DialogoCobrar
 
-    abertos = []
-
-    def abrir(dialogo):
-        abertos.append(dialogo)
-        dialogo.copiar()
-        return 0
-
-    monkeypatch.setattr(imagem_cobranca.DialogoImagemCobranca, "exec", abrir)
     linhas = linhas_do(contexto.sessao, cliente_com_debito)
     dialogo = DialogoCobrar(contexto, cliente_com_debito, linhas)
     qtbot.addWidget(dialogo)
-    dialogo._imagem()
+    dialogo.abas.setCurrentIndex(ABA_IMAGEM)
+    assert dialogo._atualizar_imagem()
 
-    [aberto] = abertos
-    assert len(aberto.dados.linhas) == len(dialogo.modelo.marcados())
-    # sem PNG escolhido: a imagem sai com o QR do Pix do escritório, que vem no sistema
-    assert aberto.dados.qrcode == servico_imagem.QRCODE_MODELO
-    assert aberto.dados.campos["cliente"] == cliente_com_debito.nome
-    assert not QGuiApplication.clipboard().image().isNull()   # copiada para colar no WhatsApp
-    # junto vai a chave como texto (Outlook/Telegram colam os dois; o WhatsApp, a imagem)
-    assert QGuiApplication.clipboard().text() == aberto.dados.campos["chave_pix"]
-    assert "1/2" in aberto.aviso.text() and "Copiar chave Pix" in aberto.aviso.text()
+    dados = dialogo.dados_imagem
+    assert len(dados.linhas) == len(dialogo.modelo.marcados())
+    assert dados.campos["cliente"] == cliente_com_debito.nome
+    assert dados.campos["total"] == "R$ 1.551,00"
+    assert "Valores atualizados até 29/09/2026" in dialogo.imagem_info.text()
 
-    # o segundo passo fica em destaque (o clique manda um bool: não pode atrapalhar)
-    from PySide6.QtWidgets import QPushButton
+    dialogo.copiar_imagem()
+    assert not QGuiApplication.clipboard().image().isNull()   # para colar no WhatsApp
+    assert QGuiApplication.clipboard().text() == dados.campos["chave_pix"]
+    assert "1/2" in dialogo.aviso.text()
+    assert dialogo.botao_chave.text() == "2/2 · Copiar chave Pix"
+    dialogo.botao_chave.click()
+    assert QGuiApplication.clipboard().text() == dados.campos["chave_pix"]
 
-    botoes = {b.text(): b for b in aberto.findChildren(QPushButton)}
-    assert botoes["2/2 · Copiar chave Pix"].objectName() == "primario"
-    botoes["2/2 · Copiar chave Pix"].click()
-    assert QGuiApplication.clipboard().text() == aberto.dados.campos["chave_pix"]
-    assert "Copiar Pix copia e cola" not in botoes            # o QR é o PNG do banco
-    # o juros vai até o "pagar até"
-    total_antes = aberto.dados.campos["total"]
+
+def test_vencimento_da_imagem_nao_aumenta_os_juros(qtbot, contexto, cliente_com_debito):
+    """O "pagar até" é só o prazo: os juros vão até a data dos valores (hoje)."""
     from datetime import timedelta
-    base = aberto.vencimento.valor()
-    assert not aberto.linha_atualizado.isVisibleTo(aberto)
-    aberto.vencimento.definir(base + timedelta(days=10))
-    assert aberto.dados.campos["vencimento"] == formatar_data(base + timedelta(days=10))
-    assert aberto.dados.campos["data"] == formatar_data(base + timedelta(days=10))
-    assert aberto.dados.campos["total"] != total_antes
 
-    # guardar como acordo: o juros congela em "valores atualizados em"
-    aberto.acordo.setChecked(True)
-    assert aberto.linha_atualizado.isVisibleTo(aberto)
-    assert aberto.dados.campos["total"] == total_antes
-    assert aberto.dados.campos["vencimento"] == formatar_data(base + timedelta(days=10))
-    aberto.atualizado_em.definir(base + timedelta(days=5))
-    assert aberto.dados.campos["total"] != total_antes
-    # registrado quando a imagem é copiada
-    aberto.copiar()
-    assert "Acordo guardado" in aberto.aviso.text()
-    assert all(linha.honorario.acordos for linha in linhas_do(contexto.sessao, cliente_com_debito))
+    from honorarios.ui.dialogos.cobrar import DialogoCobrar
+
+    dialogo = DialogoCobrar(contexto, cliente_com_debito, linhas_do(contexto.sessao,
+                                                                    cliente_com_debito))
+    qtbot.addWidget(dialogo)
+    assert dialogo.usar_hoje.isChecked() and dialogo.pagar_ate.valor() == REFERENCIA
+
+    dialogo.pagar_ate.definir(REFERENCIA + timedelta(days=10))
+    assert dialogo.total.text() == "R$ 1.551,00"
+    assert dialogo._atualizar_imagem()
+    assert dialogo.dados_imagem.campos["total"] == "R$ 1.551,00"
+    assert dialogo.dados_imagem.campos["vencimento"] == "09/10/2026"
+    assert dialogo.dados_imagem.campos["data"] == "29/09/2026"
+
+    # outra data para os valores: aí sim os juros mudam (10 dias a mais × 2 honorários)
+    dialogo.data_referencia.definir(REFERENCIA + timedelta(days=10))
+    assert dialogo.usar_outra_data.isChecked()
+    assert dialogo.total.text() == "R$ 1.571,00"
+    dialogo.usar_hoje.setChecked(True)
+    assert dialogo.total.text() == "R$ 1.551,00"
+
+
+def test_conferencia_mostra_a_conta_e_aceita_juros_a_mao(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.dialogos.cobrar import DialogoCobrar
+
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    dialogo = DialogoCobrar(contexto, cliente_com_debito, linhas_do(contexto.sessao,
+                                                                    cliente_com_debito))
+    qtbot.addWidget(dialogo)
+    conta = dialogo.conferencia.toPlainText()
+    assert "10 dias × R$ 1,00 por dia = R$ 10,00" in conta
+    assert "41 dias × R$ 1,00 por dia = R$ 41,00" in conta
+
+    # juros do primeiro honorário digitado à mão, pelo campo da conferência
+    dialogo.tabela.selectRow(0)
+    linha = dialogo.modelo.item(0)
+    dialogo.juros_editor.definir(Decimal("5.00"))
+    dialogo._aplicar_juros_digitado()
+    assert linha.atualizacao.juros == Decimal("5.00")
+    assert "Juros digitados à mão: R$ 5,00" in dialogo.conferencia.toPlainText()
+    assert dialogo.botao_calculado.isEnabled()
+    novo_total = linha.atualizacao.total + dialogo.modelo.item(1).atualizacao.total
+    assert dialogo.total.text() == formatar_moeda(novo_total)
+    assert formatar_moeda(novo_total) in dialogo.texto.toPlainText()
+
+    # a imagem e o acordo usam o juros digitado
+    assert dialogo._atualizar_imagem()
+    assert dialogo.dados_imagem.campos["total"] == formatar_moeda(novo_total)
+    dialogo.acordo.setChecked(True)
+    dialogo.copiar_imagem()
+    assert "Acordo guardado" in dialogo.aviso.text()
+    assert linha.honorario.acordos[-1].juros == Decimal("5.00")
+
+    # e o registro guarda o total com ele
+    dialogo._registrar()
+    historico = servico_cobrancas.historico_do_cliente(contexto.sessao, cliente_com_debito.id)
+    assert sum(c.valor_atualizado_no_momento for c in historico) == novo_total
+
+    # voltar ao calculado
+    outro = DialogoCobrar(contexto, cliente_com_debito, linhas_do(contexto.sessao,
+                                                                  cliente_com_debito))
+    qtbot.addWidget(outro)
+    outro.definir_juros(outro.modelo.item(0), Decimal("1"))
+    outro.tabela.selectRow(0)
+    outro._voltar_ao_calculado()
+    assert outro.total.text() == "R$ 1.551,00"
+
+
+def test_lembrete_antes_do_vencimento_com_outro_vencimento(qtbot, contexto, cliente_com_debito):
+    """Competência que só vence no mês seguinte: vai o lembrete, com o vencimento certo."""
+    from honorarios.ui.dialogos.cobrar import DialogoCobrar
+
+    futuro = fabricas.honorario(contexto.sessao, cliente_com_debito, valor="800.00",
+                                vencimento=date(2026, 10, 10),
+                                competencia=Competencia(2026, 9))
+    linhas = [linha for linha in linhas_do(contexto.sessao, cliente_com_debito)
+              if linha.honorario.id == futuro.id]
+    dialogo = DialogoCobrar(contexto, cliente_com_debito, linhas)
+    qtbot.addWidget(dialogo)
+
+    assert dialogo.lembrete.isChecked() and not dialogo.tipo_cobranca.isEnabled()
+    assert dialogo.pagar_ate.valor() == date(2026, 10, 10)     # o vencimento dele
+    assert "10/10/2026" in dialogo.texto.toPlainText()
+    assert "Ainda no prazo: sem juros." in dialogo.conferencia.toPlainText()
+
+    dialogo.pagar_ate.definir(date(2026, 10, 15))
+    assert "15/10/2026" in dialogo.texto.toPlainText()
+    assert dialogo._atualizar_imagem()
+    assert dialogo.dados_imagem.campos["vencimento"] == "15/10/2026"
+    dialogo._vencimento_automatico()
+    assert dialogo.pagar_ate.valor() == date(2026, 10, 10)
 
 
 def test_imagem_estica_quando_os_honorarios_nao_cabem(qtbot, contexto, tmp_path):

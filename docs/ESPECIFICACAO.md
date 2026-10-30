@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.4.0
+# Especificação — Financeiro Métodos 1.5.0
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.4.0 (outubro de 2026) |
+| **Versão** | 1.5.0 (outubro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -50,6 +50,11 @@ no relatório.
 - Exemplo verificado em teste: vencimento 01/09, 0,50/dia até 14/09 e 1,00 a
   partir de 15/09, referência 20/09 → 13 × 0,50 + 6 × 1,00 = **R$ 12,50**.
 - Simulação por data em toda tela que mostra total (campo "Simular para").
+- Na tela Cobrar, os juros vão até **valores atualizados até** (hoje, ou outra
+  data); o **vencimento (pagar até)** é só o prazo da imagem e do lembrete e não
+  muda os juros. A conta de cada honorário aparece por extenso, e o juros pode
+  ser digitado à mão só naquela cobrança (vale para mensagem, imagem, acordo e
+  registro).
 - `Cancelado` e `Renegociado` não geram juros nem entram em cobrança.
 - "Hoje" é a data local em `America/Sao_Paulo`.
 
@@ -121,6 +126,7 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 15 | Busca das telas de honorários sem travar (espera a digitação, redesenho único, "Buscando…" discreto) e integração com o Claude: servidor MCP com 38 ferramentas (consulta e gravação com as regras das telas, e-mail do financeiro, cobrança no WhatsApp), aba Configurações → Claude (MCP) e o `FinanceiroMetodosMCP.exe` no instalador | 1.3.0 | concluída |
 | 16 | O servidor MCP se grava sozinho, a cada abertura, em todo Claude do computador: Claude Desktop comum, Claude Desktop da Microsoft Store (que lê de dentro do pacote) e Claude Code; a aba do Claude passa a mostrar onde está gravado | 1.3.1 | concluída |
 | 17 | Claude com acesso a todo o cadastro e ao banco: contatos um a um e em lote cruzando a lista das empresas com o cadastro, planilhas e layouts da importação personalizada, tipos, grupos e formas de envio, geração dos contratos, acordo, renegociação, backup e SQL direto (consulta e gravação, com log) — 61 ferramentas | 1.4.0 | concluída |
+| 18 | Tela Cobrar refeita em passos (honorários, conferência dos juros, datas, mensagem e imagem): a conta de cada honorário por extenso, juros digitado à mão, "valores atualizados até" (hoje ou outra data) separado do "vencimento (pagar até)" — corrige a imagem que cobrava juros até o prazo —, lembrete com o vencimento escolhido e prévia da imagem na própria tela; o MCP ganha as mesmas opções | 1.5.0 | concluída |
 
 Cada fase com recurso novo sobe a versão do meio; correção sobe a última. A 1.0.0
 chegou a ser reaproveitada para as fases 12 e 13 enquanto o sistema não estava

@@ -289,8 +289,8 @@ padrão fica destacado e aparece **Limpar filtros**.
    honorários de várias empresas, a cobrança passa uma empresa por vez, com a
    mensagem de cada uma pronta.
    Para o que ainda não venceu, **A vencer** manda um lembrete.
-2. O diálogo monta a mensagem; você copia ou abre o WhatsApp e clica em
-   **Marcar como cobrado**. A cobrança nasce *aguardando resposta* — nada de
+2. A tela **Cobrar** monta a mensagem e a imagem (veja abaixo); você copia ou abre
+   o WhatsApp e clica em **Marcar como cobrado**. A cobrança nasce *aguardando resposta* — nada de
    resposta é pedido nesse momento, porque ela ainda não existe.
 3. Quando o cliente responde, a resposta entra em **Cobranças enviadas** (ou pelo
    botão Histórico do próprio honorário): prometeu pagar, pediu renegociação,
@@ -298,20 +298,47 @@ padrão fica destacado e aparece **Limpar filtros**.
 4. O **Histórico** de cada honorário mostra a linha do tempo completa e diz
    quando a cobrança saiu em lote e com quais outros honorários.
 
-### Imagem da cobrança
+### A tela Cobrar
 
-No diálogo Cobrar, **Imagem da cobrança…** (Ctrl+I) gera uma imagem com os
-honorários marcados — um ou vários — sobre o fundo SVG do escritório, com o
-QR code do Pix e o CNPJ/CPF do cliente. Na prévia, o valor tem juros até a
-data de **Pagar até**. Marcando **Guardar como acordo**, aparece também
-**Valores atualizados em**: o juros fica congelado nessa data e o valor vale
-até o Pagar até (essa data não pode passar do Pagar até). A oferta é
-registrada ao copiar/salvar a imagem: pagando dentro do prazo, a baixa já
-sugere o valor combinado (a diferença de juros entra como abono justificado); passado o prazo,
-o acordo deixa de valer e o juros volta a correr desde o vencimento original.
-O cartão do honorário mostra "Acordo até dd/mm" enquanto ele vale. **Copiar imagem** põe no clipboard para colar no WhatsApp;
-**Copiar chave Pix** copia a chave para mandar como texto logo depois;
-**Salvar PNG…** guarda o arquivo. Copiar não registra a cobrança.
+Tudo numa tela só, em passos numerados — à esquerda, o que se cobra e a conta;
+à direita, o que vai para o cliente.
+
+1. **Quais honorários vão na cobrança** — marque e desmarque. A lista mostra o
+   vencimento, os dias de atraso, o valor, os juros e o total de cada um.
+2. **Conferência dos juros** — a conta de cada honorário marcado, por extenso:
+   "50 dias × R$ 1,01 por dia = R$ 50,50" e "R$ 1.507,80 + R$ 50,50 de juros =
+   R$ 1.558,30" (com troca de juros por dia ou pagamento parcial, a conta mostra
+   cada parte). Para cobrar **outro valor de juros**, clique no honorário na lista
+   e digite em "Juros a cobrar…"; ele fica marcado com ✎ e a conferência mostra o
+   que o cálculo dava. **Usar o juros calculado** desfaz. O juros digitado vale
+   para a mensagem, a imagem, o acordo e o registro da cobrança — só nesta
+   cobrança; nada muda no cadastro.
+3. **Datas**
+   - **Valores atualizados até**: **Hoje** (o padrão) ou **Outra data**. Os juros
+     vão até essa data.
+   - **Vencimento (pagar até)**: o prazo para pagar que aparece na imagem e no
+     lembrete. **Não aumenta os juros.** Sozinho, ele é a data dos valores — ou,
+     quando nada marcado está atrasado, o vencimento do próprio honorário (a
+     competência que vence no mês seguinte, por exemplo). Dá para escolher outro;
+     **Automático** volta ao padrão.
+4. **Mensagem e imagem** — para quem vai, o **tipo de mensagem** (**Cobrança**,
+   para o que está em atraso, ou **Lembrete**, para o que ainda está no prazo — o
+   sistema escolhe sozinho e dá para trocar) e as abas **Mensagem de texto** (dá
+   para editar antes de copiar) e **Imagem**, com a prévia já com as datas e os
+   valores da tela, para conferir antes de copiar.
+
+Na imagem, **Guardar como acordo** congela os valores: pagando até o vencimento,
+a baixa já sugere esse total (a diferença de juros entra como abono justificado);
+passado o vencimento, o acordo deixa de valer e os juros voltam a correr desde o
+vencimento original. O acordo é registrado ao copiar ou salvar a imagem, e o
+cartão do honorário mostra "Acordo até dd/mm" enquanto ele vale.
+
+Embaixo: **Copiar mensagem**, **Abrir no WhatsApp**, **Copiar imagem** (para colar
+no WhatsApp com Ctrl+V), **Copiar chave Pix** (para mandar como texto logo depois
+da imagem: o cliente toca e copia), **Salvar imagem…** e **Marcar como cobrado**.
+Copiar não registra a cobrança.
+
+### Imagem da cobrança
 
 A imagem já sai pronta, sem precisar importar nada: o modelo do sistema tem a
 identidade do Financeiro (o canhoto — faixa navy com a marca no topo, o cartão
