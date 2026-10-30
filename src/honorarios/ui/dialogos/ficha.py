@@ -98,7 +98,8 @@ class DialogoFicha(QDialog):
         self.cabecalho = widgets.Cabecalho(self.cliente.nome)
         self.cabecalho.adicionar_botao("Cobrar", self._cobrar, primario=True, atalho="Ctrl+B")
         self.cabecalho.adicionar_botao("Novo honorário", self._novo_honorario)
-        self.cabecalho.adicionar_botao("Alterar juros", self._alterar_juros)
+        botao = self.cabecalho.adicionar_botao("Editar cadastro", self._editar_cadastro)
+        botao.setToolTip("Dados, juros, contatos, data de entrada e honorário recorrente")
         self.botao_suspensao = self.cabecalho.adicionar_botao(
             "Suspender cobrança", self._alternar_suspensao
         )
@@ -387,10 +388,12 @@ class DialogoFicha(QDialog):
         if dialogo.registrou:
             self.recarregar()
 
-    def _alterar_juros(self) -> None:
-        from .juros import DialogoJuros
+    def _editar_cadastro(self) -> None:
+        from .cliente import DialogoCliente
 
-        if DialogoJuros(self.contexto, self.cliente, self).exec():
+        if DialogoCliente(self.contexto, self.cliente, self).exec():
+            self.setWindowTitle(f"Ficha – {self.cliente.nome}")
+            self.cabecalho.definir_titulo(self.cliente.nome)
             self.recarregar()
 
     def _alternar_suspensao(self) -> None:

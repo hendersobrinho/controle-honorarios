@@ -927,15 +927,27 @@ def test_cadastro_juros_livre_e_cliente_desde(qtbot, contexto, cliente_com_debit
     assert cliente_com_debito.cliente_desde == date(2025, 8, 15)
 
 
-def test_ficha_tem_botao_de_alterar_juros(qtbot, contexto, cliente_com_debito):
+def test_ficha_edita_o_cadastro(qtbot, contexto, cliente_com_debito, monkeypatch):
     from PySide6.QtWidgets import QPushButton
 
+    from honorarios.ui.dialogos import cliente as dialogo_cliente
     from honorarios.ui.dialogos.ficha import DialogoFicha
 
+    def editar(dialogo):
+        dialogo.nome.setText("EMPRESA RENOMEADA LTDA")
+        dialogo._salvar()
+        return 1
+
+    monkeypatch.setattr(dialogo_cliente.DialogoCliente, "exec", editar)
     ficha = DialogoFicha(contexto, cliente_com_debito)
     qtbot.addWidget(ficha)
-    textos = [botao.text() for botao in ficha.findChildren(QPushButton)]
-    assert "Alterar juros" in textos
+    botoes = {botao.text(): botao for botao in ficha.findChildren(QPushButton)}
+    assert "Alterar juros" not in botoes   # o juros fica no cadastro
+
+    botoes["Editar cadastro"].click()
+
+    assert cliente_com_debito.nome == "EMPRESA RENOMEADA LTDA"
+    assert ficha.windowTitle() == "Ficha – EMPRESA RENOMEADA LTDA"
 
 
 def test_painel_de_rankings_monta_os_quatro_graficos(
