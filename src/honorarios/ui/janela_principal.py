@@ -316,6 +316,40 @@ class JanelaPrincipal(QMainWindow):
         self.verificar_notificacoes(ao_abrir=True)
         self.verificar_email()
         self.verificacao.start()
+        # versão nova no GitHub: só o programa instalado procura, e sem pressa
+        from ..servicos import atualizacao
+
+        if atualizacao.pode_instalar() and servico_configuracoes.obter_bool(
+                self.contexto.sessao, atualizacao.CHAVE_AO_ABRIR, True):
+            QTimer.singleShot(8000, self.verificar_atualizacao)
+
+    def verificar_atualizacao(self) -> None:
+        """Pergunta ao GitHub (em segundo plano) se há versão nova e avisa no canto."""
+        from ..servicos import atualizacao
+        from .comum import segundo_plano
+
+        def encontrou(lancamento) -> None:
+            if not atualizacao.mais_nova(lancamento):
+                return
+            from ..servicos import notificacoes
+
+            try:
+                notificacoes.atualizacao_disponivel(self.contexto.sessao, lancamento.versao)
+                self.contexto.salvar()
+            except Exception:  # noqa: BLE001 — o aviso do canto sai do mesmo jeito
+                self.contexto.sessao.rollback()
+            self._atualizar_botao_notificacoes()
+            self.aviso_novo.mostrar(
+                f"Saiu a versão {lancamento.versao} do Financeiro: Configurações → "
+                "Atualizações")
+            self._posicionar_aviso()
+
+        def falhou(falha) -> None:   # sem internet ao abrir: tudo bem, fica para depois
+            from ..config.registro import log
+
+            log(__name__).info("Verificação de atualização não concluída: %s", falha)
+
+        segundo_plano.executar(atualizacao.ultima, encontrou, falhou)
 
     def verificar_notificacoes(self, ao_abrir: bool = False) -> list:
         """Cria os avisos novos do dia (o de hoje, não a data de referência).
@@ -421,6 +455,9 @@ class JanelaPrincipal(QMainWindow):
         painel = self.tela(self.linhas_de_tela[self.navegacao.row(item)])
         if aba:
             painel = painel.aba(aba)
+        if notificacao.tipo == notificacoes.ATUALIZACAO and hasattr(painel,
+                                                                  "mostrar_atualizacoes"):
+            painel.mostrar_atualizacoes()
         busca = getattr(painel, "busca", None)
         if busca is not None and cliente is not None:
             busca.blockSignals(True)

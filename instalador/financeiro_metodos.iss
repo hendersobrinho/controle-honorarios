@@ -67,3 +67,5 @@ Name: "{autodesktop}\{#Nome}"; Filename: "{app}\{#Executavel}"; IconFilename: "{
 
 [Run]
 Filename: "{app}\{#Executavel}"; Description: "Abrir o {#Nome}"; Flags: nowait postinstall skipifsilent
+; atualização pelo próprio sistema (instalador em /SILENT): abre o programa de novo
+Filename: "{app}\{#Executavel}"; Flags: nowait skipifnotsilent

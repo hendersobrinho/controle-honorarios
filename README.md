@@ -194,6 +194,10 @@ para um SQLite de testes). Para liberar tudo sem perguntar a cada chamada, permi
 ## Instalar no Windows
 
 O instalador **Financeiro Métodos** cria o atalho na área de trabalho e no menu Iniciar.
+Cada versão sai pronta nos [Releases](https://github.com/hendersobrinho/controle-honorarios/releases):
+a tag `vX.Y.Z` dispara o GitHub Actions, que gera e publica o instalador. Depois de
+instalado, o sistema se atualiza sozinho em **Configurações → Atualizações → Verificar e
+atualizar** (baixa, confere o SHA-256, instala e reabre).
 
 1. **Gerar o instalador** num Windows com Python 3.12 e o
    [Inno Setup 6](https://jrsoftware.org/isinfo.php):

@@ -2295,3 +2295,103 @@ def test_cobrar_se_ajusta_a_tela_pequena(qtbot, contexto, cliente_com_debito):
     total = colunas.index("Total")
     assert dialogo.tabela.columnViewportPosition(total) + dialogo.tabela.columnWidth(total) \
         <= dialogo.tabela.viewport().width()
+
+
+# -------------------------------------------------------------- atualização
+def _lancamento(versao):
+    from honorarios.servicos import atualizacao
+
+    return atualizacao.Lancamento(
+        versao=versao, notas="- tela Cobrar nova", publicado_em=None,
+        instalador_url="http://x/i.exe", instalador_nome=f"I_{versao}.exe",
+        tamanho=50 * 1024 * 1024, sha256="", pagina="")
+
+
+def test_atualizacao_ja_em_dia(qtbot, contexto, monkeypatch):
+    from honorarios import __version__
+    from honorarios.servicos import atualizacao
+    from honorarios.ui.comum import segundo_plano
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    monkeypatch.setattr(atualizacao, "ultima", lambda: _lancamento(__version__))
+    painel = PainelConfiguracoes(contexto, executor=segundo_plano.imediato)
+    qtbot.addWidget(painel)
+    painel.mostrar_atualizacoes()
+    assert painel.abas.currentWidget() is painel.aba_atualizacoes
+    assert painel.versao_instalada.text() == __version__
+
+    painel.verificar_e_atualizar()
+
+    assert "mais recente" in painel.situacao_atualizacao.text()
+    assert painel.botao_atualizar.isEnabled()
+
+
+def test_atualizacao_baixa_instala_e_fecha(qtbot, contexto, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from honorarios.servicos import atualizacao
+    from honorarios.ui.comum import segundo_plano, widgets
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    instalados, fechou = [], []
+    monkeypatch.setattr(atualizacao, "ultima", lambda: _lancamento("99.0.0"))
+    monkeypatch.setattr(atualizacao, "pode_instalar", lambda: True)
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+
+    def baixar(lancamento, progresso=None, **_):
+        progresso(lancamento.tamanho, lancamento.tamanho)
+        return tmp_path / lancamento.instalador_nome
+
+    monkeypatch.setattr(atualizacao, "baixar", baixar)
+    monkeypatch.setattr(atualizacao, "instalar", lambda caminho, log=None:
+                        instalados.append(caminho))
+    monkeypatch.setattr(QApplication, "quit", lambda *_: fechou.append(True))
+
+    painel = PainelConfiguracoes(contexto, executor=segundo_plano.imediato)
+    qtbot.addWidget(painel)
+    painel.verificar_e_atualizar()
+
+    assert painel.versao_publicada.text() == "99.0.0"
+    assert painel.notas_atualizacao.toPlainText() == "- tela Cobrar nova"
+    assert "Instalando a versão 99.0.0" in painel.situacao_atualizacao.text()
+    assert fechou == [True]
+    QApplication.instance().aboutToQuit.emit()   # o instalador roda ao fechar
+    QApplication.instance().aboutToQuit.disconnect(painel._ao_sair)
+    assert instalados == [tmp_path / "I_99.0.0.exe"]
+
+
+def test_atualizacao_recusada_ou_sem_internet(qtbot, contexto, monkeypatch):
+    from honorarios.servicos import atualizacao
+    from honorarios.servicos.erros import ErroDeNegocio
+    from honorarios.ui.comum import segundo_plano, widgets
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    baixou = []
+    monkeypatch.setattr(atualizacao, "ultima", lambda: _lancamento("99.0.0"))
+    monkeypatch.setattr(atualizacao, "pode_instalar", lambda: True)
+    monkeypatch.setattr(atualizacao, "baixar", lambda *a, **k: baixou.append(1))
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: False)
+    painel = PainelConfiguracoes(contexto, executor=segundo_plano.imediato)
+    qtbot.addWidget(painel)
+
+    painel.verificar_e_atualizar()
+    assert "fica para depois" in painel.situacao_atualizacao.text() and not baixou
+
+    def sem_rede():
+        raise ErroDeNegocio("Não consegui falar com o GitHub.")
+
+    monkeypatch.setattr(atualizacao, "ultima", sem_rede)
+    painel.verificar_e_atualizar()
+    assert "Não consegui falar com o GitHub" in painel.situacao_atualizacao.text()
+    assert painel.botao_atualizar.isEnabled()
+
+
+def test_opcao_de_avisar_ao_abrir_fica_gravada(qtbot, contexto):
+    from honorarios.servicos import atualizacao, configuracoes
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    painel = PainelConfiguracoes(contexto)
+    qtbot.addWidget(painel)
+    assert painel.atualizar_ao_abrir.isChecked()
+    painel.atualizar_ao_abrir.setChecked(False)
+    assert not configuracoes.obter_bool(contexto.sessao, atualizacao.CHAVE_AO_ABRIR, True)

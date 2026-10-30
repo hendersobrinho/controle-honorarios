@@ -26,11 +26,12 @@ PROMESSA = "promessa"
 ACORDO = "acordo"
 GERACAO = "geracao"   # competência gerada automaticamente
 EMAIL = "email"       # chegou e-mail do financeiro na pasta da conversa
+ATUALIZACAO = "atualizacao"   # saiu versão nova do sistema no GitHub
 
 # telas para onde cada aviso leva
 TELAS = {VENCE_HOJE: "A vencer", NAO_PAGO: "Atrasados", PROMESSA: "Atrasados",
          ACORDO: "Atrasados", GERACAO: "Honorários",
-         EMAIL: "Gerenciador de e-mail"}
+         EMAIL: "Gerenciador de e-mail", ATUALIZACAO: "Configurações"}
 
 # "não foi pago na data" avisa o que venceu nestes últimos dias: abrindo o sistema
 # depois de um feriado, aparece o que venceu enquanto ele estava fechado
@@ -134,6 +135,22 @@ def gerar(sessao: Session, referencia: date) -> list[Notificacao]:
             novas.append(notificacao)
     sessao.flush()
     return novas
+
+
+def atualizacao_disponivel(sessao: Session, versao: str) -> Notificacao | None:
+    """O aviso de versão nova, uma vez por versão (None se ele já existe)."""
+    chave = f"atualizacao:{versao}"
+    if sessao.scalar(select(Notificacao.id).where(Notificacao.chave == chave)):
+        return None
+    aviso = Notificacao(
+        chave=chave, tipo=ATUALIZACAO,
+        titulo=f"Saiu a versão {versao} do Financeiro",
+        texto="Configurações → Atualizações → Verificar e atualizar: baixa e instala sozinho",
+        tela=TELAS[ATUALIZACAO],
+    )
+    sessao.add(aviso)
+    sessao.flush()
+    return aviso
 
 
 def listar(sessao: Session, limite: int = 80) -> list[Notificacao]:

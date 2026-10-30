@@ -1,11 +1,11 @@
-"""Configurações: PIX, modelos de mensagem, formas de envio e backup."""
+"""Configurações: PIX, modelos de mensagem, imagem, backup, Claude e atualizações."""
 
 from __future__ import annotations
 
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QTableView,
@@ -35,7 +36,7 @@ from ...dominio.valores import formatar_data_hora
 from ...servicos import backup as servico_backup
 from ...servicos import configuracoes as servico
 from ...servicos import tipos as servico_tipos
-from ..comum import widgets
+from ..comum import segundo_plano, widgets
 from ..comum.campos import ComboEnum
 from ..comum.tabelas import (
     Coluna,
@@ -50,9 +51,11 @@ from ..contexto import Contexto
 class PainelConfiguracoes(QWidget):
     titulo = "Configurações"
 
-    def __init__(self, contexto: Contexto, parent=None) -> None:
+    def __init__(self, contexto: Contexto, parent=None, executor=None) -> None:
         super().__init__(parent)
         self.contexto = contexto
+        # rede (GitHub) fora da tela; os testes trocam por um que roda na hora
+        self.executor = executor or segundo_plano.executar
         self._montar()
         self.recarregar()
 
@@ -63,13 +66,15 @@ class PainelConfiguracoes(QWidget):
         self.cabecalho.adicionar_botao("Atualizar", self.recarregar, atalho="F5")
         layout.addWidget(self.cabecalho)
 
-        abas = QTabWidget()
-        abas.addTab(self._aba_recebedor(), "Recebedor e PIX")
-        abas.addTab(self._aba_modelos(), "Modelos de mensagem")
-        abas.addTab(self._aba_imagem(), "Imagem da cobrança")
-        abas.addTab(self._aba_backup(), "Backup")
-        abas.addTab(self._aba_claude(), "Claude (MCP)")
-        layout.addWidget(abas, 1)
+        self.abas = QTabWidget()
+        self.abas.addTab(self._aba_recebedor(), "Recebedor e PIX")
+        self.abas.addTab(self._aba_modelos(), "Modelos de mensagem")
+        self.abas.addTab(self._aba_imagem(), "Imagem da cobrança")
+        self.abas.addTab(self._aba_backup(), "Backup")
+        self.abas.addTab(self._aba_claude(), "Claude (MCP)")
+        self.aba_atualizacoes = self._aba_atualizacoes()
+        self.abas.addTab(self.aba_atualizacoes, "Atualizações")
+        layout.addWidget(self.abas, 1)
 
     # ------------------------------------------------------------- recebedor
     def _aba_recebedor(self) -> QWidget:
@@ -563,11 +568,178 @@ class PainelConfiguracoes(QWidget):
                   "abra de novo para ele carregar as ferramentas.")
         widgets.informar(self, texto, "Claude")
 
+    # ----------------------------------------------------------- atualizações
+    def _aba_atualizacoes(self) -> QWidget:
+        from ... import __version__
+        from ...servicos import atualizacao
+
+        pagina = QWidget()
+        layout = QVBoxLayout(pagina)
+        layout.addWidget(widgets.rotulo_fraco(
+            "O sistema se atualiza pelo GitHub: um clique baixa a versão nova, confere o "
+            "arquivo, instala e abre o sistema de novo. Os dados não são tocados — o banco "
+            "fica onde está."
+        ))
+        grupo = QGroupBox("Versão")
+        formulario = QFormLayout(grupo)
+        self.versao_instalada = widgets.rotulo_valor(__version__)
+        formulario.addRow("Instalada neste computador:", self.versao_instalada)
+        self.versao_publicada = widgets.rotulo_valor("ainda não verificada")
+        formulario.addRow("Última publicada:", self.versao_publicada)
+        layout.addWidget(grupo)
+
+        botoes = QHBoxLayout()
+        self.botao_atualizar = widgets.QPushButton("Verificar e atualizar")
+        self.botao_atualizar.setObjectName("primario")
+        self.botao_atualizar.setToolTip(
+            "Procura versão nova no GitHub; se houver, baixa, instala e reabre o sistema")
+        self.botao_atualizar.clicked.connect(self.verificar_e_atualizar)
+        botoes.addWidget(self.botao_atualizar)
+        botoes.addStretch(1)
+        layout.addLayout(botoes)
+        self.progresso_atualizacao = QProgressBar()
+        self.progresso_atualizacao.setVisible(False)
+        layout.addWidget(self.progresso_atualizacao)
+        self.situacao_atualizacao = widgets.rotulo_fraco("")
+        layout.addWidget(self.situacao_atualizacao)
+        self.notas_atualizacao = QPlainTextEdit()
+        self.notas_atualizacao.setReadOnly(True)
+        self.notas_atualizacao.setPlaceholderText("O que mudou na versão nova aparece aqui.")
+        self.notas_atualizacao.setMaximumHeight(220)
+        layout.addWidget(self.notas_atualizacao)
+
+        self.atualizar_ao_abrir = QCheckBox(
+            "Avisar quando sair versão nova (procura no GitHub ao abrir o sistema)")
+        self.atualizar_ao_abrir.toggled.connect(self._gravar_atualizar_ao_abrir)
+        layout.addWidget(self.atualizar_ao_abrir)
+        if not atualizacao.pode_instalar():
+            layout.addWidget(widgets.rotulo_fraco(
+                "Rodando do código-fonte: aqui só dá para ver se há versão nova; para "
+                "atualizar, use git pull."))
+        layout.addStretch(1)
+        # o download corre em outra thread; a barra é lida daqui, a cada instante
+        self._baixado = [0, 0]
+        self._relogio_download = QTimer(self)
+        self._relogio_download.setInterval(200)
+        self._relogio_download.timeout.connect(self._mostrar_progresso)
+        return pagina
+
+    def mostrar_atualizacoes(self) -> None:
+        """Abre a aba (o aviso de versão nova leva até aqui)."""
+        self.abas.setCurrentWidget(self.aba_atualizacoes)
+
+    def _gravar_atualizar_ao_abrir(self, ligado: bool) -> None:
+        from ...servicos import atualizacao
+
+        servico.gravar(self.contexto.sessao, atualizacao.CHAVE_AO_ABRIR, "1" if ligado else "0")
+        self.contexto.salvar()
+
+    def _ocupado(self, texto: str) -> None:
+        self.botao_atualizar.setEnabled(not texto)
+        self.botao_atualizar.setText(texto or "Verificar e atualizar")
+
+    def verificar_e_atualizar(self) -> None:
+        from ...servicos import atualizacao
+
+        self._ocupado("Consultando o GitHub…")
+        self.situacao_atualizacao.setText("")
+
+        def encontrou(lancamento) -> None:
+            self._ocupado("")
+            self.versao_publicada.setText(
+                lancamento.versao + (f" (de {lancamento.publicado_em:%d/%m/%Y})"
+                                     if lancamento.publicado_em else ""))
+            self.notas_atualizacao.setPlainText(lancamento.notas)
+            if not atualizacao.mais_nova(lancamento):
+                self.situacao_atualizacao.setText(
+                    "✓ Você já está na versão mais recente.")
+                return
+            if not atualizacao.pode_instalar():
+                self.situacao_atualizacao.setText(
+                    f"Há a versão {lancamento.versao}. Do código-fonte, atualize com git pull.")
+                return
+            if not widgets.confirmar(
+                self, f"Atualizar para a versão {lancamento.versao}?", "Atualização",
+                f"O sistema baixa o instalador ({lancamento.tamanho_mb}), fecha, instala e "
+                "abre de novo sozinho — leva um ou dois minutos. Os dados não são tocados. "
+                "Se o Windows pedir permissão, confirme.",
+                acao="Atualizar agora",
+            ):
+                self.situacao_atualizacao.setText(
+                    f"A versão {lancamento.versao} fica para depois.")
+                return
+            self._baixar(lancamento)
+
+        def falhou(falha) -> None:
+            self._ocupado("")
+            self.situacao_atualizacao.setText(str(falha))
+
+        self.executor(atualizacao.ultima, encontrou, falhou)
+
+    def _baixar(self, lancamento) -> None:
+        from ...servicos import atualizacao
+
+        self._ocupado("Baixando…")
+        self._baixado[:] = [0, lancamento.tamanho]
+        self.progresso_atualizacao.setRange(0, 100)
+        self.progresso_atualizacao.setValue(0)
+        self.progresso_atualizacao.setVisible(True)
+        self._relogio_download.start()
+
+        def guardar_progresso(feito: int, total: int) -> None:   # na outra thread
+            self._baixado[:] = [feito, total]
+
+        def baixou(instalador) -> None:
+            self._relogio_download.stop()
+            self.progresso_atualizacao.setValue(100)
+            self.situacao_atualizacao.setText(
+                f"Instalando a versão {lancamento.versao}: o sistema fecha agora e abre de "
+                "novo sozinho.")
+            self._instalar_e_fechar(instalador)
+
+        def falhou(falha) -> None:
+            self._relogio_download.stop()
+            self.progresso_atualizacao.setVisible(False)
+            self._ocupado("")
+            self.situacao_atualizacao.setText(str(falha))
+
+        self.executor(lambda: atualizacao.baixar(lancamento, progresso=guardar_progresso),
+                      baixou, falhou)
+
+    def _mostrar_progresso(self) -> None:
+        feito, total = self._baixado
+        if total:
+            self.progresso_atualizacao.setValue(min(100, feito * 100 // total))
+            self.situacao_atualizacao.setText(
+                f"Baixando: {feito / 1024 / 1024:.0f} de {total / 1024 / 1024:.0f} MB")
+
+    def _instalar_e_fechar(self, instalador) -> None:
+        """O instalador roda quando o sistema termina de fechar (com o backup de saída)."""
+        from PySide6.QtWidgets import QApplication
+
+        from ...config.caminhos import pasta_dados
+        from ...servicos import atualizacao
+
+        aplicativo = QApplication.instance()
+        log = pasta_dados() / "atualizacao.log"
+        self._ao_sair = lambda: atualizacao.instalar(instalador, log)
+        aplicativo.aboutToQuit.connect(self._ao_sair)
+        janela = self.window()
+        if janela is not self:
+            janela.close()
+        aplicativo.quit()
+
     # ----------------------------------------------------------------- dados
     def recarregar(self) -> None:
         sessao = self.contexto.sessao
         self.contexto.atualizar()
         self._mostrar_situacao_claude()
+        from ...servicos import atualizacao
+
+        self.atualizar_ao_abrir.blockSignals(True)
+        self.atualizar_ao_abrir.setChecked(servico.obter_bool(sessao, atualizacao.CHAVE_AO_ABRIR,
+                                                              True))
+        self.atualizar_ao_abrir.blockSignals(False)
         self.razao_social.setText(servico.obter(sessao, "recebedor_razao_social"))
         self.tipo_chave.definir(TipoChavePix(servico.obter(sessao, "recebedor_tipo_chave", "CNPJ")))
         self.chave.setText(servico.obter(sessao, "recebedor_chave"))

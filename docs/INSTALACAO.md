@@ -67,10 +67,31 @@ por completo — inclusive o ícone perto do relógio — e abra de novo. **Conf
 → Claude (MCP)** mostra os arquivos onde ele está gravado; o log do sistema registra
 cada gravação.
 
-**Atualizar.** Suba o `__version__` em `src/honorarios/__init__.py` (é o único
-lugar: o `pyproject.toml`, o .exe e o instalador leem de lá), gere de novo e rode
-o instalador por cima. O `AppId` fixo faz o Windows
-reconhecer a instalação anterior.
+**Publicar uma versão nova.** Suba o `__version__` em `src/honorarios/__init__.py`
+(é o único lugar: o `pyproject.toml`, o .exe e o instalador leem de lá), faça o
+commit e crie a tag com o mesmo número:
+
+```bash
+git tag v1.6.0 && git push origin main v1.6.0
+```
+
+O GitHub Actions (`.github/workflows/lancamento.yml`) gera o programa e o
+instalador num Windows do próprio GitHub e publica o **Release** com o instalador
+anexado e a lista do que mudou — uns 10 minutos. Não precisa mais gerar o
+instalador à mão (o `gerar_instalador.bat` continua servindo para testar antes).
+
+**Atualizar os computadores.** Em cada um: **Configurações → Atualizações →
+Verificar e atualizar**. O sistema consulta o GitHub, baixa o instalador da versão
+nova, confere o arquivo pelo SHA-256 que o GitHub publica, fecha (fazendo o backup
+de saída), instala em silêncio e abre de novo. Se a instalação foi feita "para todos
+os usuários", o Windows pede a confirmação de administrador. O programa instalado
+também procura versão nova sozinho ao abrir (dá para desligar na mesma aba) e avisa
+no canto e nas notificações. O `AppId` fixo faz o Windows reconhecer a instalação
+anterior; o banco e os backups não são tocados. O registro da última instalação
+fica em `atualizacao.log`, na pasta de dados.
+
+A primeira versão com esse botão (1.5.0) precisa ser instalada à mão uma vez; dali
+em diante, o botão resolve.
 
 ## Desenvolvimento
 

@@ -599,6 +599,23 @@ dizer se o Claude está usando — o servidor só existe enquanto o Claude o abr
 - **`atualizar_cliente` reenvia os contatos**: o serviço trata a lista como a
   verdade e apagaria os contatos se recebesse vazia.
 
+### Atualização pelo GitHub, sem servidor próprio
+O repositório é público e cada versão já era um Release com o instalador. O sistema
+consulta `releases/latest` da API do GitHub, compara o número (como número: 1.10
+vem depois de 1.9), baixa o `Instalador_Financeiro_Metodos_X.Y.Z.exe` e confere o
+SHA-256 que o próprio GitHub publica do arquivo — download pela metade ou trocado é
+apagado e não roda. A instalação é o mesmo instalador do Inno Setup, em `/SILENT`:
+nada de trocar arquivos do programa com ele aberto. O sistema fecha primeiro (o
+instalador é disparado no `aboutToQuit`, depois do backup de saída) e uma linha
+`skipifnotsilent` no `[Run]` o abre de novo. A verificação ao abrir só roda no
+programa instalado (nunca nos testes nem do código-fonte), oito segundos depois de
+abrir e em segundo plano; sem internet, fica para a próxima vez.
+
+O instalador passou a ser gerado pelo GitHub Actions (`windows-latest`, Python
+3.12, PyInstaller e Inno Setup) a cada tag `vX.Y.Z`, que também confere se a tag é
+igual ao `__version__`. Assim a versão publicada é sempre a do código da tag, e
+ninguém precisa gerar instalador no próprio computador.
+
 ### Numeração das versões
 A 1.0.0 foi reaproveitada enquanto o sistema não estava em uso. Com ele em uso, a
 numeração passou a seguir as entregas (ver a especificação, seção 5): recurso
