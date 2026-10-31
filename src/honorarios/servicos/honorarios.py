@@ -23,6 +23,8 @@ from ..dominio.valores import (
     Competencia,
     agora_utc,
     dinheiro,
+    formatar_data,
+    formatar_moeda,
     hoje,
     normalizar_busca,
     somar_meses,
@@ -282,6 +284,46 @@ def atualizar(sessao: Session, honorario: Honorario, dados: DadosHonorario) -> H
     honorario.enviado_em = dados.enviado_em
     sessao.flush()
     return honorario
+
+
+def ajustar_juros(
+    sessao: Session, honorario: Honorario, juros: Decimal | None, data: date | None = None,
+) -> None:
+    """Acerta à mão o juros do honorário em aberto, valendo em ``data`` (hoje).
+
+    O valor digitado é o juros inteiro daquele dia, no lugar do calculado; dali
+    para a frente os dias continuam somando por cima. ``None`` volta ao calculado.
+    """
+    if honorario.status is not StatusPagamento.EM_ABERTO:
+        raise ErroDeValidacao("Só dá para acertar o juros de honorário em aberto.")
+    data = data or hoje()
+    antes = honorario.juros_ajustado
+    if juros is None and antes is None:
+        return   # já está no calculado: nada a registrar
+    if juros is not None and antes is not None and dinheiro(juros) == dinheiro(antes):
+        return   # o mesmo valor de novo: o acerto e a data ficam como estavam
+    if juros is None:
+        honorario.juros_ajustado = None
+        honorario.juros_ajustado_em = None
+        resumo = "Juros volta ao calculado"
+    else:
+        juros = dinheiro(juros)
+        if juros < 0:
+            raise ErroDeValidacao("O juros não pode ser negativo.", "juros")
+        honorario.juros_ajustado = juros
+        honorario.juros_ajustado_em = data
+        resumo = f"Juros acertado à mão: {formatar_moeda(juros)} em {formatar_data(data)}"
+    sessao.add(
+        LogAlteracao(
+            entidade="honorario",
+            entidade_id=honorario.id,
+            acao="AJUSTAR_JUROS",
+            resumo=resumo,
+            antes="" if antes is None else str(antes),
+            depois="" if juros is None else str(juros),
+        )
+    )
+    sessao.flush()
 
 
 def cancelar(sessao: Session, honorario: Honorario, motivo: str) -> None:

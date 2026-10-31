@@ -32,7 +32,6 @@ from ..servicos import configuracoes as servico_configuracoes
 from .comum import cores, logo, tema, widgets
 from .comum.notificacoes import AvisoNovo, BotaoNotificacoes, ListaNotificacoes, icone_da_marca
 from .contexto import Contexto
-from .paineis.acompanhamento import PainelAcompanhamento
 from .paineis.cadastro_honorarios import PainelHonorarios
 from .paineis.clientes import PainelClientes
 from .paineis.configuracoes import PainelConfiguracoes
@@ -121,10 +120,9 @@ class JanelaPrincipal(QMainWindow):
         # e as cobranças já feitas ficam ao lado, para anotar a resposta.
         grupos = (
             ("COBRANÇA", (
-                PainelVencimentos,    # abas: A vencer, Atrasados, Pagos
+                PainelVencimentos,    # abas: A vencer, Atrasados, Pagos, Cobranças
                 PainelImpostoRenda,
                 PainelTarefas,        # envio do honorário trimestral
-                PainelAcompanhamento,
                 PainelEmailCobrancas,
             )),
             ("CADASTROS", (PainelClientes, PainelHonorarios, PainelTiposEEnvio)),
@@ -451,9 +449,9 @@ class JanelaPrincipal(QMainWindow):
         self._atualizar_botao_notificacoes()
         self.lista_notificacoes.hide()
         cliente = notificacao.cliente
-        # "A vencer"/"Atrasados"/"Pagos" são abas de Vencimentos
-        aba = notificacao.tela if notificacao.tela in ABAS_DE_VENCIMENTOS else None
+        # "A vencer"/"Atrasados"/"Pagos"/"Cobranças" são abas de Vencimentos
         tela = NOMES_ANTIGOS.get(notificacao.tela, notificacao.tela)
+        aba = tela if tela in ABAS_DE_VENCIMENTOS else None
         item = self.itens_de_tela.get(PainelVencimentos.titulo if aba else tela)
         if item is None:
             return
@@ -509,9 +507,10 @@ class JanelaPrincipal(QMainWindow):
 INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000   # meia hora
 LARGURA_MENU = 220
 ALTURA_ITEM = 34
-ABAS_DE_VENCIMENTOS = ("A vencer", "Atrasados", "Pagos")
-# notificações guardadas antes de a tela mudar de nome
-NOMES_ANTIGOS = {"E-mail": "Gerenciador de e-mail", "E-mail de cobranças": "Gerenciador de e-mail"}
+ABAS_DE_VENCIMENTOS = ("A vencer", "Atrasados", "Pagos", "Cobranças")
+# notificações guardadas antes de a tela mudar de nome (ou de virar aba)
+NOMES_ANTIGOS = {"E-mail": "Gerenciador de e-mail", "E-mail de cobranças": "Gerenciador de e-mail",
+                 "Cobranças enviadas": "Cobranças"}
 
 
 class TelaAdiada(QWidget):

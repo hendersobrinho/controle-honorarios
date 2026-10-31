@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.6.0
+# Especificação — Financeiro Métodos 1.7.0
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.6.0 (outubro de 2026) |
+| **Versão** | 1.7.0 (outubro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -133,6 +133,7 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 18 | Tela Cobrar refeita em passos (honorários, conferência dos juros, datas, mensagem e imagem): a conta de cada honorário por extenso, juros digitado à mão, "valores atualizados até" (hoje ou outra data) separado do "vencimento (pagar até)" — corrige a imagem que cobrava juros até o prazo —, lembrete com o vencimento escolhido e prévia da imagem na própria tela; o MCP ganha as mesmas opções. Atualização pelo próprio sistema (Configurações → Atualizações: consulta o GitHub, baixa, confere o SHA-256, instala em silêncio e reabre; aviso de versão nova ao abrir) e o GitHub Actions que gera e publica o instalador a cada tag | 1.5.0 | concluída |
 | 19 | Empacotamento do MCP sem o `mcp.cli` (exigia o `typer` e derrubava o PyInstaller no Windows limpo do GitHub Actions): primeira versão publicada pela automação | 1.5.1 | concluída |
 | 20 | "Cliente do escritório desde" no cadastro (e na importação personalizada); tela **Tarefas** com o envio do honorário trimestral contado da competência de entrada da empresa (pendentes, próximos, feitas, sem data; baixa, baixa em todas e desfazer; contador no menu); juros de cada empresa simplificado para um valor só, que vale para tudo em aberto (a migração deixa o valor que vale hoje); ficha da empresa com Editar cadastro; campos de data e de valor de digitação livre em todo o sistema (data com barras automáticas e calendário opcional, valor sem "R$" atrapalhando, aviso em vermelho em vez de travar) | 1.6.0 | concluída |
+| 21 | Cobranças enviadas viram a aba **Cobranças** de Vencimentos (sai do menu lateral); cartões com as ações principais à vista (Cobrar/Lembrete e Confirmar pagamento) e o resto no menu **Opções**, inclusive anotar o retorno do cliente e registrar cobrança feita por fora; o honorário cobrado hoje fica azul ("✓ Cobrado hoje") e volta ao vermelho no dia seguinte; juros digitado à mão no Editar do honorário (substitui o calculado, os dias seguintes continuam somando, com "Voltar ao calculado"); a tela Cobrar abre na imagem, com "Copiar e abrir no WhatsApp"; lista que não pula para o fim depois de salvar, indicador de carregando na busca e nos filtros, destaque ao passar o mouse nos menus e o fim das janelinhas piscando ao abrir e ao trocar de tela | 1.7.0 | concluída |
 
 Cada fase com recurso novo sobe a versão do meio; correção sobe a última. A 1.0.0
 chegou a ser reaproveitada para as fases 12 e 13 enquanto o sistema não estava

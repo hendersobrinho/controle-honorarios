@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QPlainTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from ...dominio.enums import ExigeCompetencia, MeioCobranca, SituacaoEnvio
-from ...dominio.valores import Competencia, hoje
+from ...dominio.valores import Competencia, formatar_data, formatar_moeda, hoje
+from ...servicos import calculo
 from ...servicos import honorarios as servico
 from ...servicos import tipos as servico_tipos
 from ..comum import widgets
@@ -32,7 +37,7 @@ class DialogoHonorario(QDialog):
         self.contexto = contexto
         self.honorario = honorario
         self.setWindowTitle("Editar honorário" if honorario else "Novo honorário")
-        self.resize(620, 560)
+        self.resize(620, 640)
         self._montar(cliente)
         if honorario:
             self._carregar()
@@ -67,6 +72,22 @@ class DialogoHonorario(QDialog):
         formulario.addRow("Valor:", self.valor)
         self.vencimento = CampoData(hoje())
         formulario.addRow("Vencimento:", self.vencimento)
+        self.juros_linha = self._montar_juros()
+        formulario.addRow("Juros:", self.juros_linha)
+        self.juros_conta = widgets.rotulo_fraco("")
+        self.juros_conta.setWordWrap(True)
+        formulario.addRow("", self.juros_conta)
+        self.total_hoje = QLabel()
+        self.total_hoje.setObjectName("cartaoValor")
+        formulario.addRow("Total de hoje:", self.total_hoje)
+        # só o honorário em aberto tem juros correndo para acertar
+        # (só esconder: setVisible(True) num widget ainda sem pai abriria uma janelinha)
+        if not (self.honorario is not None and self.honorario.status.cobravel):
+            for campo in (self.juros_linha, self.juros_conta, self.total_hoje):
+                campo.hide()
+                rotulo = formulario.labelForField(campo)
+                if rotulo is not None:
+                    rotulo.hide()
         self.meio = ComboEnum(MeioCobranca, MeioCobranca.BOLETO)
         formulario.addRow("Boleto ou Pix:", self.meio)
         self.forma_envio = ComboRegistros(
@@ -105,6 +126,99 @@ class DialogoHonorario(QDialog):
         acoes.addWidget(salvar)
         layout.addLayout(acoes)
         self._ajustar_competencia()
+
+    # ------------------------------------------------------------------ juros
+    def _montar_juros(self) -> QWidget:
+        """O juros de hoje, para acertar à mão (o inteiro ou só os centavos)."""
+        self._juros_manual = False   # o campo vale no lugar do calculado
+        self._juros_mexido = False   # a pessoa mexeu no juros nesta janela
+        linha = QWidget()
+        caixa = QHBoxLayout(linha)
+        caixa.setContentsMargins(0, 0, 0, 0)
+        self.juros = CampoMoeda()
+        self.juros.setPrefix("R$ ")
+        self.juros.setToolTip(
+            "O juros de hoje. Digite outro valor para acertar: ele passa a valer no lugar "
+            "do calculado, e os próximos dias continuam somando por cima dele."
+        )
+        self.juros.textEdited.connect(self._digitou_juros)
+        self.juros.valueChanged.connect(lambda *_: self._mostrar_juros())
+        caixa.addWidget(self.juros, 1)
+        self.botao_calculado = widgets.QPushButton("Voltar ao calculado")
+        self.botao_calculado.setObjectName("linkFiltro")
+        self.botao_calculado.clicked.connect(self._voltar_ao_calculado)
+        caixa.addWidget(self.botao_calculado)
+        self.valor.valueChanged.connect(lambda *_: self._seguir_calculado())
+        self.vencimento.dateChanged.connect(lambda *_: self._seguir_calculado())
+        return linha
+
+    def _referencia(self):
+        # hoje de verdade: o acerto vale a partir do dia em que foi digitado, mesmo
+        # com a tela simulando outra data para os juros
+        return hoje()
+
+    def _calculado(self) -> Decimal:
+        if self.honorario is None or not self.honorario.status.cobravel:
+            return Decimal(0)
+        return calculo.juros_calculado(
+            self.honorario, self._referencia(), self.valor.valor(), self.vencimento.valor()
+        )
+
+    def _carregar_juros(self) -> None:
+        atual = calculo.atualizar(self.honorario, self._referencia())
+        self._juros_manual = atual.juros_manual
+        self.juros.definir(atual.juros)
+        self._mostrar_juros()
+
+    def _digitou_juros(self, *_):
+        self._juros_mexido = True
+        self._juros_manual = True
+        self._mostrar_juros()
+
+    def _seguir_calculado(self) -> None:
+        """Mudou valor ou vencimento: o juros acompanha, se não foi acertado à mão."""
+        calculado = self._calculado()
+        if not self._juros_manual:
+            self.juros.blockSignals(True)   # o _mostrar_juros abaixo já atualiza
+            self.juros.definir(calculado)
+            self.juros.blockSignals(False)
+        self._mostrar_juros(calculado)
+
+    def _voltar_ao_calculado(self) -> None:
+        self._juros_mexido = True
+        self._juros_manual = False
+        self.juros.definir(self._calculado())
+        self._mostrar_juros()
+
+    def _mostrar_juros(self, calculado: Decimal | None = None) -> None:
+        if self.honorario is None or not self.honorario.status.cobravel:
+            return
+        if calculado is None:
+            calculado = self._calculado()
+        manual = self._juros_manual and self.juros.valor() != calculado
+        self.botao_calculado.setVisible(manual)
+        referencia = formatar_data(self._referencia())
+        if manual:
+            self.juros_conta.setText(
+                f"✎ Acertado à mão — o cálculo dá {formatar_moeda(calculado)} em {referencia}. "
+                "Daqui para a frente, os dias de atraso continuam somando por cima."
+            )
+        elif calculado:
+            self.juros_conta.setText(f"Calculado em {referencia}. Digite outro valor para "
+                                     "acertar (o inteiro ou só os centavos).")
+        else:
+            self.juros_conta.setText("No prazo: sem juros por enquanto.")
+        pago = self.honorario.valor_original - self.honorario.saldo_aberto
+        saldo = max(Decimal(0), self.valor.valor() - pago)
+        self.total_hoje.setText(formatar_moeda(saldo + self.juros.valor()))
+
+    def _gravar_juros(self) -> None:
+        """Só grava se a pessoa mexeu no juros: abrir e salvar não mexe no acerto."""
+        if not self._juros_mexido or not self.honorario.status.cobravel:
+            return
+        manual = self._juros_manual and self.juros.valor() != self._calculado()
+        servico.ajustar_juros(self.contexto.sessao, self.honorario,
+                              self.juros.valor() if manual else None, self._referencia())
 
     def _tipo_atual(self):
         from ...infra.modelos import TipoHonorario
@@ -147,6 +261,8 @@ class DialogoHonorario(QDialog):
         self.situacao_envio.definir(honorario.situacao_envio)
         self.numero_boleto.setText(honorario.numero_boleto)
         self.observacoes.setPlainText(honorario.observacoes)
+        if honorario.status.cobravel:
+            self._carregar_juros()
 
     def _dados(self) -> servico.DadosHonorario:
         competencia = Competencia.de_texto(self.competencia.text())
@@ -179,6 +295,7 @@ class DialogoHonorario(QDialog):
                 self.honorario = servico.criar(self.contexto.sessao, dados)
             else:
                 servico.atualizar(self.contexto.sessao, self.honorario, dados)
+                self._gravar_juros()
             self.contexto.salvar()
 
         deu_certo, _ = widgets.executar(self, acao)

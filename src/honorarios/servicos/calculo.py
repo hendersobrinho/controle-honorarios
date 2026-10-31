@@ -139,7 +139,7 @@ def atualizar(
         valor_original=valor_original,
         parciais=_parciais(honorario),
     )
-    return Atualizacao(
+    atualizacao = Atualizacao(
         honorario_id=honorario.id,
         data_referencia=referencia,
         status=honorario.status,
@@ -150,6 +150,50 @@ def atualizar(
         dias_atraso=dias_em_atraso(honorario.vencimento, referencia),
         segmentos=resultado.segmentos,
     )
+    ajustado = juros_ajustado_em(honorario, referencia, taxas, resultado.juros)
+    return atualizacao if ajustado is None else com_juros_manual(atualizacao, ajustado)
+
+
+def juros_ajustado_em(
+    honorario: Honorario, referencia: date, taxas: Sequence[TaxaVigente], calculado: Decimal,
+) -> Decimal | None:
+    """O juros com o acerto feito à mão no Editar, ou None se não houver acerto.
+
+    O valor digitado vale no dia em que foi digitado; dali para a frente, o que o
+    cálculo acrescenta por dia vai somando por cima dele. Antes desse dia (uma
+    simulação de data passada), vale o calculado.
+    """
+    if honorario.juros_ajustado is None or honorario.juros_ajustado_em is None:
+        return None
+    if referencia < honorario.juros_ajustado_em:
+        return None
+    if dias_em_atraso(honorario.vencimento, referencia) == 0:
+        return None   # no prazo (o vencimento foi mudado para a frente): sem juros
+    no_dia = calcular_juros_com_parciais(
+        vencimento=honorario.vencimento,
+        data_referencia=honorario.juros_ajustado_em,
+        taxas=taxas,
+        valor_original=dinheiro(honorario.valor_original),
+        parciais=_parciais(honorario),
+    ).juros
+    return max(ZERO, dinheiro(honorario.juros_ajustado) + calculado - no_dia)
+
+
+def juros_calculado(
+    honorario: Honorario, referencia: date, valor: Decimal | None = None,
+    vencimento: date | None = None,
+) -> Decimal:
+    """O juros pela regra, sem o acerto à mão — com valor e vencimento trocados,
+    se pedidos (para o Editar mostrar a conta enquanto se digita)."""
+    if honorario.status is not StatusPagamento.EM_ABERTO:
+        return ZERO
+    return calcular_juros_com_parciais(
+        vencimento=vencimento or honorario.vencimento,
+        data_referencia=referencia,
+        taxas=taxas_do_cliente(honorario.cliente),
+        valor_original=dinheiro(valor if valor is not None else honorario.valor_original),
+        parciais=_parciais(honorario),
+    ).juros
 
 
 def atualizar_varios(

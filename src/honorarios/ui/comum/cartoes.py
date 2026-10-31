@@ -11,19 +11,23 @@ oferece "mostrar mais" — o resto só entra na tela quando é pedido.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -51,6 +55,7 @@ class Acao:
     dica: str = ""
     primaria: bool = False
     pagamento: bool = False   # verde: a ação que resolve o honorário
+    separar: bool = False     # no menu de opções: uma linha antes, para agrupar
 
 
 @dataclass
@@ -75,6 +80,8 @@ class DadosCartao:
     item: Any = None
     acoes: list[Acao] = field(default_factory=list)
     datas: list[DataCartao] = field(default_factory=list)
+    # o que não precisa ficar à mostra: vai no botão "Opções", embaixo das ações
+    opcoes: list[Acao] = field(default_factory=list)
 
 
 @dataclass
@@ -229,7 +236,7 @@ class CartaoRegistro(QFrame):
             direita.addStretch(1)
             raiz.addLayout(direita)
 
-        if self.dados.acoes:
+        if self.dados.acoes or self.dados.opcoes:
             botoes = QVBoxLayout()
             botoes.setContentsMargins(0, 10, 0, 10)
             botoes.setSpacing(4)
@@ -241,14 +248,40 @@ class CartaoRegistro(QFrame):
                 else:
                     botao.setObjectName("cartaoAcao" if not acao.primaria else "primario")
                 botao.setCursor(Qt.CursorShape.PointingHandCursor)
+                # sem foco: o botão que some no recarregar não leva a rolagem junto
+                botao.setFocusPolicy(Qt.FocusPolicy.NoFocus)
                 if acao.dica:
                     botao.setToolTip(acao.dica)
                 botao.clicked.connect(
                     lambda _=False, funcao=acao.funcao: funcao(self.dados.item)
                 )
                 botoes.addWidget(botao)
+            if self.dados.opcoes:
+                botoes.addWidget(self._botao_opcoes())
             botoes.addStretch(1)
             raiz.addLayout(botoes)
+
+    def _botao_opcoes(self) -> QToolButton:
+        botao = QToolButton()
+        botao.setObjectName("cartaoOpcoes")
+        botao.setText("Opções  ▾")
+        botao.setCursor(Qt.CursorShape.PointingHandCursor)
+        botao.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        botao.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        botao.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        menu = QMenu(botao)
+        for acao in self.dados.opcoes:
+            if acao.separar and not menu.isEmpty():
+                menu.addSeparator()
+            item = menu.addAction(acao.texto)
+            if acao.dica:
+                item.setToolTip(acao.dica)
+            item.triggered.connect(
+                lambda _=False, funcao=acao.funcao: funcao(self.dados.item)
+            )
+        menu.setToolTipsVisible(True)
+        botao.setMenu(menu)
+        return botao
 
     def definir_selecionado(self, selecionado: bool) -> None:
         self.setProperty("selecionado", selecionado)
@@ -263,6 +296,70 @@ class CartaoRegistro(QFrame):
     def mouseDoubleClickEvent(self, evento) -> None:  # noqa: N802
         self.duplo_clique.emit(self.dados.item)
         super().mouseDoubleClickEvent(evento)
+
+
+class Carregando(QWidget):
+    """Véu sobre a lista com uma roda girando, enquanto a consulta volta.
+
+    Fica um tempo mínimo na tela (ver ``PainelDeCartoes.carregando_durante``): uma
+    consulta rápida não pisca, e a busca sempre dá o sinal de que trabalhou.
+    """
+
+    RAIO = 17
+    ESPESSURA = 4
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._angulo = 0
+        self._inicio = 0.0
+        self._timer = QTimer(self)
+        self._timer.setInterval(16)
+        self._timer.timeout.connect(self.girar)
+        self.hide()
+
+    def comecar(self) -> None:
+        self._inicio = time.monotonic()
+        self._timer.start()
+        self.show()
+        self.raise_()
+        self.repaint()   # agora: a consulta segura o laço de eventos
+
+    def decorrido_ms(self) -> int:
+        return round((time.monotonic() - self._inicio) * 1000)
+
+    def parar(self) -> None:
+        self._timer.stop()
+        self.hide()
+
+    def girar(self) -> None:
+        self._angulo = (self._angulo + 10) % 360
+        self.update()
+
+    def paintEvent(self, _evento) -> None:  # noqa: N802
+        from . import cores, tema
+
+        nome = cores.tema_atual()
+        pintor = QPainter(self)
+        pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
+        fundo = QColor(tema.cor("fundo", nome))
+        fundo.setAlpha(190)
+        pintor.fillRect(self.rect(), fundo)
+
+        centro = self.rect().center()
+        caixa = QRectF(centro.x() - self.RAIO, centro.y() - self.RAIO - 10,
+                       2 * self.RAIO, 2 * self.RAIO)
+        trilho = QPen(tema.cor("borda", nome), self.ESPESSURA)
+        pintor.setPen(trilho)
+        pintor.drawEllipse(caixa)
+        arco = QPen(tema.cor("destaque_texto", nome), self.ESPESSURA)
+        arco.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pintor.setPen(arco)
+        # o Qt conta o ângulo em 1/16 de grau, no sentido anti-horário
+        pintor.drawArc(caixa, -self._angulo * 16, 100 * 16)
+
+        pintor.setPen(tema.cor("texto_fraco", nome))
+        texto = QRectF(0, caixa.bottom() + 10, self.width(), 20)
+        pintor.drawText(texto, Qt.AlignmentFlag.AlignHCenter, "Carregando…")
 
 
 class PainelDeCartoes(QScrollArea):
@@ -296,6 +393,41 @@ class PainelDeCartoes(QScrollArea):
         self._layout.setContentsMargins(2, 2, 6, 2)
         self._layout.setSpacing(8)
         self.setWidget(self._conteudo)
+        self._carregando = Carregando(self)
+        # o fim da roda fica um tempo mínimo; um timer só, para uma carga nova
+        # poder cancelar o fim marcado pela anterior
+        self._fim_da_roda = QTimer(self)
+        self._fim_da_roda.setSingleShot(True)
+        self._fim_da_roda.timeout.connect(self._carregando.parar)
+        self._para_o_topo = False
+
+    # ------------------------------------------------------------- carregando
+    @contextmanager
+    def carregando_durante(self, minimo_ms: int = 350):
+        """Busca e filtros: a roda de "Carregando…" sobre a lista e, como o
+        conteúdo é outro, a lista volta ao começo. Depois de salvar algo a lista
+        recarrega sem isso — sem piscar e sem sair do lugar."""
+        self._fim_da_roda.stop()
+        self._carregando.setGeometry(self.viewport().geometry())
+        self._carregando.comecar()
+        self._para_o_topo = True
+        try:
+            yield
+        finally:
+            self._para_o_topo = False
+            falta = minimo_ms - self._carregando.decorrido_ms()
+            if falta > 0:
+                self._fim_da_roda.start(falta)
+            else:
+                self._carregando.parar()
+
+    @property
+    def carregando(self) -> bool:
+        return self._carregando.isVisible()
+
+    def resizeEvent(self, evento) -> None:  # noqa: N802
+        super().resizeEvent(evento)
+        self._carregando.setGeometry(self.viewport().geometry())
 
     # ------------------------------------------------------------------ dados
     def definir_secoes(
@@ -310,7 +442,7 @@ class PainelDeCartoes(QScrollArea):
         # um redesenho só: sem isso cada cartão novo repinta a lista inteira
         self.setUpdatesEnabled(False)
         try:
-            self._redesenhar()
+            self._redesenhar_no_lugar()
         finally:
             self.setUpdatesEnabled(True)
         if preservar_selecao:
@@ -338,7 +470,35 @@ class PainelDeCartoes(QScrollArea):
                 widget.deleteLater()
         self._cartoes.clear()
 
+    def _redesenhar_no_lugar(self) -> None:
+        """Redesenha sem tirar a tela do lugar: depois de salvar um honorário, a
+        lista continua onde estava, em vez de pular para o começo ou o fim."""
+        barra = self.verticalScrollBar()
+        posicao = 0 if self._para_o_topo else barra.value()
+        self._redesenhar()
+        # o tamanho novo do conteúdo só é calculado no próximo ciclo de eventos;
+        # até lá a barra pode pular, então a posição volta agora e de novo depois
+        self._layout.activate()
+        barra.setValue(posicao)
+        # preso à lista: se ela for destruída antes, o Qt cancela a chamada
+        QTimer.singleShot(0, self, lambda: self._voltar_para(posicao))
+
+    def _voltar_para(self, posicao: int) -> None:
+        barra = self.verticalScrollBar()
+        barra.setValue(min(posicao, barra.maximum()))
+
     def _redesenhar(self) -> None:
+        self._montar_conteudo()
+        # com a lista já na tela, o Qt só mostra o widget novo "mais tarde" — e às
+        # vezes não mostra: os cartões ficavam escondidos e espremidos depois de
+        # limpar a busca. Mostrar aqui, de uma vez, resolve
+        if self._conteudo.isVisible():
+            for indice in range(self._layout.count()):
+                widget = self._layout.itemAt(indice).widget()
+                if widget is not None:
+                    widget.show()
+
+    def _montar_conteudo(self) -> None:
         self._limpar()
         if not any(secao.quantidade for secao in self._secoes):
             vazio = QLabel(self._texto_vazio)
@@ -361,7 +521,11 @@ class PainelDeCartoes(QScrollArea):
             # o orçamento desconta o que foi desenhado de fato, não o limite da
             # seção: seções pequenas não podem consumir o espaço das seguintes
             desenhar = min(limite, secao.quantidade)
-            for item in secao.itens[:desenhar]:
+            for numero, item in enumerate(secao.itens[:desenhar]):
+                if numero % 10 == 9 and self._carregando.isVisible():
+                    # a roda continua girando enquanto os cartões são montados
+                    self._carregando.girar()
+                    self._carregando.repaint()
                 dados = secao.cartao(item)
                 cartao = CartaoRegistro(dados)
                 cartao.clicado.connect(self._ao_clicar)
@@ -374,6 +538,7 @@ class PainelDeCartoes(QScrollArea):
                 passo = min(faltam, self._limite_secao)
                 mais = QPushButton(f"Mostrar mais {passo} de {faltam}")
                 mais.setObjectName("cartaoAcao")
+                mais.setFocusPolicy(Qt.FocusPolicy.NoFocus)
                 mais.clicked.connect(
                     lambda _=False, titulo=secao.titulo, passo=passo: self._mostrar_mais(
                         titulo, passo
@@ -406,7 +571,7 @@ class PainelDeCartoes(QScrollArea):
         self._limites[titulo] = self._limites.get(titulo, self._limite_secao) + passo
         self._orcamento += passo
         selecionados = list(self._selecionados)
-        self._redesenhar()
+        self._redesenhar_no_lugar()
         self._selecionados = selecionados
         self._pintar_selecao()
 

@@ -63,7 +63,7 @@ from ..comum.tabelas import (
 )
 from ..contexto import Contexto
 
-ABA_MENSAGEM, ABA_IMAGEM = 0, 1
+ABA_IMAGEM, ABA_MENSAGEM = 0, 1   # a imagem é o que vai de fato: abre nela
 ALTURA_COMPACTA = 760   # abaixo disso (notebook), as dicas dos passos somem
 LARGURA_MINIMA_HONORARIO = 110   # o nome inteiro fica na dica e na conferência
 LINHAS_MINIMAS = 4   # a lista mostra pelo menos isto; com mais espaço, mais
@@ -144,6 +144,7 @@ class DialogoCobrar(QDialog):
         self.registrou = False
         # id do honorário → juros digitado à mão (vale até fechar a tela)
         self.juros_manuais: dict[int, Decimal] = {}
+        self._juros_do_honorario: dict[int, Decimal] = {}   # sem o digitado aqui
         self._gerando = False
         self._pagar_ate_a_mao = False     # a pessoa escolheu o vencimento
         self._tipo_a_mao = False          # a pessoa escolheu cobrança ou lembrete
@@ -205,6 +206,12 @@ class DialogoCobrar(QDialog):
             largura = self.divisor.width() - self.divisor.handleWidth()
             esquerda = int(largura * 0.58)
             self.divisor.setSizes([esquerda, largura - esquerda])
+        self._pedir_imagem()   # a janela abre na aba da imagem: já gera a prévia
+
+    def done(self, resultado: int) -> None:
+        # fechou: a prévia que estava para ser refeita não roda mais
+        self._espera_imagem.stop()
+        super().done(resultado)
 
     def _tamanho_inicial(self) -> None:
         """1320×900, ou o que couber na tela (notebook de 1366×768, por exemplo)."""
@@ -514,12 +521,13 @@ class DialogoCobrar(QDialog):
         corpo.addLayout(opcoes)
 
         self.abas = QTabWidget()
-        self.abas.addTab(self._aba_mensagem(), "Mensagem de texto")
         self.abas.addTab(self._aba_imagem(), "Imagem")
+        self.abas.addTab(self._aba_mensagem(), "Mensagem de texto")
         self.abas.currentChanged.connect(lambda *_: self._pedir_imagem())
         corpo.addWidget(self.abas, 1)
         dica = widgets.rotulo_fraco(
-            "A resposta do cliente se anota depois, na tela Cobranças enviadas.")
+            "A resposta do cliente se anota depois, no Opções do cartão ou na aba "
+            "Cobranças de Vencimentos.")
         corpo.addWidget(dica)
         return cartao
 
@@ -580,7 +588,13 @@ class DialogoCobrar(QDialog):
         copiar.setShortcut("Ctrl+I")
         copiar.setToolTip("Copia a imagem para colar no WhatsApp com Ctrl+V (Ctrl+I)")
         copiar.clicked.connect(lambda _=False: self.copiar_imagem())
-        for botao in (salvar, self.botao_chave, copiar):
+        whatsapp = widgets.QPushButton("Copiar e abrir no WhatsApp")
+        whatsapp.setObjectName("primario")
+        whatsapp.setShortcut("Ctrl+W")
+        whatsapp.setToolTip("Copia a imagem e abre a conversa do cliente: é só colar com "
+                            "Ctrl+V (Ctrl+W)")
+        whatsapp.clicked.connect(self._abrir_whatsapp_com_imagem)
+        for botao in (salvar, self.botao_chave, copiar, whatsapp):
             botoes.addWidget(botao)
         caixa.addLayout(botoes)
         return pagina
@@ -649,7 +663,8 @@ class DialogoCobrar(QDialog):
             self.editado_rotulo.setText(
                 "✎ Para cobrar outro valor de juros, clique no honorário na lista acima.")
             return
-        self.botao_calculado.setEnabled(linha.atualizacao.juros_manual)
+        # só o que foi digitado aqui volta: o acerto feito no Editar é o juros do honorário
+        self.botao_calculado.setEnabled(linha.honorario.id in self.juros_manuais)
         self.editado_rotulo.setText(f"✎ Juros a cobrar de <b>{escape(_rotulo(linha))}</b>:")
         self.juros_editor.blockSignals(True)
         self.juros_editor.definir(linha.atualizacao.juros)
@@ -661,7 +676,7 @@ class DialogoCobrar(QDialog):
             return
         valor = self.juros_editor.valor()
         atual = linha.atualizacao
-        calculado = atual.juros_calculado if atual.juros_manual else atual.juros
+        calculado = self._juros_do_honorario.get(linha.honorario.id, atual.juros)
         if valor == calculado:
             self.juros_manuais.pop(linha.honorario.id, None)
         elif valor != atual.juros:
@@ -704,6 +719,9 @@ class DialogoCobrar(QDialog):
         referencia = self._data_dos_valores()
         for linha in self.linhas:
             atual = calculo.atualizar(linha.honorario, referencia)
+            # o juros do honorário (com o acerto do Editar, se houver): é a ele que
+            # o "Voltar ao calculado" daqui volta
+            self._juros_do_honorario[linha.honorario.id] = atual.juros
             manual = self.juros_manuais.get(linha.honorario.id)
             linha.atualizacao = calculo.com_juros_manual(atual, manual) \
                 if manual is not None else atual
@@ -813,7 +831,9 @@ class DialogoCobrar(QDialog):
     # ------------------------------------------------------------------ imagem
     def _pedir_imagem(self) -> None:
         """Refaz a prévia logo depois (só quando a aba da imagem está à vista)."""
-        if self.abas.currentIndex() == ABA_IMAGEM and not self._imagem_em_dia:
+        # só com a janela à vista: montada e não aberta (ou já fechada) não gera nada
+        if self.isVisible() and self.abas.currentIndex() == ABA_IMAGEM \
+                and not self._imagem_em_dia:
             self._espera_imagem.start()
 
     def _atualizar_imagem(self) -> bool:
@@ -938,27 +958,41 @@ class DialogoCobrar(QDialog):
         widgets.copiar(texto)
         self.aviso.setText("Mensagem copiada. Copiar não registra a cobrança.")
 
-    def _abrir_whatsapp(self) -> None:
-        texto = self.texto.toPlainText().strip()
-        if not texto:
-            widgets.aviso(self, "Gere a mensagem antes de abrir o WhatsApp.")
-            return
+    def _abrir_conversa(self, texto: str = "") -> bool:
+        """Abre a conversa do contato escolhido (com o texto já escrito, se houver)."""
         selecao = self._selecao()
         contato = selecao.contato or self.cliente.contato_principal
 
         def acao():
             link = cobrancas.link_whatsapp(self.contexto.sessao, contato, texto)
-            widgets.copiar(texto)
             if not widgets.abrir_url(link):
-                raise RuntimeError(
-                    "Não foi possível abrir o navegador. A mensagem ficou copiada."
-                )
+                raise RuntimeError("Não foi possível abrir o navegador.")
             return link
 
-        deu_certo, _ = widgets.executar(self, acao)
-        if deu_certo:
+        return widgets.executar(self, acao)[0]
+
+    def _abrir_whatsapp(self) -> None:
+        texto = self.texto.toPlainText().strip()
+        if not texto:
+            widgets.aviso(self, "Gere a mensagem antes de abrir o WhatsApp.")
+            return
+        widgets.copiar(texto)   # copiada antes: se o navegador não abrir, não se perde
+        if self._abrir_conversa(texto):
             self.aviso.setText(
                 "WhatsApp aberto e mensagem copiada. Registre a cobrança se enviou."
+            )
+
+    def _abrir_whatsapp_com_imagem(self) -> None:
+        """O caminho de sempre: a imagem na área de transferência e a conversa aberta."""
+        if not self._imagem_pronta():
+            return
+        self.copiar_imagem()
+        if self._abrir_conversa():
+            self.aviso.setText(
+                "1/2 · WhatsApp aberto e imagem copiada: cole na conversa (Ctrl+V)."
+                + (" Depois clique em Copiar chave Pix e cole como mensagem."
+                   if self._chave() else "")
+                + (" Acordo guardado." if self._acordo_registrado else "")
             )
 
     def _registrar(self) -> None:
@@ -981,7 +1015,7 @@ class DialogoCobrar(QDialog):
             return
 
         def acao():
-            # nasce aguardando resposta; o retorno entra depois, em Cobranças enviadas
+            # nasce aguardando resposta; o retorno entra depois, na aba Cobranças
             cobrancas.registrar(
                 self.contexto.sessao,
                 selecao,

@@ -64,9 +64,8 @@ def test_cartao_de_atrasado_mostra_situacao_e_leva_ao_historico(
     cartao = painel.lista.secoes[0].cartoes[0]
     assert "Em atraso há" in cartao.situacao
     assert cartao.cor is not None                      # faixa vermelha de atraso
-    assert [acao.texto for acao in cartao.acoes] == [
-        "Histórico", "Editar", "Cobrar", "Confirmar pagamento",
-    ]
+    assert [acao.texto for acao in cartao.acoes] == ["Cobrar", "Confirmar pagamento"]
+    assert [acao.texto for acao in cartao.opcoes][:2] == ["Histórico", "Editar"]
     assert cartao.valor == "R$ 541,00"
 
 
@@ -104,7 +103,9 @@ def test_pago_sai_de_atrasados_e_vai_para_pagos(qtbot, contexto, cliente_com_deb
     cartao = pagos.lista.secoes[0].cartoes[0]
     assert cartao.valor_rotulo == "Recebido"
     assert cartao.situacao.startswith("Pago com")          # pagou com atraso
-    assert [acao.texto for acao in cartao.acoes] == ["Histórico", "Agradecimento"]
+    assert [acao.texto for acao in cartao.acoes] == ["Agradecimento"]
+    assert [acao.texto for acao in cartao.opcoes] == [
+        "Histórico", "Ficha da empresa", "Estornar pagamento…"]
 
 
 def test_atrasados_agrupados_por_empresa(qtbot, contexto, cliente_com_debito):
@@ -138,9 +139,8 @@ def test_a_vencer_mostra_so_o_que_esta_no_prazo(qtbot, contexto, cliente_com_deb
     assert all(item.atualizacao.dias_atraso == 0 for item in painel.lista.itens)
     cartao = painel.lista.secoes[0].cartoes[0]
     assert cartao.situacao == "Vence hoje"
-    assert [acao.texto for acao in cartao.acoes] == [
-        "Histórico", "Editar", "Lembrete", "Confirmar pagamento",
-    ]
+    assert [acao.texto for acao in cartao.acoes] == ["Lembrete", "Confirmar pagamento"]
+    assert [acao.texto for acao in cartao.opcoes][:2] == ["Histórico", "Editar"]
 
     # e nenhum deles aparece em atrasados
     atrasados = PainelAtrasados(contexto)
@@ -502,12 +502,14 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
 
     janela = JanelaPrincipal(contexto)
     qtbot.addWidget(janela)
-    assert janela.telas.count() == 14
-    assert len(janela.linhas_de_tela) == 14
+    assert janela.telas.count() == 13
+    assert len(janela.linhas_de_tela) == 13
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
     assert "Importação personalizada" in titulos and "Tarefas" in titulos
     assert "Gerenciador de e-mail" in titulos
-    assert "Cobranças enviadas" in titulos and "Ranking dos atrasados" in titulos
+    assert "Ranking dos atrasados" in titulos
+    # as cobranças enviadas viraram a última aba de Vencimentos
+    assert "Cobranças enviadas" not in titulos and "Cobranças" not in titulos
     assert "Clientes de IR" in titulos and "Tipos e formas de envio" in titulos
     # recorrentes e avulsos viraram abas de uma tela só
     assert "Honorários" in titulos
@@ -517,8 +519,8 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
     assert titulos[0] == "Vencimentos"
     assert not {"A vencer", "Atrasados", "Pagos"} & set(titulos)
     vencimentos = janela.telas.widget(0)
-    assert [vencimentos.abas.widget(i).titulo for i in range(3)] == [
-        "A vencer", "Atrasados", "Pagos"]
+    assert [vencimentos.abas.widget(i).titulo for i in range(4)] == [
+        "A vencer", "Atrasados", "Pagos", "Cobranças"]
     for linha in janela.linhas_de_tela:
         janela.navegacao.setCurrentRow(linha)
     assert janela.telas.currentWidget().titulo == "Configurações"
@@ -563,7 +565,8 @@ def test_painel_acompanhamento_agrupa_por_situacao(qtbot, contexto, cliente_com_
     assert painel.lista.titulos() == [acompanhamento.AGUARDANDO]
     cartao = painel.lista.secoes[0].cartoes[0]
     assert cartao.situacao == acompanhamento.AGUARDANDO
-    assert [acao.texto for acao in cartao.acoes] == ["Registrar resposta", "Ver mensagem"]
+    assert [acao.texto for acao in cartao.acoes] == ["Registrar resposta"]
+    assert [acao.texto for acao in cartao.opcoes][0] == "Ver mensagem enviada"
     assert "1 sem resposta anotada" in painel.resumo.text()
 
 
@@ -861,7 +864,7 @@ def test_cartao_mostra_etiqueta_de_cobranca_suspensa(qtbot, contexto, cliente_co
     assert cartao.situacao == "Cobrança suspensa"
     # sem botão de cobrar quem está suspenso não faria sentido: o botão continua,
     # mas o registro é recusado pelo serviço — a etiqueta avisa antes
-    assert "Histórico" in [acao.texto for acao in cartao.acoes]
+    assert "Histórico" in [acao.texto for acao in cartao.opcoes]
 
 
 # ---------------------------------------------------- seletor, juros, rankings
@@ -1487,7 +1490,8 @@ def test_avulsos_e_historico_cobram_mas_nao_pagam(qtbot, contexto, cliente_com_d
     assert [linha.honorario.id for linha in painel.modelo.itens] == [pago.id]
 
 
-def test_cartao_em_aberto_tem_editar(qtbot, contexto, cliente_com_debito, monkeypatch):
+def test_cartao_em_aberto_tem_editar_nas_opcoes(qtbot, contexto, cliente_com_debito,
+                                               monkeypatch):
     from honorarios.ui.dialogos import honorario as dialogo_honorario
     from honorarios.ui.paineis.honorarios import PainelAtrasados
 
@@ -1499,9 +1503,16 @@ def test_cartao_em_aberto_tem_editar(qtbot, contexto, cliente_com_debito, monkey
     painel = PainelAtrasados(contexto)
     qtbot.addWidget(painel)
     linha = linhas_do(contexto.sessao, cliente_com_debito)[0]
-    acoes = {acao.texto: acao for acao in painel._acoes_do_cartao(linha)}
-    assert list(acoes) == ["Histórico", "Editar", "Cobrar", "Confirmar pagamento"]
-    acoes["Editar"].funcao(linha)
+    # à mostra só o que se faz a toda hora; o resto vai no "Opções" do cartão
+    assert [acao.texto for acao in painel._acoes_do_cartao(linha)] == [
+        "Cobrar", "Confirmar pagamento"]
+    opcoes = {acao.texto: acao for acao in painel._opcoes_do_cartao(linha)}
+    assert list(opcoes) == [
+        "Histórico", "Editar", "Anotar retorno do cliente…",
+        "Registrar cobrança feita por fora…", "Ficha da empresa", "Renegociar…",
+        "Cancelar honorário…",
+    ]
+    opcoes["Editar"].funcao(linha)
     assert len(abertos) == 1
 
 
@@ -2556,3 +2567,308 @@ def test_campo_de_valor_aceita_digitacao_livre(qtbot):
     qtbot.keyClicks(taxa, "2.5")
     qtbot.keyClick(taxa, Qt.Key.Key_Return)
     assert taxa.valor() == Decimal("2.50") and taxa.text() == "R$ 2,50 / dia"
+
+
+# ------------------------------------------------- cartão: opções e cobrado hoje
+
+
+def test_cobrado_hoje_fica_azul_e_volta_ao_vermelho_no_dia_seguinte(
+    qtbot, contexto, cliente_com_debito
+):
+    from datetime import timedelta
+
+    from honorarios.dominio.valores import hoje
+    from honorarios.ui.comum import cores, tema
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
+
+    azul = tema.cor("cobrado", cores.tema_atual())
+    vermelho = tema.cor("atrasado", cores.tema_atual())
+
+    cobrar_pelo_sistema(contexto, cliente_com_debito, hoje() - timedelta(days=1))
+    painel = PainelAtrasados(contexto)
+    qtbot.addWidget(painel)
+    ontem = painel._cartao(painel.lista.itens[0])
+    assert ontem.cor == vermelho                        # cobrado ontem: de volta ao atraso
+    assert "Cobrado hoje" not in ontem.situacao
+
+    cobrar_pelo_sistema(contexto, cliente_com_debito)   # agora
+    painel.recarregar()
+    dados = painel._cartao(painel.lista.itens[0])
+    assert dados.cor == azul
+    assert dados.situacao.startswith("✓ Cobrado hoje")
+    assert "dia(s) de atraso" in dados.situacao         # o atraso continua dito
+    assert dados.datas[0].cor == vermelho               # e o vencimento segue vermelho
+    assert dados.datas[1].valor == "hoje ✓"
+    assert "2 já cobrado(s) hoje" in painel.resumo.text()
+
+
+def test_opcoes_do_cartao_viram_um_menu(qtbot, contexto, cliente_com_debito, monkeypatch):
+    from PySide6.QtWidgets import QPushButton, QToolButton
+
+    from honorarios.ui.comum.cartoes import CartaoRegistro
+    from honorarios.ui.dialogos import retorno
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
+
+    abertos = []
+    monkeypatch.setattr(retorno.DialogoRetorno, "exec",
+                        lambda self: abertos.append(self.honorarios) or 0)
+    painel = PainelAtrasados(contexto)
+    qtbot.addWidget(painel)
+    linha = painel.lista.itens[0]
+    cartao = CartaoRegistro(painel._cartao(linha))
+    qtbot.addWidget(cartao)
+    assert [b.text() for b in cartao.findChildren(QPushButton)] == [
+        "Cobrar", "Confirmar pagamento"]
+    opcoes = cartao.findChild(QToolButton, "cartaoOpcoes")
+    textos = [a.text() for a in opcoes.menu().actions() if not a.isSeparator()]
+    assert textos[:3] == ["Histórico", "Editar", "Anotar retorno do cliente…"]
+    # agrupado: consultar | anotar | ficha | renegociar e cancelar
+    assert sum(a.isSeparator() for a in opcoes.menu().actions()) == 3
+    next(a for a in opcoes.menu().actions()
+         if a.text() == "Anotar retorno do cliente…").trigger()
+    assert abertos == [[linha.honorario]]
+
+
+def test_registrar_cobranca_feita_por_fora_pelo_cartao(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from PySide6.QtWidgets import QInputDialog
+
+    from honorarios.ui.comum import cores
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
+
+    monkeypatch.setattr(QInputDialog, "getText",
+                        staticmethod(lambda *a, **k: ("ligou para o financeiro", True)))
+    painel = PainelAtrasados(contexto)
+    qtbot.addWidget(painel)
+    linha = painel.lista.itens[0]
+    painel._registrar_cobranca_um(linha)
+    marcadas = [item for item in painel.lista.itens if cores.cobrado_hoje(item)]
+    assert [item.honorario.id for item in marcadas] == [linha.honorario.id]
+
+
+def test_recarregar_nao_tira_a_lista_do_lugar(qtbot):
+    from honorarios.ui.comum.cartoes import DadosCartao, PainelDeCartoes, SecaoCartoes
+
+    lista = PainelDeCartoes(limite_secao=200, orcamento=200)
+    qtbot.addWidget(lista)
+    lista.resize(500, 300)
+    lista.show()
+    secoes = [SecaoCartoes("Tudo", itens=[DadosCartao(titulo=f"Empresa {n}")
+                                         for n in range(60)])]
+    lista.definir_secoes(secoes)
+    qtbot.wait(20)
+    barra = lista.verticalScrollBar()
+    meio = barra.maximum() // 2
+    assert meio > 0
+    barra.setValue(meio)
+    lista.definir_secoes(secoes)                        # como depois de salvar
+    qtbot.wait(20)
+    assert barra.value() == meio
+
+
+def test_cobrancas_sao_a_ultima_aba_de_vencimentos(qtbot, contexto, cliente_com_debito):
+    from honorarios.ui.paineis.vencimentos import PainelVencimentos
+
+    cobrar_pelo_sistema(contexto, cliente_com_debito, date(2026, 9, 25))
+    painel = PainelVencimentos(contexto)
+    qtbot.addWidget(painel)
+    assert painel.abas.tabText(3) == "Cobranças (1)"   # uma esperando resposta
+    cobrancas = painel.aba("Cobranças")
+    assert cobrancas is painel.cobrancas
+    dados = cobrancas._cartao(cobrancas.linhas[0])
+    assert [acao.texto for acao in dados.acoes] == ["Registrar resposta"]
+    assert "Cobrar de novo" in [acao.texto for acao in dados.opcoes]
+
+
+def test_limpar_a_busca_traz_os_cartoes_visiveis(qtbot, contexto, cliente_com_debito):
+    """Buscar uma empresa e apagar a busca deixava os cartões novos escondidos e
+    espremidos: com a lista já na tela, eles precisam ser mostrados na hora."""
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
+
+    outro = fabricas.cliente(contexto.sessao, nome="OUTRA EMPRESA LTDA", codigo="901",
+                             documento="")
+    fabricas.honorario(contexto.sessao, outro, valor="300.00", vencimento=date(2026, 9, 1))
+    contexto.salvar()
+    painel = PainelAtrasados(contexto)
+    qtbot.addWidget(painel)
+    painel.resize(900, 600)
+    painel.show()
+    painel.busca.setText("OUTRA")
+    assert len(painel.lista.itens) == 1
+    painel.busca.setText("")
+    qtbot.wait(20)
+    cartoes = list(painel.lista._cartoes.values())
+    assert len(cartoes) == 3
+    assert all(cartao.isVisible() for cartao in cartoes)
+    assert all(cartao.height() == cartao.sizeHint().height() for cartao in cartoes)
+
+
+def test_busca_mostra_a_roda_de_carregando(qtbot, contexto, cliente_com_debito):
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
+
+    painel = PainelAtrasados(contexto)
+    qtbot.addWidget(painel)
+    painel.show()
+    roda = painel.lista._carregando
+    vezes = []
+    original = roda.comecar
+    roda.comecar = lambda: (vezes.append(1), original())
+    painel.busca.setText("EXEMPLO")
+    assert vezes == [1]                                # a busca mostrou a roda
+    qtbot.waitUntil(lambda: not painel.lista.carregando, timeout=3000)
+    painel.recarregar()                                # depois de salvar: sem a roda
+    assert vezes == [1] and not painel.lista.carregando
+
+
+# ------------------------------------------------------ editar: juros à mão
+
+
+def _honorario_de_1000(contexto, cliente):
+    return next(linha.honorario for linha in linhas_do(contexto.sessao, cliente)
+                if linha.honorario.valor_original == Decimal("1000.00"))
+
+
+def _juros_de_hoje():
+    """O de 1.000,00 vence em 19/09/2026, a R$ 1,00 por dia: o Editar usa o hoje real."""
+    from honorarios.dominio.valores import hoje
+
+    return Decimal((hoje() - date(2026, 9, 19)).days).quantize(Decimal("0.01"))
+
+
+def test_editar_mostra_o_juros_e_aceita_acerto_a_mao(qtbot, contexto, cliente_com_debito):
+    from honorarios.dominio.valores import hoje
+    from honorarios.servicos import calculo
+    from honorarios.ui.dialogos.honorario import DialogoHonorario
+
+    honorario = _honorario_de_1000(contexto, cliente_com_debito)
+    dialogo = DialogoHonorario(contexto, honorario=honorario)
+    qtbot.addWidget(dialogo)
+    dialogo.show()
+    calculado = _juros_de_hoje()
+    assert dialogo.juros.valor() == calculado
+    assert dialogo.total_hoje.text() == formatar_moeda(Decimal("1000.00") + calculado)
+    assert not dialogo.botao_calculado.isVisible()
+
+    dialogo.juros.setFocus()
+    dialogo.juros.selectAll()
+    qtbot.keyClicks(dialogo.juros, "15,00")
+    assert dialogo.total_hoje.text() == "R$ 1.015,00"
+    assert dialogo.botao_calculado.isVisible()
+    assert "Acertado à mão" in dialogo.juros_conta.text()
+    dialogo._salvar()
+    atual = calculo.atualizar(honorario, hoje())
+    assert (atual.juros, atual.juros_calculado) == (Decimal("15.00"), calculado)
+    assert honorario.juros_ajustado_em == hoje()   # o dia de verdade, não o simulado
+
+
+def test_editar_sem_mexer_no_juros_nao_cria_acerto(qtbot, contexto, cliente_com_debito):
+    from honorarios.ui.dialogos.honorario import DialogoHonorario
+
+    honorario = _honorario_de_1000(contexto, cliente_com_debito)
+    dialogo = DialogoHonorario(contexto, honorario=honorario)
+    qtbot.addWidget(dialogo)
+    dialogo.valor.definir(Decimal("2000.00"))      # mudou o valor: o juros acompanha
+    assert dialogo.total_hoje.text() == formatar_moeda(Decimal("2000.00") + _juros_de_hoje())
+    dialogo._salvar()
+    assert honorario.juros_ajustado is None
+
+
+def test_editar_volta_ao_calculado(qtbot, contexto, cliente_com_debito):
+    from honorarios.dominio.valores import hoje
+    from honorarios.servicos import calculo
+    from honorarios.servicos import honorarios as servico
+    from honorarios.ui.dialogos.honorario import DialogoHonorario
+
+    honorario = _honorario_de_1000(contexto, cliente_com_debito)
+    servico.ajustar_juros(contexto.sessao, honorario, Decimal("3.00"), hoje())
+    contexto.salvar()
+    dialogo = DialogoHonorario(contexto, honorario=honorario)
+    qtbot.addWidget(dialogo)
+    dialogo.show()
+    assert dialogo.juros.valor() == Decimal("3.00")
+    assert dialogo.botao_calculado.isVisible()
+    dialogo.botao_calculado.click()
+    assert dialogo.juros.valor() == _juros_de_hoje()
+    dialogo._salvar()
+    assert not calculo.atualizar(honorario, hoje()).juros_manual
+
+
+def test_editar_nao_abre_janelinhas(qtbot, contexto, cliente_com_debito):
+    """Os campos do juros nascem sem pai: mostrá-los antes do layout abria janelas."""
+    from PySide6.QtWidgets import QApplication
+
+    from honorarios.ui.dialogos.honorario import DialogoHonorario
+
+    antes = set(QApplication.topLevelWidgets())
+    dialogo = DialogoHonorario(contexto, honorario=_honorario_de_1000(contexto,
+                                                                      cliente_com_debito))
+    qtbot.addWidget(dialogo)
+    novas = [w for w in set(QApplication.topLevelWidgets()) - antes
+             if w is not dialogo and w.isVisible()]
+    assert novas == []
+
+
+def test_cobrar_volta_ao_juros_acertado_no_editar(qtbot, contexto, cliente_com_debito):
+    """No Cobrar, "Voltar ao calculado" desfaz só o digitado ali: o acerto do Editar
+    é o juros do honorário."""
+    from honorarios.servicos import honorarios as servico
+    from honorarios.ui.dialogos.cobrar import DialogoCobrar
+
+    honorario = _honorario_de_1000(contexto, cliente_com_debito)
+    servico.ajustar_juros(contexto.sessao, honorario, Decimal("50.00"), REFERENCIA)
+    contexto.salvar()
+    linhas = linhas_do(contexto.sessao, cliente_com_debito)
+    dialogo = DialogoCobrar(contexto, cliente_com_debito, linhas)
+    qtbot.addWidget(dialogo)
+    linha = next(x for x in dialogo.linhas if x.honorario.id == honorario.id)
+    assert linha.atualizacao.juros == Decimal("50.00")
+    dialogo._escolher_para_editar(dialogo.linhas.index(linha))
+    assert not dialogo.botao_calculado.isEnabled()      # nada digitado aqui
+    dialogo.definir_juros(linha, Decimal("20.00"))
+    assert linha.atualizacao.juros == Decimal("20.00")
+    dialogo._editada = linha
+    dialogo._voltar_ao_calculado()
+    assert linha.atualizacao.juros == Decimal("50.00")   # de volta ao do honorário
+
+
+def test_busca_volta_a_lista_para_o_comeco(qtbot):
+    from honorarios.ui.comum.cartoes import DadosCartao, PainelDeCartoes, SecaoCartoes
+
+    lista = PainelDeCartoes(limite_secao=200, orcamento=200)
+    qtbot.addWidget(lista)
+    lista.resize(500, 300)
+    lista.show()
+    secoes = [SecaoCartoes("Tudo", itens=[DadosCartao(titulo=f"Empresa {n}")
+                                         for n in range(60)])]
+    lista.definir_secoes(secoes)
+    qtbot.wait(20)
+    lista.verticalScrollBar().setValue(lista.verticalScrollBar().maximum())
+    with lista.carregando_durante(minimo_ms=0):        # como numa busca
+        lista.definir_secoes(secoes)
+    qtbot.wait(20)
+    assert lista.verticalScrollBar().value() == 0
+    assert not lista.carregando
+
+
+def test_cobrar_abre_na_imagem_e_manda_pelo_whatsapp(qtbot, contexto, cliente_com_debito,
+                                                     monkeypatch):
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtWidgets import QPushButton
+
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.dialogos.cobrar import ABA_IMAGEM, DialogoCobrar
+
+    abertos = []
+    monkeypatch.setattr(widgets, "abrir_url", lambda url: abertos.append(url) or True)
+    dialogo = DialogoCobrar(contexto, cliente_com_debito, linhas_do(contexto.sessao,
+                                                                     cliente_com_debito))
+    qtbot.addWidget(dialogo)
+    assert dialogo.abas.currentIndex() == ABA_IMAGEM          # a imagem é a principal
+    assert dialogo.abas.tabText(ABA_IMAGEM) == "Imagem"
+    botao = next(b for b in dialogo.abas.widget(ABA_IMAGEM).findChildren(QPushButton)
+                 if b.text() == "Copiar e abrir no WhatsApp")
+    botao.click()
+    assert not QGuiApplication.clipboard().image().isNull()   # a imagem, para o Ctrl+V
+    assert len(abertos) == 1 and "27999990000" in abertos[0]   # a conversa do contato
+    assert "WhatsApp aberto e imagem copiada" in dialogo.aviso.text()

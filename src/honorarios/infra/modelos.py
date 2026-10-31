@@ -418,6 +418,10 @@ class Honorario(Base):
     numero_boleto: Mapped[str] = mapped_column(String(60), default="", nullable=False)
     observacoes: Mapped[str] = mapped_column(Text, default="", nullable=False)
     pago_em: Mapped[date | None] = mapped_column(Date)
+    # juros digitado à mão no Editar: vale nesta data, e os dias seguintes continuam
+    # somando por cima dele (ver calculo.atualizar)
+    juros_ajustado: Mapped[Decimal | None] = mapped_column(Dinheiro)
+    juros_ajustado_em: Mapped[date | None] = mapped_column(Date)
     total_congelado: Mapped[Decimal | None] = mapped_column(Dinheiro)
     cancelado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     motivo_cancelamento: Mapped[str] = mapped_column(Text, default="", nullable=False)

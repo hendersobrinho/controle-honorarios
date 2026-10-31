@@ -53,6 +53,13 @@ def etiqueta_de_situacao(linha: LinhaHonorario, dias_em_breve: int = 5) -> str:
         return f"Pago em {formatar_data(pago_em)}" if pago_em else "Pago"
     if atualizacao.status in (StatusPagamento.CANCELADO, StatusPagamento.RENEGOCIADO):
         return atualizacao.status.rotulo
+    if cores.cobrado_hoje(linha):
+        # azul porque já passou por ele hoje, mas a promessa quebrada continua dita
+        if linha.promessa_vencida:
+            return "✓ Cobrado hoje · promessa vencida"
+        if atualizacao.dias_atraso > 0:
+            return f"✓ Cobrado hoje · {atualizacao.dias_atraso} dia(s) de atraso"
+        return "✓ Lembrete enviado hoje"
     if linha.promessa_vencida:
         return "Promessa vencida"  # a data está na pílula da promessa
     if atualizacao.dias_atraso > 0:
@@ -91,16 +98,20 @@ def datas_do_honorario(
     else:
         rotulo = "Vence"
     atrasado_ou_perto = linha.atualizacao.dias_atraso > 0 or falta <= dias_em_breve
+    if cores.cobrado_hoje(linha):
+        ultima = DataCartao("Última cobrança", "hoje ✓", tema.cor("cobrado", cores.tema_atual()))
+    else:
+        ultima = DataCartao(
+            "Última cobrança",
+            formatar_data(linha.ultima_cobranca) if linha.ultima_cobranca else "nunca",
+        )
     datas = [
         DataCartao(
             rotulo,
             formatar_data(honorario.vencimento),
             cor_situacao if atrasado_ou_perto else None,
         ),
-        DataCartao(
-            "Última cobrança",
-            formatar_data(linha.ultima_cobranca) if linha.ultima_cobranca else "nunca",
-        ),
+        ultima,
     ]
     if linha.promessa:
         cor = tema.cor("atrasado" if linha.promessa_vencida else "roxo", cores.tema_atual())
@@ -117,21 +128,28 @@ def datas_do_honorario(
 
 
 def cartao_de_honorario(
-    linha: LinhaHonorario, acoes: list[Acao], dias_em_breve: int = 5
+    linha: LinhaHonorario, acoes: list[Acao], dias_em_breve: int = 5,
+    opcoes: list[Acao] | None = None,
 ) -> DadosCartao:
     """Cartão de honorário em aberto (atrasado ou a vencer)."""
     atualizacao = linha.atualizacao
     detalhes = []
-    if atualizacao.juros:
+    if atualizacao.juros or atualizacao.juros_manual:
+        # ✎: juros acertado à mão no Editar
+        rotulo_juros = "Juros ✎" if atualizacao.juros_manual else "Juros"
         detalhes += [
             ("Valor original", formatar_moeda(atualizacao.valor_original)),
-            ("Juros", formatar_moeda(atualizacao.juros)),
+            (rotulo_juros, formatar_moeda(atualizacao.juros)),
         ]
     detalhes.append(("Cobranças", str(linha.cobrancas)))
     if atualizacao.parcialmente_pago:
         detalhes.append(("Saldo", formatar_moeda(atualizacao.saldo)))
     # no prazo e sem nada pedindo atenção: azul, para toda faixa ter significado
     cor = cores.cor_de_linha(linha, dias_em_breve) or tema.cor("destaque_texto", cores.tema_atual())
+    # a faixa fica azul quando já foi cobrado hoje, mas o vencimento continua na
+    # cor do prazo: o atraso não sumiu
+    prazo = tema.cor("atrasado" if atualizacao.dias_atraso > 0 else "atencao",
+                     cores.tema_atual()) if cores.cobrado_hoje(linha) else cor
     return DadosCartao(
         titulo=f"{linha.cliente.codigo} – {linha.cliente.nome}",
         subtitulo=_descricao(linha.honorario),
@@ -142,11 +160,14 @@ def cartao_de_honorario(
         cor=cor,
         item=linha,
         acoes=acoes,
-        datas=datas_do_honorario(linha, cor, dias_em_breve),
+        datas=datas_do_honorario(linha, prazo, dias_em_breve),
+        opcoes=opcoes or [],
     )
 
 
-def cartao_de_pago(linha: LinhaHonorario, acoes: list[Acao]) -> DadosCartao:
+def cartao_de_pago(
+    linha: LinhaHonorario, acoes: list[Acao], opcoes: list[Acao] | None = None
+) -> DadosCartao:
     """Cartão do registro de pagos: quando pagou e quanto de atraso e juros houve."""
     honorario = linha.honorario
     pagamentos = [p for p in honorario.pagamentos if p.ativo]
@@ -189,6 +210,7 @@ def cartao_de_pago(linha: LinhaHonorario, acoes: list[Acao]) -> DadosCartao:
         item=linha,
         acoes=acoes,
         datas=datas,
+        opcoes=opcoes or [],
     )
 
 
@@ -238,15 +260,43 @@ class _PainelDeHonorarios(QWidget):
 
     def _cartao(self, linha: LinhaHonorario) -> DadosCartao:
         return cartao_de_honorario(
-            linha, self._acoes_do_cartao(linha), self.contexto.config_int("dias_vence_em_breve", 5)
+            linha, self._acoes_do_cartao(linha), self.contexto.config_int("dias_vence_em_breve", 5),
+            self._opcoes_do_cartao(linha),
         )
 
     def _acoes_do_cartao(self, linha: LinhaHonorario) -> list[Acao]:
-        acoes = [Acao("Histórico", self._abrir_historico, "Datas, cobranças e pagamentos")]
-        if linha.honorario.status is StatusPagamento.EM_ABERTO:
+        """Os botões à mostra no cartão: só o que se faz a toda hora."""
+        return []
+
+    def _opcoes_do_cartao(self, linha: LinhaHonorario) -> list[Acao]:
+        """O resto vai no "Opções" do cartão: consultar, anotar e corrigir, num lugar só."""
+        em_aberto = linha.honorario.status is StatusPagamento.EM_ABERTO
+        opcoes = [Acao("Histórico", self._abrir_historico, "Datas, cobranças e pagamentos")]
+        if em_aberto:
             # corrigir valor, vencimento ou descrição sem sair da tela de cobrança
-            acoes.append(Acao("Editar", self._editar_um, "Corrigir valor, vencimento ou descrição"))
-        return acoes
+            opcoes.append(
+                Acao("Editar", self._editar_um, "Corrigir valor, vencimento ou descrição")
+            )
+        if em_aberto and linha.honorario.status.cobravel:
+            opcoes += [
+                Acao("Anotar retorno do cliente…", self._retorno_um,
+                     "O que o cliente respondeu: prometeu pagar, pediu renegociação…",
+                     separar=True),
+                Acao("Registrar cobrança feita por fora…", self._registrar_cobranca_um,
+                     "Cobrou por telefone ou pelo WhatsApp sem gerar a mensagem aqui"),
+            ]
+        opcoes.append(Acao("Ficha da empresa", self._ficha_um, separar=True))
+        return opcoes + self._opcoes_extras(linha)
+
+    def _opcoes_extras(self, linha: LinhaHonorario) -> list[Acao]:
+        """O fim do menu, próprio de cada tela (cancelar, estornar…)."""
+        status = linha.honorario.status
+        if status is StatusPagamento.PAGO and any(p.ativo for p in linha.honorario.pagamentos):
+            return [Acao("Estornar pagamento…", self._estornar_um,
+                         "O honorário volta para Em aberto", separar=True)]
+        if status is not StatusPagamento.EM_ABERTO:
+            return []
+        return [Acao("Cancelar honorário…", self._cancelar_um, separar=True)]
 
     def _acao_de_pagamento(self, linha: LinhaHonorario) -> list[Acao]:
         """O botão verde, por último: é o que tira o honorário da cobrança."""
@@ -270,7 +320,7 @@ class _PainelDeHonorarios(QWidget):
         self.botoes: dict[str, QWidget] = {}
         self.busca = CampoBusca("Buscar empresa…")
         self.busca.setMinimumWidth(240)
-        self.busca.buscou.connect(lambda *_: self.recarregar())
+        self.busca.buscou.connect(lambda *_: self.recarregar_com_aviso())
         self.cabecalho.acoes.addWidget(self.busca)
 
         # a ação principal fica à mostra; o resto vai no menu "Ações", com os atalhos
@@ -300,11 +350,11 @@ class _PainelDeHonorarios(QWidget):
         self.tipo_pessoa = self.filtros.adicionar(FiltroOpcoes("Pessoa", [
             ("PF e PJ", None), ("Pessoa física", TipoPessoa.PF), ("Pessoa jurídica", TipoPessoa.PJ),
         ]))
-        self.tipo_pessoa.currentIndexChanged.connect(lambda *_: self.recarregar())
+        self.tipo_pessoa.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
         self.grupo = self.filtros.adicionar(FiltroOpcoes("Grupo", [("todos", None)] + [
             (grupo.nome, grupo.id) for grupo in servico_tipos.listar_grupos(self.contexto.sessao)
         ]))
-        self.grupo.currentIndexChanged.connect(lambda *_: self.recarregar())
+        self.grupo.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
         self.grupo.setVisible(self.mostrar_filtro_grupo)
         self._montar_filtros(self.filtros)
         layout.addWidget(self.filtros)
@@ -329,7 +379,7 @@ class _PainelDeHonorarios(QWidget):
 
     def _agrupamento(self, opcoes: list[tuple[str, str]]) -> FiltroOpcoes:
         chip = self.filtros.adicionar(FiltroOpcoes("Agrupar", opcoes))
-        chip.currentIndexChanged.connect(lambda *_: self.recarregar())
+        chip.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
         return chip
 
     # ------------------------------------------------------------------ dados
@@ -342,6 +392,12 @@ class _PainelDeHonorarios(QWidget):
             clientes_so_ir=self.clientes_so_ir,
             **extras,
         )
+
+    def recarregar_com_aviso(self) -> None:
+        """Busca e filtros: a roda de "Carregando…" sobre a lista enquanto volta.
+        Depois de salvar algo a lista recarrega sem ela, para não piscar."""
+        with self.lista.carregando_durante():
+            self.recarregar()
 
     def recarregar(self) -> None:
         if self._recarregando:   # um sinal disparado durante o redesenho não empilha outro
@@ -383,6 +439,10 @@ class _PainelDeHonorarios(QWidget):
             f"{len(self.linhas)} honorário(s)",
             f"{self._rotulo_total()} {formatar_moeda(total)}",
         ]
+        cobrados = sum(1 for linha in self.linhas if linha.honorario.status.cobravel
+                       and cores.cobrado_hoje(linha))
+        if cobrados:
+            partes.append(f"✓ {cobrados} já cobrado(s) hoje")
         desenhados = self.lista.desenhados
         if desenhados < len(self.linhas):
             partes.append(f"mostrando {desenhados}")
@@ -476,13 +536,68 @@ class _PainelDeHonorarios(QWidget):
         if not linhas:
             widgets.aviso(self, "Selecione um honorário para abrir a ficha da empresa.")
             return
-        DialogoFicha(self.contexto, linhas[0].cliente, self).exec()
+        self._ficha_um(linhas[0])
+
+    def _ficha_um(self, linha: LinhaHonorario) -> None:
+        DialogoFicha(self.contexto, linha.cliente, self).exec()
+        self.recarregar()
+
+    def _retorno_um(self, linha: LinhaHonorario) -> None:
+        """O retorno do cliente vai na cobrança que espera resposta (a mensagem
+        inteira); sem nenhuma, fica um contato de hoje já com o retorno."""
+        from ..dialogos.retorno import DialogoRetorno
+
+        if DialogoRetorno(self.contexto, linha.cliente, [linha.honorario], self).exec():
+            self.recarregar()
+
+    def _registrar_cobranca_um(self, linha: LinhaHonorario) -> None:
+        self._registrar_cobranca([linha])
+
+    def _registrar_cobranca(self, linhas: list[LinhaHonorario]) -> None:
+        """Cobrança feita por fora do sistema: fica registrada, sem mensagem."""
+        linhas = [linha for linha in linhas if linha.honorario.status.cobravel]
+        if not linhas:
+            widgets.aviso(self, "Selecione os honorários que você cobrou por fora do sistema.")
+            return
+        if len(linhas) > 1:
+            empresas = len({linha.cliente.id for linha in linhas})
+            if not widgets.confirmar(
+                self,
+                f"Registrar cobrança de hoje em {len(linhas)} honorário(s)?",
+                "Registrar cobrança em lote",
+                f"{empresas} empresa(s) · total {formatar_moeda(servico.total_de(linhas))}. "
+                "Nenhuma mensagem é gerada; o retorno do cliente se anota depois, no "
+                "Opções do cartão.",
+            ):
+                return
+        from PySide6.QtWidgets import QInputDialog
+
+        observacao, confirmou = QInputDialog.getText(
+            self, "Registrar cobrança",
+            f"Cobrança de hoje · {linhas[0].cliente.nome}\n\nObservação (opcional):"
+            if len(linhas) == 1 else "Observação (opcional):",
+        )
+        if not confirmou:
+            return
+
+        def acao():
+            servico_cobrancas.registrar_sem_mensagem(
+                self.contexto.sessao, linhas, observacao or ""
+            )
+            self.contexto.salvar()
+
+        deu_certo, _ = widgets.executar(self, acao)
+        if not deu_certo:
+            self.contexto.desfazer()
+            return
         self.recarregar()
 
     def _cancelar(self) -> None:
         linha = self._um_selecionado("cancelar")
-        if linha is None:
-            return
+        if linha is not None:
+            self._cancelar_um(linha)
+
+    def _cancelar_um(self, linha: LinhaHonorario) -> None:
         from PySide6.QtWidgets import QInputDialog
 
         motivo, confirmou = QInputDialog.getText(
@@ -503,8 +618,10 @@ class _PainelDeHonorarios(QWidget):
 
     def _estornar(self) -> None:
         linha = self._um_selecionado("estornar o pagamento")
-        if linha is None:
-            return
+        if linha is not None:
+            self._estornar_um(linha)
+
+    def _estornar_um(self, linha: LinhaHonorario) -> None:
         ativos = [p for p in linha.honorario.pagamentos if p.ativo]
         if not ativos:
             widgets.aviso(
@@ -590,7 +707,7 @@ class PainelAtrasados(_PainelDeHonorarios):
 
     def _mudar_referencia(self) -> None:
         self.contexto.data_referencia = self.data_referencia.valor()
-        self.recarregar()
+        self.recarregar_com_aviso()
 
     def _consultar(self) -> list[LinhaHonorario]:
         return servico.consultar(
@@ -610,43 +727,29 @@ class PainelAtrasados(_PainelDeHonorarios):
     def _rotulo_total(self) -> str:
         return "total atualizado"
 
+    def _opcoes_extras(self, linha):
+        extras = super()._opcoes_extras(linha)
+        if linha.honorario.status.cobravel:
+            extras.insert(0, Acao("Renegociar…", self._renegociar_um,
+                                  "Acordo, parcelamento ou novo vencimento", separar=True))
+            if len(extras) > 1:
+                extras[1].separar = False   # renegociar e cancelar no mesmo grupo
+        return extras
+
     def _cobrar_em_lote(self) -> None:
-        linhas = [linha for linha in self._selecionados() if linha.honorario.status.cobravel]
-        if not linhas:
-            widgets.aviso(self, "Selecione os honorários que você cobrou por fora do sistema.")
-            return
-        empresas = len({linha.cliente.id for linha in linhas})
-        if not widgets.confirmar(
-            self,
-            f"Registrar cobrança de hoje em {len(linhas)} honorário(s)?",
-            "Registrar cobrança em lote",
-            f"{empresas} empresa(s) · total {formatar_moeda(servico.total_de(linhas))}. "
-            "Nenhuma mensagem é gerada; a resposta você anota depois em Cobranças enviadas.",
-        ):
-            return
-        from PySide6.QtWidgets import QInputDialog
-
-        observacao, _ = QInputDialog.getText(
-            self, "Registrar cobrança em lote", "Observação (opcional):"
-        )
-
-        def acao():
-            servico_cobrancas.registrar_sem_mensagem(
-                self.contexto.sessao, linhas, observacao or ""
-            )
-            self.contexto.salvar()
-
-        deu_certo, _ = widgets.executar(self, acao)
-        if not deu_certo:
-            self.contexto.desfazer()
-            return
-        self.recarregar()
+        self._registrar_cobranca(self._selecionados())
 
     def _renegociar(self) -> None:
         linhas = [linha for linha in self._selecionados() if linha.honorario.status.cobravel]
         if not linhas or len({linha.cliente.id for linha in linhas}) > 1:
             widgets.aviso(self, "Selecione os honorários em atraso de uma única empresa.")
             return
+        self._renegociar_linhas(linhas)
+
+    def _renegociar_um(self, linha: LinhaHonorario) -> None:
+        self._renegociar_linhas([linha])
+
+    def _renegociar_linhas(self, linhas: list[LinhaHonorario]) -> None:
         if DialogoRenegociacao(self.contexto, linhas[0].cliente, linhas, self).exec():
             self.recarregar()
 
@@ -747,7 +850,7 @@ class PainelPagos(_PainelDeHonorarios):
 
     def ir_para_competencia(self, ano: int, mes: int) -> None:
         self.ano, self.mes = ano, mes
-        self.recarregar()
+        self.recarregar_com_aviso()
 
     def _montar_menu_de_meses(self) -> None:
         """Um submenu por ano; as competências com pagos ficam marcadas com •."""
@@ -783,7 +886,7 @@ class PainelPagos(_PainelDeHonorarios):
         return servico.agrupar_por_empresa(linhas)
 
     def _cartao(self, linha: LinhaHonorario) -> DadosCartao:
-        return cartao_de_pago(linha, self._acoes_do_cartao(linha) + self._acao_agradecer(linha))
+        return cartao_de_pago(linha, self._acao_agradecer(linha), self._opcoes_do_cartao(linha))
 
     def _rotulo_total(self) -> str:
         return "recebido"
@@ -823,12 +926,12 @@ class PainelImpostoRenda(_PainelDeHonorarios):
         self.situacao = filtros.adicionar(FiltroOpcoes("Mostrar", [
             ("Em aberto", StatusPagamento.EM_ABERTO.value), ("Pagos", StatusPagamento.PAGO.value),
         ]))
-        self.situacao.currentIndexChanged.connect(lambda *_: self.recarregar())
+        self.situacao.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
         ano_atual = self.contexto.data_referencia.year
         self.ano = filtros.adicionar(FiltroOpcoes("Ano do IR", [("todos", None)] + [
             (str(ano), ano) for ano in range(ano_atual, ano_atual - 6, -1)
         ]))
-        self.ano.currentIndexChanged.connect(lambda *_: self.recarregar())
+        self.ano.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
 
     @property
     def mostrando_pagos(self) -> bool:
@@ -875,8 +978,8 @@ class PainelImpostoRenda(_PainelDeHonorarios):
 
     def _cartao(self, linha: LinhaHonorario) -> DadosCartao:
         if self.mostrando_pagos:
-            acoes = self._acoes_do_cartao(linha) + self._acao_agradecer(linha)
-            return cartao_de_pago(linha, acoes)
+            return cartao_de_pago(linha, self._acao_agradecer(linha),
+                                  self._opcoes_do_cartao(linha))
         return super()._cartao(linha)
 
     def _acoes_do_cartao(self, linha):

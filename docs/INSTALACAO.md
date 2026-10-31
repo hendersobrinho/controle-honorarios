@@ -72,7 +72,7 @@ cada gravação.
 commit e crie a tag com o mesmo número:
 
 ```bash
-git tag v1.6.0 && git push origin main v1.6.0
+git tag v1.7.0 && git push origin main v1.7.0
 ```
 
 O GitHub Actions (`.github/workflows/lancamento.yml`) gera o programa e o

@@ -8,11 +8,11 @@ Para instalar e configurar, veja [INSTALACAO.md](INSTALACAO.md).
 | Tela | Para que serve |
 |---|---|
 | **Vencimentos → A vencer** (1ª aba) | Em aberto e dentro do prazo, pelo número da empresa (agrupada quando tem mais de um). Daqui sai o lembrete antes do vencimento |
-| **Vencimentos → Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, pelo número da empresa (do menor para o maior; empresa com mais de um honorário fica agrupada, com o total), com cobrar, editar (valor, vencimento, descrição), **Confirmar pagamento** (botão verde em cada cartão em aberto, também em A vencer e Imposto de Renda), cobrança em lote e renegociação |
+| **Vencimentos → Atrasados** | A tela de trabalho da cobrança: só os vencidos e em aberto, pelo número da empresa (do menor para o maior; empresa com mais de um honorário fica agrupada, com o total). Cada cartão tem à mostra **Cobrar** e **Confirmar pagamento** (botão verde, também em A vencer e Imposto de Renda); o resto fica no botão **Opções ▾** do cartão: Histórico, Editar (valor, vencimento, descrição e o **juros**: o campo mostra o juros de hoje; digitando outro valor — o inteiro ou só os centavos — ele passa a valer no lugar do calculado e os próximos dias continuam somando por cima; o cartão marca "Juros ✎" e **Voltar ao calculado** desfaz), **Anotar retorno do cliente…**, **Registrar cobrança feita por fora…**, Ficha da empresa, Renegociar e Cancelar. Quem já foi cobrado hoje fica com a faixa **azul** e o selo **✓ Cobrado hoje**; no dia seguinte volta ao vermelho do atraso. Cobrança em lote e renegociação de vários ficam no menu Ações |
 | **Vencimentos → Pagos** | Os quitados, **uma competência por vez** (◀ ▶ e o menu com as competências que têm pagos; abre na mais recente). O histórico completo de cada empresa fica na ficha dela. Mostra se pagou em dia ou com atraso, os juros cobrados e o abono |
 | **Clientes de IR** | Cobrança própria dos clientes que só fazem IR com o escritório: em aberto (atrasados e a vencer) ou pagos, com filtro por ano do IR. Esses clientes não aparecem em Atrasados, A vencer e Pagos |
 | **Tarefas** | O envio do honorário trimestral. O trimestre de cada empresa conta da competência em que ela virou cliente (campo **Cliente do escritório desde**), não do trimestre do ano: entrou em 15/08 → 08, 09 e 10; depois 11, 12 e 01… No dia seguinte ao fim do trimestre nasce a tarefa **Para fazer**, com **Dar baixa** (verde) quando o honorário for enviado. Também mostra os **Próximos trimestres**, as **Feitas** (com **Desfazer baixa**) e as trimestrais **Sem data de entrada**, com o botão para preencher. Só entram os trimestres dos últimos 12 meses; **Dar baixa em todas** serve para o começo, para os que já tinham sido enviados. O número no menu é o de pendentes |
-| **Cobranças enviadas** | Cada mensagem enviada e o que o cliente respondeu, com período e agrupamento à escolha. É aqui que a resposta é anotada |
+| **Vencimentos → Cobranças** (última aba) | Cada mensagem enviada e o que o cliente respondeu, com período e agrupamento à escolha; o número na aba é o de cobranças esperando uma ação. A resposta se anota aqui ou no **Opções ▾** do cartão do honorário |
 | **Clientes** | Abas **Ativos**, **Imposto de Renda** (quem só tem honorário de IR) e **Inativos**; PF \| PJ \| Todos e busca sem acento/pontuação; ficha completa da empresa. Dívida e atraso não aparecem aqui (têm telas próprias). Aqui também se suspende e retoma a cobrança de um cliente. O cadastro tem as abas **Dados**, **Contatos** e **Honorário recorrente**: no cliente novo, o honorário mensal (ou trimestral…) é cadastrado junto; quem tem "Paga pela empresa" salva sem honorário; sem honorário e sem empresa pagadora, o sistema pergunta antes (cliente só de IR ou de avulsos). No cliente já cadastrado, a aba lista os recorrentes dele, com novo, editar, reajustar e suspender |
 | **Honorários** | A gestão dos honorários, em três abas (o recorrente se cadastra no cliente). **Mês a mês**: tudo o que foi emitido no mês (recorrente ou avulso), com ◀ ▶ e um menu para ir direto a qualquer mês, os totais (emitido, pago, em aberto, cancelados), filtros de origem e situação, e o aviso de contratos que ainda não geraram a competência — "Gerar competência" já abre no mês da tela. **Recorrentes**: contratos, reajuste (individual e em massa) e "Gerar competência MM/AAAA" com prévia. **Avulsos**: lançar, corrigir e cancelar serviços que não vêm de contrato (IRPF, alteração contratual, atas…) e consultar o histórico por período, pagos ou não, com a situação de cada um. A cobrança desses honorários fica em Atrasados e A vencer |
 | **Painel** | O ano em números e gráficos: emitido × quitado por mês de competência (com a opção de ver em tabela), o que entrou no caixa por mês, de onde vem o faturamento (grupo e PF/PJ) e frases com o que os números dizem, comparando com o ano anterior quando há base. **Exportar PDF…** gera o relatório no mesmo visual da análise de juros (o papel do Financeiro, gráficos e tabela mês a mês). Atraso e devedores ficam no Ranking dos atrasados |
@@ -25,9 +25,9 @@ Para instalar e configurar, veja [INSTALACAO.md](INSTALACAO.md).
 
 A navegação é agrupada por momento do trabalho:
 
-- **Cobrança**: **Vencimentos** (abas A vencer, Atrasados e Pagos, com a
-  quantidade em aberto em cada aba; o número no menu é o de atrasados), Clientes
-  de IR, Tarefas (com o número de pendentes), Cobranças enviadas e Gerenciador de e-mail (com o número de e-mails não lidos).
+- **Cobrança**: **Vencimentos** (abas A vencer, Atrasados, Pagos e Cobranças, com
+  a quantidade em cada aba; o número no menu é o de atrasados), Clientes
+  de IR, Tarefas (com o número de pendentes) e Gerenciador de e-mail (com o número de e-mails não lidos).
 - **Cadastros**.
 - **Gestão**.
 
@@ -218,7 +218,7 @@ quem está em aberto, e quem cobra responde com o andamento. A tela **Gerenciado
 1. Chega a lista do financeiro: notificação e etiqueta *Nova*.
 2. Ao abrir o e-mail, a baixa dos que saíram já aparece. Confira e dê baixa.
 3. Cobre os que continuam (pela tela Atrasados, como sempre). Quando o cliente
-   responder, anote em **Anotar retorno…** ou em Cobranças enviadas.
+   responder, anote em **Anotar retorno…** ou no Opções do cartão do honorário.
 4. Na aba **Responder**, a resposta já está montada com o que sobrou em aberto
    e os retornos de cada cliente. Uma anotação que vale só para parte dos
    honorários diz de quais: "(07/2026)". O que foi pago depois do e-mail fica
@@ -306,10 +306,12 @@ padrão fica destacado e aparece **Limpar filtros**.
    Para o que ainda não venceu, **A vencer** manda um lembrete.
 2. A tela **Cobrar** monta a mensagem e a imagem (veja abaixo); você copia ou abre
    o WhatsApp e clica em **Marcar como cobrado**. A cobrança nasce *aguardando resposta* — nada de
-   resposta é pedido nesse momento, porque ela ainda não existe.
-3. Quando o cliente responde, a resposta entra em **Cobranças enviadas** (ou pelo
-   botão Histórico do próprio honorário): prometeu pagar, pediu renegociação,
-   contestou, não respondeu.
+   resposta é pedido nesse momento, porque ela ainda não existe. O cartão fica
+   azul, com **✓ Cobrado hoje**, até o fim do dia: dá para ver de longe quem já
+   foi cobrado.
+3. Quando o cliente responde, a resposta entra pelo **Opções ▾ → Anotar retorno
+   do cliente…** do próprio honorário (ou na aba **Cobranças** de Vencimentos):
+   prometeu pagar, pediu renegociação, contestou, não respondeu.
 4. O **Histórico** de cada honorário mostra a linha do tempo completa e diz
    quando a cobrança saiu em lote e com quais outros honorários.
 

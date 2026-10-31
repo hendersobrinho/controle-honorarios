@@ -1,18 +1,23 @@
 """Cobranças enviadas: o que já foi cobrado e o que cada cliente respondeu.
 
-A resposta não é anotada na hora de cobrar — quando a mensagem sai, ainda não
-existe resposta. É aqui que o retorno entra, com o período à escolha e cada
-cobrança em um cartão.
+É a aba "Cobranças" de Vencimentos, ao lado de A vencer, Atrasados e Pagos. A
+resposta não é anotada na hora de cobrar — quando a mensagem sai, ainda não
+existe resposta. O retorno entra aqui (ou pelo Opções do cartão do honorário),
+com o período à escolha e cada cobrança em um cartão.
 """
 
 from __future__ import annotations
 
 from datetime import date
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
+    QMenu,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -49,7 +54,7 @@ CORES_SITUACAO = {
 
 
 class PainelAcompanhamento(QWidget):
-    titulo = "Cobranças enviadas"
+    titulo = "Cobranças"
 
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
@@ -68,10 +73,34 @@ class PainelAcompanhamento(QWidget):
         self.cabecalho.adicionar_botao(
             "Registrar resposta", self._responder, primario=True, atalho="Ctrl+R"
         )
-        self.cabecalho.adicionar_botao("Cobrar de novo", self._cobrar, atalho="Ctrl+B")
-        self.cabecalho.adicionar_botao("Registrar pagamento", self._pagar, atalho="Ctrl+P")
-        self.cabecalho.adicionar_botao("Ficha", self._ficha, atalho="Ctrl+F")
-        self.cabecalho.adicionar_botao("Atualizar", self.recarregar, atalho="F5")
+        # como nas outras abas de Vencimentos: a ação principal à mostra, o resto
+        # no menu "Ações", com os atalhos
+        self.menu_acoes = QMenu(self)
+        for texto, funcao, atalho in (
+            ("Cobrar de novo", self._cobrar, "Ctrl+B"),
+            ("Registrar pagamento", self._pagar, "Ctrl+P"),
+            ("Ficha da empresa", self._ficha, "Ctrl+F"),
+            (None, None, None),
+            ("Estornar cobrança…", self._estornar, ""),
+            (None, None, None),
+            ("Atualizar", self.recarregar, "F5"),
+        ):
+            if texto is None:
+                self.menu_acoes.addSeparator()
+                continue
+            acao = QAction(texto, self)
+            if atalho:
+                acao.setShortcut(QKeySequence(atalho))
+                acao.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            acao.triggered.connect(lambda _=False, funcao=funcao: funcao())
+            self.menu_acoes.addAction(acao)
+            self.addAction(acao)   # o atalho vale com o menu fechado
+        botao_acoes = QToolButton()
+        botao_acoes.setObjectName("menuAcoes")
+        botao_acoes.setText("Ações  ▾")
+        botao_acoes.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        botao_acoes.setMenu(self.menu_acoes)
+        self.cabecalho.acoes.addWidget(botao_acoes)
         layout.addWidget(self.cabecalho)
 
         filtros = QHBoxLayout()
@@ -80,7 +109,7 @@ class PainelAcompanhamento(QWidget):
         for rotulo, meses in PERIODOS:
             self.periodo.addItem(rotulo, meses)
         self.periodo.setCurrentIndex(1)
-        self.periodo.currentIndexChanged.connect(lambda *_: self.recarregar())
+        self.periodo.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
         filtros.addWidget(self.periodo)
 
         filtros.addWidget(widgets.rotulo_fraco("Agrupar por:"))
@@ -88,25 +117,25 @@ class PainelAcompanhamento(QWidget):
         self.agrupamento.addItem("Situação", "situacao")
         self.agrupamento.addItem("Mês", "mes")
         self.agrupamento.addItem("Empresa", "empresa")
-        self.agrupamento.currentIndexChanged.connect(lambda *_: self.recarregar())
+        self.agrupamento.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
         filtros.addWidget(self.agrupamento)
 
         self.somente_pendentes = QCheckBox("Só o que espera ação")
         self.somente_pendentes.setChecked(True)
-        self.somente_pendentes.toggled.connect(lambda *_: self.recarregar())
+        self.somente_pendentes.toggled.connect(lambda *_: self.recarregar_com_aviso())
         filtros.addWidget(self.somente_pendentes)
 
         filtros.addWidget(widgets.rotulo_fraco("Canal:"))
         self.canal = ComboEnum(Canal)
         self.canal.insertItem(0, "Todos", None)
         self.canal.setCurrentIndex(0)
-        self.canal.currentIndexChanged.connect(lambda *_: self.recarregar())
+        self.canal.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
         filtros.addWidget(self.canal)
 
         filtros.addStretch(1)
         self.busca = CampoBusca("Buscar empresa…")
         self.busca.setMinimumWidth(240)
-        self.busca.buscou.connect(lambda *_: self.recarregar())
+        self.busca.buscou.connect(lambda *_: self.recarregar_com_aviso())
         filtros.addWidget(self.busca)
         layout.addLayout(filtros)
 
@@ -115,13 +144,8 @@ class PainelAcompanhamento(QWidget):
         self.lista.item_ativado.connect(self._responder_linha)
         layout.addWidget(self.lista, 1)
 
-        rodape = QHBoxLayout()
         self.resumo = widgets.rotulo_fraco("")
-        rodape.addWidget(self.resumo, 1)
-        estornar = widgets.QPushButton("Estornar cobrança")
-        estornar.clicked.connect(self._estornar)
-        rodape.addWidget(estornar)
-        layout.addLayout(rodape)
+        layout.addWidget(self.resumo)
 
     # ------------------------------------------------------------------ dados
     def _desde(self) -> date | None:
@@ -147,7 +171,10 @@ class PainelAcompanhamento(QWidget):
         cor = tema.cor(CORES_SITUACAO.get(linha.situacao, "texto_fraco"), cores.tema_atual())
         datas = [
             DataCartao(
-                "Cobrado em", f"{formatar_data(linha.data)} · há {linha.dias} dia(s)", cor
+                "Cobrado em",
+                f"{formatar_data(linha.data)} · "
+                + (f"há {linha.dias} dia(s)" if linha.dias else "hoje"),
+                cor,
             )
         ]
         if linha.promessa:
@@ -164,8 +191,16 @@ class PainelAcompanhamento(QWidget):
         if linha.quitados:
             detalhes.append(("Quitados", f"{linha.quitados} de {linha.quantidade}"))
         acoes = [Acao("Registrar resposta", self._responder_linha, primaria=True)]
+        opcoes = []
         if linha.texto:
-            acoes.append(Acao("Ver mensagem", self._ver_mensagem))
+            opcoes.append(Acao("Ver mensagem enviada", self._ver_mensagem))
+        opcoes += [
+            Acao("Cobrar de novo", self._cobrar_linha, separar=True),
+            Acao("Registrar pagamento", self._pagar_linha),
+            Acao("Ficha da empresa", self._ficha_linha, separar=True),
+            Acao("Estornar cobrança…", self._estornar_linha,
+                 "A cobrança foi registrada por engano", separar=True),
+        ]
         return DadosCartao(
             titulo=f"{linha.cliente.codigo} – {linha.cliente.nome}",
             subtitulo=(
@@ -180,7 +215,13 @@ class PainelAcompanhamento(QWidget):
             item=linha,
             acoes=acoes,
             datas=datas,
+            opcoes=opcoes,
         )
+
+    def recarregar_com_aviso(self) -> None:
+        """Busca e filtros: a roda de "Carregando…" sobre a lista enquanto volta."""
+        with self.lista.carregando_durante():
+            self.recarregar()
 
     def recarregar(self) -> None:
         self.contexto.atualizar()
@@ -245,8 +286,10 @@ class PainelAcompanhamento(QWidget):
 
     def _cobrar(self) -> None:
         linha = self._selecionada()
-        if linha is None:
-            return
+        if linha is not None:
+            self._cobrar_linha(linha)
+
+    def _cobrar_linha(self, linha: servico.LinhaAcompanhamento) -> None:
         pendentes = servico_cobrancas.linhas_em_aberto_do_cliente(
             self.contexto.sessao, linha.cliente.id, self.contexto.data_referencia
         )
@@ -262,8 +305,10 @@ class PainelAcompanhamento(QWidget):
 
     def _pagar(self) -> None:
         linha = self._selecionada()
-        if linha is None:
-            return
+        if linha is not None:
+            self._pagar_linha(linha)
+
+    def _pagar_linha(self, linha: servico.LinhaAcompanhamento) -> None:
         abertos = [c.honorario for c in linha.cobrancas if c.honorario.status.cobravel]
         if not abertos:
             widgets.informar(self, "Os honorários desta cobrança já estão quitados.", "Tudo pago")
@@ -273,15 +318,19 @@ class PainelAcompanhamento(QWidget):
 
     def _ficha(self) -> None:
         linha = self._selecionada()
-        if linha is None:
-            return
+        if linha is not None:
+            self._ficha_linha(linha)
+
+    def _ficha_linha(self, linha: servico.LinhaAcompanhamento) -> None:
         DialogoFicha(self.contexto, linha.cliente, self).exec()
         self.recarregar()
 
     def _estornar(self) -> None:
         linha = self._selecionada()
-        if linha is None:
-            return
+        if linha is not None:
+            self._estornar_linha(linha)
+
+    def _estornar_linha(self, linha: servico.LinhaAcompanhamento) -> None:
         from PySide6.QtWidgets import QInputDialog
 
         motivo, confirmou = QInputDialog.getText(

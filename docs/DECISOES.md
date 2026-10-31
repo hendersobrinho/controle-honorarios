@@ -485,6 +485,16 @@ pela Páscoa), Nossa Senhora da Penha (ES) e 23 de maio (Vila Velha), em
 `dominio/feriados.py`. Honorários já gerados não mudam, e o vencimento digitado
 à mão (avulso, edição) fica como foi digitado.
 
+### Juros acertado à mão no honorário
+
+No Editar, o juros pode ser digitado (reais e centavos). Grava-se o valor e o dia
+do acerto (`juros_ajustado`, `juros_ajustado_em`); dali em diante o juros é o
+acertado mais o que o cálculo somou depois daquele dia, então os dias seguintes
+continuam contando. Se o honorário deixa de estar em atraso (vencimento remarcado
+para a frente), o acerto deixa de valer. "Voltar ao calculado" apaga o acerto, e
+cada mudança vai para o log (`AJUSTAR_JUROS`). O juros digitado na tela Cobrar
+continua valendo só para aquela cobrança.
+
 ## Decisões técnicas
 
 ### PostgreSQL no escritório, SQLite no desenvolvimento

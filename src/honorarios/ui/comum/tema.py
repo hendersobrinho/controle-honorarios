@@ -21,6 +21,7 @@ CORES = {
         "texto_sobre_pago": "#ffffff",
         "faixa": "#f0f2f5",
         "roxo": "#7c5cff",
+        "cobrado": "#1f6fd1",          # cobrado hoje: azul vivo, diferente do navy
         "marca": "#F9B259",            # laranja da logo: contadores do menu
         "texto_sobre_marca": "#203461",  # azul da logo, legível sobre o laranja
         "menu": "#203461",             # menu lateral: o corpo navy do canhoto
@@ -44,6 +45,7 @@ CORES = {
         "texto_sobre_pago": "#0f1f16",
         "faixa": "#222a31",
         "roxo": "#a48bff",
+        "cobrado": "#5aa9ff",
         "marca": "#F9B259",
         "texto_sobre_marca": "#203461",
         "menu": "#16254A",
@@ -60,6 +62,8 @@ def cor(nome: str, tema: str = "claro") -> QColor:
 
 def folha_de_estilo(tema: str = "claro") -> str:
     c = CORES.get(tema, CORES["claro"])
+    acesa = QColor(c["destaque_texto"])   # o item do menu sob o mouse: destaque bem leve
+    acesa = f"rgba({acesa.red()}, {acesa.green()}, {acesa.blue()}, 0.13)"
     return f"""
     QWidget {{
         background: {c["fundo"]};
@@ -70,6 +74,30 @@ def folha_de_estilo(tema: str = "claro") -> str:
        caixas de marcação ficam de fora: estilizá-las faz o Qt desenhar o
        indicador pelo stylesheet, e ele some. */
     QLabel {{ background: transparent; }}
+    /* menus (Opções do cartão, Ações…): o item sob o mouse ganha fundo e uma
+       barrinha na cor de destaque, como um link aceso */
+    QMenu {{
+        background: {c["superficie"]};
+        border: 1px solid {c["borda"]};
+        border-radius: 8px;
+        padding: 5px 0;
+    }}
+    QMenu::item {{
+        background: transparent;
+        padding: 6px 22px 6px 16px;
+        border-left: 3px solid transparent;
+    }}
+    QMenu::item:selected {{
+        background: {acesa};
+        color: {c["destaque_texto"]};
+        border-left: 3px solid {c["destaque_texto"]};
+    }}
+    QMenu::item:disabled {{ color: {c["texto_fraco"]}; }}
+    QMenu::separator {{
+        height: 1px;
+        background: {c["borda"]};
+        margin: 4px 10px;
+    }}
     QFrame#cartao, QGroupBox {{
         background: {c["superficie"]};
         border: 1px solid {c["borda"]};
@@ -236,6 +264,20 @@ def folha_de_estilo(tema: str = "claro") -> str:
     QPushButton#cartaoAcao:hover {{
         border-color: {c["destaque_texto"]}; background: {c["faixa"]};
     }}
+    QToolButton#cartaoOpcoes {{
+        padding: 4px 10px;
+        font-size: 12px;
+        color: {c["texto_fraco"]};
+        background: transparent;
+        border: 1px solid {c["borda"]};
+        border-radius: 6px;
+    }}
+    QToolButton#cartaoOpcoes:hover {{
+        color: {c["destaque_texto"]};
+        border-color: {c["destaque_texto"]};
+        background: {c["faixa"]};
+    }}
+    QToolButton#cartaoOpcoes::menu-indicator {{ image: none; width: 0px; }}
     QToolButton#chipFiltro {{
         background: {c["superficie"]};
         border: 1px solid {c["borda"]};

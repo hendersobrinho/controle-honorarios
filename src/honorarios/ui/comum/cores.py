@@ -35,6 +35,14 @@ def cor_de_status(status: StatusPagamento) -> QColor | None:
     return None
 
 
+def cobrado_hoje(linha) -> bool:
+    """Teve cobrança registrada hoje, no relógio de verdade:
+    simular outra data para os juros não apaga o que foi feito hoje."""
+    from ...dominio.valores import hoje
+
+    return getattr(linha, "ultima_cobranca", None) == hoje()
+
+
 def cor_de_linha(linha, dias_vence_em_breve: int = 5) -> QColor | None:
     """Regra única de cor usada nas tabelas de honorários."""
 
@@ -46,6 +54,9 @@ def cor_de_linha(linha, dias_vence_em_breve: int = 5) -> QColor | None:
         return tema.cor("pago", _tema_atual)
     if atualizacao.status in (StatusPagamento.CANCELADO, StatusPagamento.RENEGOCIADO):
         return tema.cor("texto_fraco", _tema_atual)
+    if cobrado_hoje(linha):
+        # já passou por ele hoje: azul até virar o dia, depois volta à cor do atraso
+        return tema.cor("cobrado", _tema_atual)
     if atualizacao.dias_atraso > 0:
         return tema.cor("atrasado", _tema_atual)
     falta = (linha.honorario.vencimento - atualizacao.data_referencia).days
