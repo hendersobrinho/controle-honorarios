@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.9.1
+# Especificação — Financeiro Métodos 1.9.2
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.9.1 (novembro de 2026) |
+| **Versão** | 1.9.2 (novembro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -138,6 +138,7 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 23 | Atualização pelo sistema escolhe a versão mais alta publicada (não o "latest" do GitHub, que ficou na 1.7.0 por ter sido publicada depois da 1.8.0); o lançamento só marca como "latest" a versão mais alta | 1.8.1 | concluída |
 | 24 | O juros continua correndo nas parcelas: desde o dia do parcelamento até o vencimento de cada uma (e depois, se atrasar), na fração do juros ao dia proporcional ao valor da parcela; prévia do juros e do valor no vencimento; Cobrar da parcela a vencer com os valores do vencimento | 1.9.0 | concluída |
 | 25 | Juros ao dia das parcelas estipulado à mão no Novo parcelamento (vem o calculado; zero = sem juros) | 1.9.1 | concluída |
+| 26 | Novo parcelamento cabe em tela de notebook: explicação do juros ao dia na mesma linha do campo, altura mínima das listas e janela no tamanho da tela de onde abre | 1.9.2 | concluída |
 
 Cada fase com recurso novo sobe a versão do meio; correção sobe a última. A 1.0.0
 chegou a ser reaproveitada para as fases 12 e 13 enquanto o sistema não estava

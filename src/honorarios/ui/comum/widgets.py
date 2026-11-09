@@ -116,6 +116,17 @@ class Cabecalho(QWidget):
         return botao
 
 
+def tamanho_na_tela(janela: QWidget, largura: int, altura: int) -> None:
+    """``largura``×``altura``, ou o que couber na tela (notebook de 1366×768, por
+    exemplo). A tela é a da janela de onde ela abre, não a principal."""
+    dono = janela.parentWidget()
+    tela = dono.window().screen() if dono is not None else QGuiApplication.primaryScreen()
+    if tela is not None and not (area := tela.availableGeometry()).isEmpty():
+        largura = min(largura, int(area.width() * 0.96))
+        altura = min(altura, int(area.height() * 0.94))
+    janela.resize(largura, altura)
+
+
 def linha_separadora() -> QFrame:
     linha = QFrame()
     linha.setFrameShape(QFrame.Shape.HLine)

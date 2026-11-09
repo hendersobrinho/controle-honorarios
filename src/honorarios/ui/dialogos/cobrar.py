@@ -215,12 +215,7 @@ class DialogoCobrar(QDialog):
 
     def _tamanho_inicial(self) -> None:
         """1320×900, ou o que couber na tela (notebook de 1366×768, por exemplo)."""
-        tela = self.screen().availableGeometry() if self.screen() else None
-        largura, altura = 1320, 900
-        if tela is not None and not tela.isEmpty():
-            largura = min(largura, int(tela.width() * 0.96))
-            altura = min(altura, int(tela.height() * 0.94))
-        self.resize(largura, altura)
+        widgets.tamanho_na_tela(self, 1320, 900)
 
     def _montar(self) -> None:
         layout = QVBoxLayout(self)

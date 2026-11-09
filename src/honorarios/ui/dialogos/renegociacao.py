@@ -60,7 +60,7 @@ class DialogoRenegociacao(QDialog):
 
         self._dias_lembrete = tarefas.dias_antes_da_parcela(contexto.sessao)
         self.setWindowTitle(f"Parcelar – {cliente.nome}" if cliente else "Novo parcelamento")
-        self.resize(980, 720)
+        widgets.tamanho_na_tela(self, 980, 720)
         self._montar()
         self._carregar_cliente(cliente)
 
@@ -99,6 +99,7 @@ class DialogoRenegociacao(QDialog):
         self.tabela.setModel(self.modelo)
         ajustar_colunas(self.tabela, self.modelo.colunas)
         self.tabela.doubleClicked.connect(lambda *_: self._alterar_juros())
+        self.tabela.setMinimumHeight(110)   # ao menos 3 honorários à vista
         layout.addWidget(self.tabela, 2)
 
         juros = QHBoxLayout()
@@ -161,15 +162,23 @@ class DialogoRenegociacao(QDialog):
             "parcela no juros ao dia do cliente); digite outro valor para estipular um "
             "juros novo, ou zero para as parcelas não correrem juros.")
         self.juros_dia.valueChanged.connect(self._digitou_juros_dia)
-        juros_dia.addWidget(self.juros_dia, 1)
+        self.juros_dia.setMaximumWidth(130)
+        juros_dia.addWidget(self.juros_dia)
+        # a explicação na mesma linha: uma linha a mais apertava as listas em tela baixa
+        self.juros_dia_dica = widgets.rotulo_fraco("")
+        self.juros_dia_dica.setWordWrap(False)
+        juros_dia.addWidget(self.juros_dia_dica)
         self.botao_juros_dia = widgets.QPushButton("Voltar ao calculado")
         self.botao_juros_dia.setObjectName("linkFiltro")
         self.botao_juros_dia.setCursor(Qt.CursorShape.PointingHandCursor)
         self.botao_juros_dia.clicked.connect(self._juros_dia_calculado)
+        # escondido continua ocupando o lugar: a linha não pula ao digitar
+        politica = self.botao_juros_dia.sizePolicy()
+        politica.setRetainSizeWhenHidden(True)
+        self.botao_juros_dia.setSizePolicy(politica)
         juros_dia.addWidget(self.botao_juros_dia)
+        juros_dia.addStretch(1)
         formulario.addRow("Juros ao dia (cada parcela):", juros_dia)
-        self.juros_dia_dica = widgets.rotulo_fraco("")
-        formulario.addRow("", self.juros_dia_dica)
         self.observacoes = QPlainTextEdit()
         self.observacoes.setMaximumHeight(60)
         formulario.addRow("Observações:", self.observacoes)
@@ -195,6 +204,7 @@ class DialogoRenegociacao(QDialog):
         self.tabela_parcelas = preparar_tabela(QTableView(), esticar=4)
         self.tabela_parcelas.setModel(self.modelo_parcelas)
         ajustar_colunas(self.tabela_parcelas, self.modelo_parcelas.colunas)
+        self.tabela_parcelas.setMinimumHeight(140)
         previa.addWidget(self.tabela_parcelas, 1)
         meio.addLayout(previa, 6)
         layout.addLayout(meio, 3)
@@ -327,9 +337,12 @@ class DialogoRenegociacao(QDialog):
             self.juros_dia.blockSignals(False)
         self.botao_juros_dia.setVisible(self._juros_dia_mexido)
         self.juros_dia_dica.setText(
-            f"Estipulado à mão (o calculado é {formatar_moeda(calculado)} por dia)"
-            if self._juros_dia_mexido else
-            "Calculado: a parte de cada parcela no juros ao dia do cliente")
+            f"à mão (calculado: {formatar_moeda(calculado)})" if self._juros_dia_mexido
+            else "parte de cada parcela no juros do cliente")
+        self.juros_dia_dica.setToolTip(
+            "Estipulado à mão para as parcelas" if self._juros_dia_mexido else
+            "Calculado: a parte de cada parcela no juros ao dia que os honorários "
+            "parcelados pagavam")
 
     def _digitou_valor(self, *_args) -> None:
         self._valor_mexido = True
