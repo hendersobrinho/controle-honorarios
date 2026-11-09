@@ -108,3 +108,22 @@ def test_aviso_de_versao_nova_sai_uma_vez(sessao):
     primeiro = notificacoes.atualizacao_disponivel(sessao, "1.6.0")
     assert primeiro is not None and primeiro.tela == "Configurações"
     assert notificacoes.atualizacao_disponivel(sessao, "1.6.0") is None
+
+
+def test_ultima_e_a_versao_mais_alta_nao_a_publicada_por_ultimo(monkeypatch):
+    import io
+    import json
+
+    lista = [_release("1.7.0"), _release("1.8.0"), _release("1.6.0"),
+             {**_release("9.0.0"), "draft": True}]
+
+    class Resposta(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(atualizacao, "_pedir",
+                        lambda url, espera: Resposta(json.dumps(lista).encode()))
+    assert atualizacao.ultima().versao == "1.8.0"

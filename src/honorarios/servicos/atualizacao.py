@@ -30,7 +30,9 @@ from .. import __version__
 from .erros import ErroDeNegocio
 
 REPOSITORIO = "hendersobrinho/controle-honorarios"
-API_ULTIMA = f"https://api.github.com/repos/{REPOSITORIO}/releases/latest"
+# a lista, não o "latest": o GitHub marca como última a publicada por último, e duas
+# tags enviadas juntas podiam deixar a versão mais velha como "latest"
+API_LANCAMENTOS = f"https://api.github.com/repos/{REPOSITORIO}/releases?per_page=20"
 PREFIXO_INSTALADOR = "Instalador_Financeiro_Metodos_"
 CHAVE_AO_ABRIR = "atualizacao_ao_abrir"   # configuração: verificar sozinho ao abrir
 BLOCO = 256 * 1024
@@ -104,10 +106,20 @@ def de_json(dados: dict) -> Lancamento:
     )
 
 
+def mais_alta(lancamentos: list[dict]) -> dict:
+    """Dos releases publicados (sem rascunho nem pré-lançamento), o de versão mais alta."""
+    validos = [dados for dados in lancamentos
+               if isinstance(dados, dict) and not dados.get("draft")
+               and not dados.get("prerelease") and dados.get("tag_name")]
+    if not validos:
+        raise ErroDeNegocio("Ainda não há versão publicada no GitHub.")
+    return max(validos, key=lambda dados: numeros(str(dados["tag_name"])))
+
+
 def ultima(espera: float = 15) -> Lancamento:
-    """A última versão publicada no GitHub."""
+    """A versão mais alta publicada no GitHub."""
     try:
-        with _pedir(API_ULTIMA, espera) as resposta:
+        with _pedir(API_LANCAMENTOS, espera) as resposta:
             dados = json.loads(resposta.read().decode("utf-8"))
     except urllib.error.HTTPError as falha:
         if falha.code == 404:
@@ -120,7 +132,9 @@ def ultima(espera: float = 15) -> Lancamento:
         ) from falha
     except ValueError as falha:
         raise ErroDeNegocio("O GitHub respondeu algo que não entendi.") from falha
-    return de_json(dados)
+    if isinstance(dados, dict):   # um release só (a resposta antiga do "latest")
+        return de_json(dados)
+    return de_json(mais_alta(dados))
 
 
 def baixar(

@@ -39,6 +39,9 @@ jobs:
           $tag = "${{ github.ref_name }}"
           if ("v$versao" -ne $tag) { throw "A tag $tag não bate com a versão $versao do pacote" }
           "versao=$versao" >> $env:GITHUB_OUTPUT
+          # "latest" só para a versão mais alta: duas tags juntas não trocam a ordem
+          $mais_alta = git tag -l "v*" --sort=-v:refname | Select-Object -First 1
+          "ultima=$(if ($mais_alta -eq $tag) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
           # o que mudou desde a versão anterior: um item por commit
           $anterior = git describe --tags --abbrev=0 "$tag^" 2>$null
           $faixa = if ($anterior) { "$anterior..$tag" } else { $tag }
@@ -67,3 +70,4 @@ jobs:
           body_path: novidades.md
           files: instalador/saida/Instalador_Financeiro_Metodos_${{ steps.versao.outputs.versao }}.exe
           fail_on_unmatched_files: true
+          make_latest: ${{ steps.versao.outputs.ultima }}
