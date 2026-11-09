@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QInputDialog, QTableView, QVBoxLayout
 
 from ...dominio.valores import ZERO, formatar_data, formatar_moeda, hoje
+from ...servicos import calculo
 from ...servicos import honorarios as servico_honorarios
 from ...servicos import pagamentos as servico_pagamentos
 from ...servicos import parcelamentos as servico
@@ -32,6 +34,13 @@ def situacao_da_parcela(parcela: servico.Parcela) -> str:
     return "Em aberto"
 
 
+def no_vencimento(parcela: servico.Parcela):
+    """Quanto a parcela a vencer valerá no dia do vencimento (com o juros até lá)."""
+    if not parcela.em_aberto or parcela.atrasada:
+        return None
+    return calculo.atualizar(parcela.honorario, parcela.honorario.vencimento).total
+
+
 class DialogoParcelas(QDialog):
     def __init__(self, contexto: Contexto, parcelamento: servico.Parcelamento,
                  parent=None) -> None:
@@ -40,7 +49,7 @@ class DialogoParcelas(QDialog):
         self.parcelamento = parcelamento
         self.mudou = False
         self.setWindowTitle(f"Parcelas – {parcelamento.cliente.nome}")
-        self.resize(820, 520)
+        self.resize(920, 520)
         self._montar()
         self._preencher()
 
@@ -57,10 +66,16 @@ class DialogoParcelas(QDialog):
                 coluna_moeda("Juros", lambda p: p.linha.atualizacao.juros),
                 Coluna("", lambda p: "✎ à mão" if p.linha.atualizacao.juros_manual else ""),
                 coluna_moeda("Total hoje", lambda p: p.linha.atualizacao.total, negrito=True),
+                Coluna("No vencimento",
+                       lambda p: formatar_moeda(v) if (v := no_vencimento(p)) is not None else "",
+                       ordem=lambda p: no_vencimento(p) or ZERO,
+                       alinhamento=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                       dica=lambda p: "Valor no dia do vencimento: o juros corre até lá"
+                       if no_vencimento(p) is not None else ""),
                 Coluna("Situação", situacao_da_parcela),
             ]
         )
-        self.tabela = preparar_tabela(QTableView(), esticar=6)
+        self.tabela = preparar_tabela(QTableView(), esticar=7)
         self.tabela.setModel(self.modelo)
         self.tabela.doubleClicked.connect(lambda *_: self._pagar())
         layout.addWidget(self.tabela, 1)
@@ -157,6 +172,8 @@ class DialogoParcelas(QDialog):
         from .cobrar import DialogoCobrar
 
         dialogo = DialogoCobrar(self.contexto, self.parcelamento.cliente, [parcela.linha], self)
+        # parcela a vencer: o valor do dia do vencimento, com o juros até lá
+        dialogo.valores_ate(parcela.honorario.vencimento)
         dialogo.exec()
         if dialogo.registrou:
             self._recarregar()

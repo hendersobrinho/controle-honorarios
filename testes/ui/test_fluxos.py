@@ -6,7 +6,7 @@ grava o que o usuário confirmou.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -3040,7 +3040,8 @@ def test_tirar_o_juros_das_parcelas_atrasadas(qtbot, contexto, cliente_com_debit
     qtbot.addWidget(painel)
     [parcelamento] = painel.lista.itens
     cartao = painel._cartao(parcelamento)
-    assert ("Juros", "R$ 20,00") in cartao.detalhes          # 20 dias da 1ª parcela
+    # 20 dias da 1ª parcela, com metade do juros ao dia (2 honorários em 4 parcelas)
+    assert ("Juros", "R$ 10,00") in cartao.detalhes
     opcoes = {a.texto: a for a in cartao.opcoes}
     assert "Tirar o juros das atrasadas…" in opcoes
 
@@ -3145,3 +3146,47 @@ def test_tarefas_mostram_o_envio_das_parcelas(qtbot, contexto, cliente_com_debit
     assert painel.quadro.parcelas == []
     assert [t.periodo for t in painel.quadro.parcelas_feitas] == ["1/2"]
     assert tarefas.quadro(contexto.sessao, REFERENCIA).parcelas_feitas
+
+
+def test_previa_do_juros_das_parcelas_e_cobrar_no_vencimento(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from honorarios.servicos import renegociacoes
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.dialogos import renegociacao
+    from honorarios.ui.dialogos.cobrar import DialogoCobrar
+    from honorarios.ui.dialogos.parcelas import DialogoParcelas, no_vencimento
+    from honorarios.ui.paineis.parcelamentos import PainelParcelamentos
+
+    referencia = contexto.data_referencia
+    monkeypatch.setattr(renegociacao, "hoje", lambda: referencia)
+    monkeypatch.setattr(renegociacoes, "hoje", lambda: referencia)
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    dialogo = renegociacao.DialogoRenegociacao(contexto, cliente_com_debito,
+                                               linhas_do(contexto.sessao, cliente_com_debito))
+    qtbot.addWidget(dialogo)
+    dialogo.parcelas.setValue(3)
+    dialogo.primeiro_vencimento.definir(referencia + timedelta(days=30))
+    previsto = [dialogo._juros_previsto[p.numero] for p in dialogo.modelo_parcelas.itens]
+    assert previsto[0] > 0 and previsto[0] < previsto[1] < previsto[2]   # mais longe, mais juros
+    dialogo.juros_correndo.setChecked(False)
+    assert dialogo._juros_previsto == {}
+    assert "só corre juros se atrasar" in dialogo.resumo.text()
+    dialogo.juros_correndo.setChecked(True)
+    dialogo._confirmar()
+
+    painel = PainelParcelamentos(contexto)
+    qtbot.addWidget(painel)
+    [parcelamento] = painel.lista.itens
+    primeira = parcelamento.parcelas[0]
+    assert primeira.honorario.juros_desde == referencia
+    assert no_vencimento(primeira) == primeira.honorario.valor_original + previsto[0]
+    parcelas = DialogoParcelas(contexto, parcelamento)
+    qtbot.addWidget(parcelas)
+
+    cobrar = DialogoCobrar(contexto, parcelamento.cliente, [primeira.linha])
+    qtbot.addWidget(cobrar)
+    cobrar.valores_ate(primeira.honorario.vencimento)
+    assert cobrar.usar_outra_data.isChecked()
+    assert cobrar._selecao().data_referencia == primeira.honorario.vencimento
+    assert primeira.linha.atualizacao.juros == previsto[0]

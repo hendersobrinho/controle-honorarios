@@ -72,6 +72,23 @@ def taxa_vigente_em(cliente: Cliente, referencia: date | None = None) -> Decimal
     return atual
 
 
+def regra_de_juros(
+    honorario: Honorario, taxas: Sequence[TaxaVigente], vencimento: date | None = None,
+) -> tuple[date, tuple[TaxaVigente, ...]]:
+    """De quando o juros conta e com que juros ao dia.
+
+    O normal: depois do vencimento, com o juros ao dia do cliente. A parcela de
+    parcelamento conta desde o dia do parcelamento (``juros_desde``) e com a sua
+    fração do juros ao dia (``juros_fator``).
+    """
+    vencimento = vencimento or honorario.vencimento
+    inicio = min(honorario.juros_desde, vencimento) if honorario.juros_desde else vencimento
+    if honorario.juros_fator is None:
+        return inicio, tuple(taxas)
+    fator = Decimal(str(honorario.juros_fator))
+    return inicio, tuple(replace(taxa, valor_dia=taxa.valor_dia * fator) for taxa in taxas)
+
+
 def _parciais(honorario: Honorario) -> list[AbatimentoParcial]:
     return [
         AbatimentoParcial(
@@ -132,10 +149,11 @@ def atualizar(
             congelado=True,
         )
 
+    inicio, taxas_do_juros = regra_de_juros(honorario, taxas)
     resultado = calcular_juros_com_parciais(
-        vencimento=honorario.vencimento,
+        vencimento=inicio,
         data_referencia=referencia,
-        taxas=taxas,
+        taxas=taxas_do_juros,
         valor_original=valor_original,
         parciais=_parciais(honorario),
     )
@@ -167,10 +185,11 @@ def juros_ajustado_em(
         return None
     if referencia < honorario.juros_ajustado_em:
         return None
-    if dias_em_atraso(honorario.vencimento, referencia) == 0:
+    inicio, taxas = regra_de_juros(honorario, taxas)
+    if dias_em_atraso(inicio, referencia) == 0:
         return None   # no prazo (o vencimento foi mudado para a frente): sem juros
     no_dia = calcular_juros_com_parciais(
-        vencimento=honorario.vencimento,
+        vencimento=inicio,
         data_referencia=honorario.juros_ajustado_em,
         taxas=taxas,
         valor_original=dinheiro(honorario.valor_original),
@@ -187,10 +206,11 @@ def juros_calculado(
     se pedidos (para o Editar mostrar a conta enquanto se digita)."""
     if honorario.status is not StatusPagamento.EM_ABERTO:
         return ZERO
+    inicio, taxas = regra_de_juros(honorario, taxas_do_cliente(honorario.cliente), vencimento)
     return calcular_juros_com_parciais(
-        vencimento=vencimento or honorario.vencimento,
+        vencimento=inicio,
         data_referencia=referencia,
-        taxas=taxas_do_cliente(honorario.cliente),
+        taxas=taxas,
         valor_original=dinheiro(valor if valor is not None else honorario.valor_original),
         parciais=_parciais(honorario),
     ).juros

@@ -619,6 +619,19 @@ class DialogoCobrar(QDialog):
         )
 
     # ------------------------------------------------------------------ datas
+    def valores_ate(self, data) -> None:
+        """Valores atualizados até ``data`` (a parcela que ainda vai vencer: o juros que
+        ela terá no vencimento). Data passada ou de hoje: fica como está."""
+        if data is None or data <= self.contexto.data_referencia:
+            return
+        self.data_referencia.blockSignals(True)
+        self.data_referencia.definir(data)
+        self.data_referencia.blockSignals(False)
+        if self.usar_outra_data.isChecked():
+            self._gerar()
+        else:
+            self.usar_outra_data.setChecked(True)   # chama _trocar_data_dos_valores
+
     def _trocar_data_dos_valores(self, *_args) -> None:
         self.data_referencia.setEnabled(self.usar_outra_data.isChecked())
         self._gerar()

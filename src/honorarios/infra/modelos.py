@@ -76,6 +76,19 @@ class Taxa(TypeDecorator):
         return None if value is None else Decimal(str(value))
 
 
+class Fator(TypeDecorator):
+    """Proporção do juros ao dia (parcela de parcelamento): 6 casas."""
+
+    impl = Numeric(12, 6)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):  # noqa: ANN001
+        return None if value is None else str(Decimal(str(value)))
+
+    def process_result_value(self, value, dialect):  # noqa: ANN001
+        return None if value is None else Decimal(str(value))
+
+
 class EnumTexto(TypeDecorator):
     """Enum gravado como texto e devolvido como enum, não como str.
 
@@ -422,6 +435,11 @@ class Honorario(Base):
     # somando por cima dele (ver calculo.atualizar)
     juros_ajustado: Mapped[Decimal | None] = mapped_column(Dinheiro)
     juros_ajustado_em: Mapped[date | None] = mapped_column(Date)
+    # parcela de parcelamento: o juros corre desde o dia do parcelamento (não só
+    # depois do vencimento), numa fração do juros ao dia do cliente — a parte desta
+    # parcela no juros que os honorários parcelados vinham pagando
+    juros_desde: Mapped[date | None] = mapped_column(Date)
+    juros_fator: Mapped[Decimal | None] = mapped_column(Fator)
     total_congelado: Mapped[Decimal | None] = mapped_column(Dinheiro)
     cancelado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     motivo_cancelamento: Mapped[str] = mapped_column(Text, default="", nullable=False)

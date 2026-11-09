@@ -18,6 +18,14 @@ from testes import fabricas
 REFERENCIA = date(2026, 9, 29)
 
 
+@pytest.fixture(autouse=True)
+def parcelado_na_referencia(monkeypatch):
+    """O parcelamento fica com a data do teste, não com a de hoje de verdade."""
+    from honorarios.servicos import renegociacoes
+
+    monkeypatch.setattr(renegociacoes, "hoje", lambda: REFERENCIA)
+
+
 @pytest.fixture
 def cenario(sessao):
     cliente = fabricas.cliente(sessao, juros_dia="1.00")
@@ -74,7 +82,9 @@ def test_parcelas_saem_de_vencimentos_e_ficam_no_parcelamento(sessao, cenario):
     assert [p.numero for p in parcelamento.parcelas] == [1, 2, 3]
     assert [p.numero for p in parcelamento.atrasadas] == [1]
     assert parcelamento.proxima.numero == 1
-    assert parcelamento.falta == Decimal("1519.00")   # 1.500 + 19 dias de juros da 1ª
+    # dois honorários a R$ 1,00/dia viram 3 parcelas com 2/3 de R$ 1,00 cada: a 1ª,
+    # vencida em 10/09, tem 19 dias × R$ 0,666667
+    assert parcelamento.falta == Decimal("1512.67")
     assert parcelamento.pago == Decimal("0.00") and not parcelamento.quitado
 
 
@@ -129,3 +139,63 @@ def test_busca_pelo_nome(sessao, cenario):
     _parcelar(sessao, cliente, linhas)
     assert len(parcelamentos.listar(sessao, REFERENCIA, "exemplo")) == 1
     assert parcelamentos.listar(sessao, REFERENCIA, "inexistente") == []
+
+
+def test_juros_corre_desde_o_parcelamento_ate_o_vencimento(sessao, cenario):
+    from honorarios.servicos import calculo
+
+    cliente, linhas = cenario
+    _parcelar(sessao, cliente, linhas, primeiro=date(2026, 10, 29))
+    [parcelamento] = parcelamentos.listar(sessao, REFERENCIA)
+    primeira, segunda, terceira = (p.honorario for p in parcelamento.parcelas)
+    assert primeira.juros_desde == REFERENCIA
+    assert primeira.juros_fator == Decimal("0.666667")
+    # no vencimento da 1ª (30 dias depois): 30 × R$ 0,666667, sem estar atrasada
+    no_vencimento = calculo.atualizar(primeira, date(2026, 10, 29))
+    assert (no_vencimento.juros, no_vencimento.dias_atraso) == (Decimal("20.00"), 0)
+    assert calculo.atualizar(terceira, date(2026, 10, 29)).juros == Decimal("20.00")
+    # pagando atrasado, continua correndo no mesmo ritmo
+    atrasada = calculo.atualizar(primeira, date(2026, 11, 8))
+    assert (atrasada.juros, atrasada.dias_atraso) == (Decimal("26.67"), 10)
+    # o total ao dia das três é o mesmo que os dois honorários pagavam
+    assert sum(p.juros_fator for p in (primeira, segunda, terceira)) == Decimal("2.000001")
+
+
+def test_juros_so_depois_do_vencimento_se_escolhido(sessao, cenario):
+    from honorarios.servicos import calculo
+
+    cliente, linhas = cenario
+    tipo = sessao.scalar(select(TipoHonorario).where(TipoHonorario.nome == "Parcela de acordo"))
+    parcelamentos.criar(sessao, cliente, linhas, Decimal("1500.00"), 3, date(2026, 10, 29),
+                        tipo.id, juros_ate_o_vencimento=False)
+    sessao.commit()
+    [parcelamento] = parcelamentos.listar(sessao, REFERENCIA)
+    primeira = parcelamento.parcelas[0].honorario
+    assert primeira.juros_desde is None
+    assert calculo.atualizar(primeira, date(2026, 10, 29)).juros == Decimal("0.00")
+    assert calculo.atualizar(primeira, date(2026, 11, 8)).juros == Decimal("6.67")
+
+
+def test_previsao_do_juros_de_cada_parcela(sessao, cenario):
+    from honorarios.servicos import renegociacoes
+
+    cliente, linhas = cenario
+    previstas = parcelamentos.dividir(Decimal("1500.00"), 3, date(2026, 10, 29))
+    fatores = renegociacoes.fatores_das_parcelas(renegociacoes.fator_do_juros(linhas),
+                                                 previstas)
+    juros = renegociacoes.juros_previstos(cliente, previstas, fatores, REFERENCIA)
+    assert juros == [Decimal("20.00"), Decimal("40.67"), Decimal("60.67")]
+
+
+def test_tirar_o_juros_da_parcela_antes_do_vencimento(sessao, cenario):
+    from honorarios.servicos import calculo
+    from honorarios.servicos import honorarios as servico
+
+    cliente, linhas = cenario
+    _parcelar(sessao, cliente, linhas, primeiro=date(2026, 10, 29))
+    [parcelamento] = parcelamentos.listar(sessao, REFERENCIA)
+    primeira = parcelamento.parcelas[0].honorario
+    servico.ajustar_juros(sessao, primeira, Decimal("0.00"), date(2026, 10, 9))
+    assert calculo.atualizar(primeira, date(2026, 10, 9)).juros == Decimal("0.00")
+    # e dali em diante volta a correr (20 dias 13,33 − os 10 já tirados 6,67)
+    assert calculo.atualizar(primeira, date(2026, 10, 19)).juros == Decimal("6.66")

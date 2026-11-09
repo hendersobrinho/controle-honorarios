@@ -164,7 +164,8 @@ def contar_atrasados(sessao: Session, referencia: date) -> int:
 
 def criar(sessao: Session, cliente: Cliente, linhas: Sequence[LinhaHonorario],
           valor_acordado: Decimal, parcelas: int, primeiro_vencimento: date,
-          tipo_id: int, desconto: Decimal = ZERO, observacoes: str = "") -> Renegociacao:
+          tipo_id: int, desconto: Decimal = ZERO, observacoes: str = "",
+          juros_ate_o_vencimento: bool = True) -> Renegociacao:
     for linha in linhas:
         if linha.honorario.cliente_id != cliente.id:
             raise ErroDeValidacao("Os honorários do parcelamento precisam ser do mesmo cliente.")
@@ -172,6 +173,7 @@ def criar(sessao: Session, cliente: Cliente, linhas: Sequence[LinhaHonorario],
         sessao, cliente=cliente, linhas=linhas, valor_acordado=valor_acordado,
         parcelas=parcelas, primeiro_vencimento=primeiro_vencimento, tipo_id=tipo_id,
         desconto=desconto, observacoes=observacoes,
+        juros_ate_o_vencimento=juros_ate_o_vencimento,
     )
 
 

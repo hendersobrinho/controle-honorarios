@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 
@@ -43,6 +43,45 @@ def dividir(valor: Decimal, parcelas: int, primeiro_vencimento: date) -> list[Pa
     return previstas
 
 
+FATOR = Decimal("0.000001")
+
+
+def fator_do_juros(linhas: Sequence[LinhaHonorario]) -> Decimal:
+    """Quanto do juros ao dia do cliente os honorários parcelados vinham pagando:
+    1 por honorário em aberto inteiro, a fração do saldo no pago em parte."""
+    total = ZERO
+    for linha in linhas:
+        original = linha.honorario.valor_original
+        if original > 0:
+            total += Decimal(linha.honorario.saldo_aberto) / Decimal(original)
+    return total
+
+
+def fatores_das_parcelas(fator_total: Decimal, previstas) -> list[Decimal]:
+    """A parte de cada parcela no juros ao dia, na proporção do valor dela."""
+    soma = sum((p.valor for p in previstas), start=ZERO)
+    if soma <= 0:
+        return [ZERO for _ in previstas]
+    return [(fator_total * p.valor / soma).quantize(FATOR) for p in previstas]
+
+
+def juros_previstos(cliente: Cliente, previstas, fatores: Sequence[Decimal],
+                    desde: date) -> list[Decimal]:
+    """O juros que cada parcela terá no próprio vencimento, contado desde ``desde``
+    (com o juros ao dia de hoje do cliente). Para a prévia do parcelamento."""
+    from ..dominio.juros import calcular_juros_com_parciais
+    from . import calculo
+
+    taxas = calculo.taxas_do_cliente(cliente)
+    resultado = []
+    for prevista, fator in zip(previstas, fatores, strict=True):
+        escaladas = tuple(replace(t, valor_dia=t.valor_dia * fator) for t in taxas)
+        resultado.append(calcular_juros_com_parciais(
+            vencimento=desde, data_referencia=prevista.vencimento, taxas=escaladas,
+            valor_original=prevista.valor).juros)
+    return resultado
+
+
 def criar(
     sessao: Session,
     cliente: Cliente,
@@ -53,7 +92,11 @@ def criar(
     tipo_id: int,
     desconto: Decimal = ZERO,
     observacoes: str = "",
+    juros_ate_o_vencimento: bool = True,
 ) -> Renegociacao:
+    """``juros_ate_o_vencimento``: cada parcela corre juros desde hoje (o dia do
+    parcelamento) até o vencimento dela, e depois, se atrasar. Sem isso, só depois
+    do vencimento. Nos dois casos, com a fração dela do juros ao dia."""
     if not linhas:
         raise ErroDeValidacao("Selecione os honorários que entram no acordo.")
     if parcelas < 1:
@@ -68,6 +111,8 @@ def criar(
                 f"{linha.honorario.status.rotulo.lower()} e não entra em acordo."
             )
 
+    # antes de os originais irem para Renegociado (saldo zero)
+    fator_total = fator_do_juros(linhas)
     total_original = sum((linha.atualizacao.valor_original for linha in linhas), start=ZERO)
     juros = sum((linha.atualizacao.juros for linha in linhas), start=ZERO)
 
@@ -99,7 +144,9 @@ def criar(
     if tipo is None:
         raise ErroDeValidacao("Escolha o tipo de honorário das parcelas.", "tipo")
 
-    for prevista in dividir(acordado, parcelas, primeiro_vencimento):
+    previstas = dividir(acordado, parcelas, primeiro_vencimento)
+    fatores = fatores_das_parcelas(fator_total, previstas)
+    for prevista, fator in zip(previstas, fatores, strict=True):
         numero, valor, vencimento = prevista.numero, prevista.valor, prevista.vencimento
         # a parcela só recebe competência se o tipo escolhido exigir uma
         if tipo.exige_competencia is ExigeCompetencia.MES:
@@ -118,6 +165,8 @@ def criar(
             observacoes=observacoes or "",
         )
         gerado = servico_honorarios.criar(sessao, dados)
+        gerado.juros_fator = fator
+        gerado.juros_desde = acordo.data if juros_ate_o_vencimento else None
         acordo.itens.append(RenegociacaoItem(honorario_gerado_id=gerado.id, valor=valor))
 
     sessao.add(

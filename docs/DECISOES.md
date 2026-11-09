@@ -508,6 +508,19 @@ parcela paga não deixa: o pagamento precisa ser estornado antes. O lembrete de
 envio de cada parcela é uma tarefa como a trimestral: sai das regras a cada
 leitura (``dias_lembrete_parcela`` dias antes do vencimento) e só a baixa é gravada.
 
+**O juros continua correndo nas parcelas.** O valor parcelado já leva o juros até o
+dia do parcelamento, e daí em diante cada parcela corre juros desde esse dia
+(``juros_desde``) até o vencimento dela e, se atrasar, depois também. Para não
+multiplicar o juros por parcela (o juros é R$ por dia por honorário), cada parcela
+recebe uma fração do juros ao dia do cliente (``juros_fator``): o quanto os
+honorários parcelados pagavam por dia (1 por honorário em aberto inteiro, a fração do
+saldo no pago em parte), dividido entre as parcelas na proporção do valor. Assim o
+cliente paga por dia, somando as parcelas, o mesmo que pagava antes. Desmarcando
+"Juros continua correndo até o vencimento" a parcela só corre juros depois do
+vencimento (com a mesma fração). Parcelas de antes desta regra (sem os dois campos)
+seguem a regra antiga. ``calculo.regra_de_juros`` concentra isso: o início da
+contagem e a taxa escalada; os dias de atraso continuam contados do vencimento.
+
 ## Decisões técnicas
 
 ### PostgreSQL no escritório, SQLite no desenvolvimento

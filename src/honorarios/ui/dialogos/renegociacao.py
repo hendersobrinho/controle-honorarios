@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...dominio.valores import ZERO, formatar_data, formatar_moeda, hoje, somar_meses
-from ...servicos import calculo, parcelamentos
+from ...servicos import calculo, parcelamentos, renegociacoes
 from ...servicos import honorarios as servico_honorarios
 from ..comum import widgets
 from ..comum.campos import CampoData, CampoMoeda, ComboRegistros, Rotulo
@@ -51,12 +52,14 @@ class DialogoRenegociacao(QDialog):
         self._valor_mexido = False
         # juros acertado aqui, por honorário (None = o calculado); só vale no parcelamento
         self._juros: dict[int, Decimal | None] = {}
+        # prévia: o juros que cada parcela terá no próprio vencimento (por número)
+        self._juros_previsto: dict[int, Decimal] = {}
         self.acordo = None
         from ...servicos import tarefas
 
         self._dias_lembrete = tarefas.dias_antes_da_parcela(contexto.sessao)
         self.setWindowTitle(f"Parcelar – {cliente.nome}" if cliente else "Novo parcelamento")
-        self.resize(900, 720)
+        self.resize(980, 720)
         self._montar()
         self._carregar_cliente(cliente)
 
@@ -141,27 +144,41 @@ class DialogoRenegociacao(QDialog):
         if padrao is not None:
             self.tipo.definir(padrao.id)
         formulario.addRow("Tipo das parcelas:", self.tipo)
+        self.juros_correndo = QCheckBox("Juros continua correndo até o vencimento de cada parcela")
+        self.juros_correndo.setChecked(True)
+        self.juros_correndo.setToolTip(
+            "Cada parcela corre juros desde hoje até o vencimento dela (e depois, se atrasar), "
+            "na parte dela do juros ao dia que os honorários parcelados pagavam.\n"
+            "Desmarcado: a parcela só corre juros depois do vencimento.")
+        self.juros_correndo.toggled.connect(lambda *_: self._recalcular())
+        formulario.addRow("", self.juros_correndo)
         self.observacoes = QPlainTextEdit()
         self.observacoes.setMaximumHeight(60)
         formulario.addRow("Observações:", self.observacoes)
         coluna = QVBoxLayout()
         coluna.addLayout(formulario)
         coluna.addStretch(1)
-        meio.addLayout(coluna, 1)
+        meio.addLayout(coluna, 5)
 
         previa = QVBoxLayout()
         previa.addWidget(QLabel("<b>As parcelas</b>"))
         self.modelo_parcelas = ModeloTabela(
             [
-                Coluna("Parcela", lambda p: f"{p.numero}/{self.parcelas.value()}"),
-                coluna_data("Vencimento", lambda p: p.vencimento),
-                coluna_moeda("Valor", lambda p: p.valor, negrito=True),
+                Coluna("Parcela", lambda p: f"{p.numero}/{self.parcelas.value()}", largura=72),
+                coluna_data("Vencimento", lambda p: p.vencimento, largura=96),
+                coluna_moeda("Valor", lambda p: p.valor, largura=96),
+                coluna_moeda("Juros até o venc.", lambda p: self._juros_previsto.get(p.numero,
+                                                                                      ZERO),
+                             largura=118),
+                coluna_moeda("No vencimento", lambda p: p.valor + self._juros_previsto.get(
+                    p.numero, ZERO), negrito=True),
             ]
         )
-        self.tabela_parcelas = preparar_tabela(QTableView(), esticar=1)
+        self.tabela_parcelas = preparar_tabela(QTableView(), esticar=4)
         self.tabela_parcelas.setModel(self.modelo_parcelas)
+        ajustar_colunas(self.tabela_parcelas, self.modelo_parcelas.colunas)
         previa.addWidget(self.tabela_parcelas, 1)
-        meio.addLayout(previa, 1)
+        meio.addLayout(previa, 6)
         layout.addLayout(meio, 3)
 
         self.resumo = widgets.rotulo_fraco("")
@@ -282,6 +299,7 @@ class DialogoRenegociacao(QDialog):
             self.valor_acordado.blockSignals(False)
         valor = self.valor_acordado.valor()
         previstas = self.previstas() if valor > 0 else []
+        self._juros_previsto = self._prever_juros(previstas)
         self.modelo_parcelas.definir_itens(previstas)
         quantidade = len(self.escolhidos())
         juros = sum((self.atualizacao(linha).juros for linha in self.escolhidos()), start=ZERO)
@@ -302,9 +320,20 @@ class DialogoRenegociacao(QDialog):
             f"{quantidade} honorário(s) de {formatar_moeda(total)} viram "
             f"{self.parcelas.value()} parcela(s), somando {formatar_moeda(valor)}"
             + (f", até {formatar_data(ultima)}" if ultima else "")
+            + (". O juros continua correndo em cada parcela até o vencimento (e depois, "
+               "se atrasar)" if self.juros_correndo.isChecked() else
+               ". Cada parcela só corre juros se atrasar")
             + ". Os honorários escolhidos ficam como Renegociado; em Tarefas aparece o "
             f"lembrete de enviar cada parcela {self._dias_lembrete} dia(s) antes do vencimento."
         )
+
+    def _prever_juros(self, previstas) -> dict[int, Decimal]:
+        if not previstas or self.cliente is None or not self.juros_correndo.isChecked():
+            return {}
+        fatores = renegociacoes.fatores_das_parcelas(
+            renegociacoes.fator_do_juros(self.escolhidos()), previstas)
+        juros = renegociacoes.juros_previstos(self.cliente, previstas, fatores, hoje())
+        return {p.numero: valor for p, valor in zip(previstas, juros, strict=True)}
 
     def _confirmar(self) -> None:
         linhas = [replace(linha, atualizacao=self.atualizacao(linha))
@@ -337,6 +366,7 @@ class DialogoRenegociacao(QDialog):
                 primeiro_vencimento=self.primeiro_vencimento.valor(),
                 tipo_id=self.tipo.valor(),
                 observacoes=self.observacoes.toPlainText(),
+                juros_ate_o_vencimento=self.juros_correndo.isChecked(),
             )
             self.contexto.salvar()
 

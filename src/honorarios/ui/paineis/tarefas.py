@@ -240,6 +240,8 @@ class PainelTarefas(QWidget):
         from ..dialogos.cobrar import DialogoCobrar
 
         dialogo = DialogoCobrar(self.contexto, tarefa.cliente, [tarefa.parcela.linha], self)
+        # a parcela ainda vai vencer: o valor do dia do vencimento, com o juros até lá
+        dialogo.valores_ate(tarefa.parcela.honorario.vencimento)
         dialogo.exec()
         if dialogo.registrou:
             self._dar_baixa(tarefa)
