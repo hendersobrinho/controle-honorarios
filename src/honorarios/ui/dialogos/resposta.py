@@ -91,7 +91,7 @@ class DialogoResposta(QDialog):
             self.promessa.definir(hoje())
         if self.resultado.valor() is ResultadoCobranca.PEDIU_RENEGOCIACAO:
             self.aviso.setText(
-                "Depois de salvar, use \"Renegociar selecionados\" na Cobrança geral "
+                "Depois de salvar, use \"Parcelar…\" no cartão ou a tela Parcelamentos "
                 "para fechar o acordo."
             )
         elif self.resultado.valor() is ResultadoCobranca.PAGOU:

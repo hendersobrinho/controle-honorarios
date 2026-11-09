@@ -322,6 +322,15 @@ def folha_de_estilo(tema: str = "claro") -> str:
     }}
     QToolButton#menuAcoes:hover {{ border-color: {c["destaque_texto"]}; }}
     QToolButton#menuAcoes::menu-indicator {{ image: none; width: 0px; }}
+    QPushButton#botaoVersaoNova {{
+        padding: 8px 10px;
+        font-weight: 700;
+        color: {c["texto_sobre_marca"]};
+        background: {c["marca"]};
+        border: none;
+        border-radius: 8px;
+    }}
+    QPushButton#botaoVersaoNova:hover {{ background: #FFC57A; }}
     QPushButton#cartaoPagamento {{
         padding: 4px 10px;
         font-size: 12px;

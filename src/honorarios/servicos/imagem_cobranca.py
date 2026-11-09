@@ -267,16 +267,28 @@ def para_imagem(texto_svg: str) -> str:
 # ----------------------------------------------------------------------- dados
 
 
-def _linha(linha, selecao: Selecao, atualizacao) -> LinhaImagem:
-    honorario = linha.honorario
+# a descrição que o parcelamento dá às parcelas ("Parcelamento 3 – parcela 1/3"; as
+# antigas, "Acordo 3 – parcela 1/3"): na imagem fica só "Parcela 1/3"
+_PARCELA = re.compile(r"^(?:Parcelamento|Acordo)\s+\d+\s+[–-]\s+parcela\s+(\d+/\d+)$")
+
+
+def titulo_do_honorario(honorario) -> str:
+    """Como o honorário aparece na imagem: tipo e competência, ou só "Parcela 1/3"."""
+    parcela = _PARCELA.match((honorario.descricao or "").strip())
+    if parcela and not (honorario.competencia_ano and honorario.competencia_mes):
+        return f"Parcela {parcela.group(1)}"
     competencia = honorario.competencia_rotulo or honorario.descricao
     tipo = honorario.tipo.nome
     if not competencia:
-        titulo = tipo
-    elif competencia.startswith(tipo):
-        titulo = competencia
-    else:
-        titulo = f"{tipo} · {competencia}"
+        return tipo
+    if competencia.startswith(tipo):
+        return competencia
+    return f"{tipo} · {competencia}"
+
+
+def _linha(linha, selecao: Selecao, atualizacao) -> LinhaImagem:
+    honorario = linha.honorario
+    titulo = titulo_do_honorario(honorario)
     if honorario.cliente_id != selecao.cliente.id:
         titulo = f"{honorario.cliente.nome}: {titulo}"
     detalhe = f"Vencimento {formatar_data(honorario.vencimento)}"
@@ -357,11 +369,7 @@ def montar_agradecimento(sessao: Session, honorarios) -> DadosImagem:
         pago = sum((p.valor_pago for p in pagamentos), start=ZERO)
         data = max(p.data for p in pagamentos)
         parcial = honorario.status is not StatusPagamento.PAGO
-        competencia = honorario.competencia_rotulo or honorario.descricao
-        tipo = honorario.tipo.nome
-        titulo = tipo if not competencia else (
-            competencia if competencia.startswith(tipo) else f"{tipo} · {competencia}"
-        )
+        titulo = titulo_do_honorario(honorario)
         linhas.append(LinhaImagem(
             titulo=titulo,
             # sem a data do pagamento: o dia exato nem sempre se sabe

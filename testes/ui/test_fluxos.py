@@ -502,10 +502,13 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
 
     janela = JanelaPrincipal(contexto)
     qtbot.addWidget(janela)
-    assert janela.telas.count() == 13
-    assert len(janela.linhas_de_tela) == 13
+    assert janela.telas.count() == 12
+    assert len(janela.linhas_de_tela) == 12
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
-    assert "Importação personalizada" in titulos and "Tarefas" in titulos
+    assert "Tarefas" in titulos
+    # as importações ficam em Configurações → Importação, fora do menu
+    assert "Importar planilha" not in titulos and "Importação personalizada" not in titulos
+    assert titulos[4] == "Parcelamentos"   # subtópico no fim de Cobrança
     assert "Gerenciador de e-mail" in titulos
     assert "Ranking dos atrasados" in titulos
     # as cobranças enviadas viraram a última aba de Vencimentos
@@ -1509,7 +1512,7 @@ def test_cartao_em_aberto_tem_editar_nas_opcoes(qtbot, contexto, cliente_com_deb
     opcoes = {acao.texto: acao for acao in painel._opcoes_do_cartao(linha)}
     assert list(opcoes) == [
         "Histórico", "Editar", "Anotar retorno do cliente…",
-        "Registrar cobrança feita por fora…", "Ficha da empresa", "Renegociar…",
+        "Registrar cobrança feita por fora…", "Ficha da empresa", "Parcelar…",
         "Cancelar honorário…",
     ]
     opcoes["Editar"].funcao(linha)
@@ -1572,7 +1575,7 @@ def test_topo_da_cobranca_enxuto_com_chips(qtbot, contexto, cliente_com_debito):
     assert acoes["Registrar pagamento"] == "Ctrl+P"
     assert acoes["Ficha da empresa"] == "Ctrl+F"
     assert acoes["Atualizar"] == "F5"
-    assert "Renegociar selecionados" in acoes and "Exportar lista" in acoes
+    assert "Parcelar selecionados" in acoes and "Exportar lista" in acoes
 
     # sem os filtros de faixa, "nunca cobrado" e agrupar: a lista é sempre por empresa
     assert not hasattr(painel, "faixa") and not hasattr(painel, "nunca_cobrado")
@@ -2872,3 +2875,273 @@ def test_cobrar_abre_na_imagem_e_manda_pelo_whatsapp(qtbot, contexto, cliente_co
     assert not QGuiApplication.clipboard().image().isNull()   # a imagem, para o Ctrl+V
     assert len(abertos) == 1 and "27999990000" in abertos[0]   # a conversa do contato
     assert "WhatsApp aberto e imagem copiada" in dialogo.aviso.text()
+
+
+# ------------------------------------------------------------- parcelamentos
+
+
+def test_novo_parcelamento_escolhe_o_cliente_e_os_honorarios(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.dialogos.renegociacao import DialogoRenegociacao
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
+    from honorarios.ui.paineis.parcelamentos import PainelParcelamentos
+
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    dialogo = DialogoRenegociacao(contexto)
+    qtbot.addWidget(dialogo)
+    assert not dialogo.botao_confirmar.isEnabled()      # sem cliente, nada a parcelar
+    dialogo.campo_cliente.mudou.emit(cliente_com_debito)
+    assert len(dialogo.modelo.itens) == 2 and dialogo.escolhidos() == []
+    dialogo.modelo.marcar_todos()
+    assert dialogo.valor_acordado.valor() == Decimal("1551.00")   # com o juros de hoje
+    dialogo.parcelas.setValue(3)
+    assert [p.valor for p in dialogo.modelo_parcelas.itens] == [Decimal("517.00")] * 3
+    dialogo.primeiro_vencimento.definir(date(2026, 10, 20))
+    dialogo._confirmar()
+    assert dialogo.acordo is not None
+
+    # as parcelas saem de Vencimentos e aparecem em Parcelamentos
+    atrasados = PainelAtrasados(contexto)
+    qtbot.addWidget(atrasados)
+    assert atrasados.lista.itens == []
+    painel = PainelParcelamentos(contexto)
+    qtbot.addWidget(painel)
+    [parcelamento] = painel.lista.itens
+    assert len(parcelamento.parcelas) == 3 and not parcelamento.atrasadas
+    cartao = painel._cartao(parcelamento)
+    assert cartao.situacao == "0 de 3 pagas"
+    assert cartao.valor == "R$ 1.551,00"
+    assert [a.texto for a in cartao.acoes] == ["Confirmar pagamento"]
+    assert "Cancelar parcelamento…" in [a.texto for a in cartao.opcoes]
+
+
+def test_parcelar_pelo_cartao_ja_vem_com_o_honorario_marcado(
+    qtbot, contexto, cliente_com_debito
+):
+    from honorarios.ui.dialogos.renegociacao import DialogoRenegociacao
+
+    linha = linhas_do(contexto.sessao, cliente_com_debito)[0]
+    dialogo = DialogoRenegociacao(contexto, cliente_com_debito, [linha])
+    qtbot.addWidget(dialogo)
+    assert [x.honorario.id for x in dialogo.escolhidos()] == [linha.honorario.id]
+    assert dialogo.valor_acordado.valor() == linha.atualizacao.total
+    dialogo.valor_acordado.definir(Decimal("400.00"))     # à mão: não volta sozinho
+    dialogo.parcelas.setValue(2)
+    assert dialogo.valor_acordado.valor() == Decimal("400.00")
+    assert [p.valor for p in dialogo.modelo_parcelas.itens] == [Decimal("200.00")] * 2
+
+
+def test_parcela_atrasada_pede_cobranca_e_mostra_as_parcelas(
+    qtbot, contexto, cliente_com_debito
+):
+    from sqlalchemy import select
+
+    from honorarios.infra.modelos import TipoHonorario
+    from honorarios.servicos import parcelamentos
+    from honorarios.ui.dialogos.parcelas import DialogoParcelas
+    from honorarios.ui.paineis.parcelamentos import PainelParcelamentos
+
+    tipo = contexto.sessao.scalar(
+        select(TipoHonorario).where(TipoHonorario.nome == "Parcela de acordo"))
+    parcelamentos.criar(
+        contexto.sessao, cliente_com_debito, linhas_do(contexto.sessao, cliente_com_debito),
+        Decimal("1200.00"), 4, date(2026, 9, 9), tipo.id)
+    contexto.salvar()
+    painel = PainelParcelamentos(contexto)
+    qtbot.addWidget(painel)
+    assert painel.lista.titulos()[0] == "Com parcela atrasada"
+    [parcelamento] = painel.lista.itens
+    cartao = painel._cartao(parcelamento)
+    assert cartao.situacao == "Parcela 1/4 atrasada há 20 dia(s)"
+    assert [a.texto for a in cartao.acoes] == ["Cobrar", "Confirmar pagamento"]
+
+    dialogo = DialogoParcelas(contexto, parcelamento)
+    qtbot.addWidget(dialogo)
+    assert dialogo.atual().numero == 1                  # a próxima em aberto já escolhida
+    assert dialogo.botao_pagar.isEnabled() and not dialogo.botao_estornar.isEnabled()
+
+
+def test_parcelar_com_juros_acertado_a_mao_e_sem_juros(
+    qtbot, contexto, cliente_com_debito, monkeypatch
+):
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.dialogos import juros_manual
+    from honorarios.ui.dialogos.renegociacao import DialogoRenegociacao
+
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    linhas = linhas_do(contexto.sessao, cliente_com_debito)
+    dialogo = DialogoRenegociacao(contexto, cliente_com_debito, linhas)
+    qtbot.addWidget(dialogo)
+    assert dialogo.valor_acordado.valor() == Decimal("1551.00")
+    assert dialogo.juros_resumo.text() == "Juros incluídos: R$ 51,00"
+
+    # tirar o juros dos marcados: fica só o valor
+    dialogo._tirar_juros()
+    assert dialogo.valor_acordado.valor() == Decimal("1500.00")
+    assert "(calculado R$ 51,00)" in dialogo.juros_resumo.text()
+    assert dialogo.escolhidos() == dialogo.modelo.itens        # as marcações ficam
+
+    # acertar um só à mão, pela janela do juros
+    def acertar(self):
+        self.juros = Decimal("5.00")
+        return 1
+    monkeypatch.setattr(juros_manual.DialogoJurosManual, "exec", acertar)
+    dialogo.tabela.setCurrentIndex(dialogo.modelo.index(0, 0))
+    dialogo._alterar_juros()
+    assert dialogo.valor_acordado.valor() == Decimal("1505.00")
+
+    dialogo._confirmar()
+    assert dialogo.acordo.juros_incluidos == Decimal("5.00")
+    assert dialogo.acordo.valor_acordado == Decimal("1505.00")
+
+    dialogo2 = DialogoRenegociacao(contexto, cliente_com_debito, [])
+    qtbot.addWidget(dialogo2)
+    assert dialogo2.modelo.itens == []       # já parcelados: nada em aberto
+
+
+def test_janela_do_juros_sem_juros_e_calculado(qtbot, contexto, cliente_com_debito):
+    from honorarios.ui.dialogos.juros_manual import DialogoJurosManual
+
+    linha = linhas_do(contexto.sessao, cliente_com_debito)[0]
+    dialogo = DialogoJurosManual("Teste", linha.honorario, linha.atualizacao)
+    qtbot.addWidget(dialogo)
+    assert not dialogo.botao_calculado.isEnabled()      # nada acertado ainda
+    dialogo.campo.definir(linha.atualizacao.juros)      # o próprio calculado
+    dialogo._aplicar()
+    assert dialogo.juros is None
+    dialogo.campo.definir(Decimal("7.00"))
+    dialogo._aplicar()
+    assert dialogo.juros == Decimal("7.00")
+    dialogo._sem_juros()
+    assert dialogo.juros == Decimal("0.00")
+
+
+def test_tirar_o_juros_das_parcelas_atrasadas(qtbot, contexto, cliente_com_debito,
+                                              monkeypatch):
+    from sqlalchemy import select
+
+    from honorarios.dominio.valores import hoje
+    from honorarios.infra.modelos import TipoHonorario
+    from honorarios.servicos import calculo, parcelamentos
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.dialogos.parcelas import DialogoParcelas
+    from honorarios.ui.paineis.parcelamentos import PainelParcelamentos
+
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    tipo = contexto.sessao.scalar(
+        select(TipoHonorario).where(TipoHonorario.nome == "Parcela de acordo"))
+    parcelamentos.criar(
+        contexto.sessao, cliente_com_debito, linhas_do(contexto.sessao, cliente_com_debito),
+        Decimal("1200.00"), 4, date(2026, 9, 9), tipo.id)
+    contexto.salvar()
+    painel = PainelParcelamentos(contexto)
+    qtbot.addWidget(painel)
+    [parcelamento] = painel.lista.itens
+    cartao = painel._cartao(parcelamento)
+    assert ("Juros", "R$ 20,00") in cartao.detalhes          # 20 dias da 1ª parcela
+    opcoes = {a.texto: a for a in cartao.opcoes}
+    assert "Tirar o juros das atrasadas…" in opcoes
+
+    dialogo = DialogoParcelas(contexto, parcelamento)
+    qtbot.addWidget(dialogo)
+    assert dialogo.botao_juros.isEnabled() and dialogo.botao_sem_juros.isEnabled()
+    dialogo._tirar_juros()
+    primeira = dialogo.parcelamento.parcelas[0]
+    assert primeira.honorario.juros_ajustado == Decimal("0.00")
+    # o acerto vale do dia de hoje (o de verdade) em diante: zero hoje
+    hoje_ = calculo.atualizar(primeira.honorario, hoje())
+    assert hoje_.juros_manual and hoje_.juros == Decimal("0.00")
+
+
+def test_menu_tem_o_subtopico_parcelamento(qtbot, contexto):
+    from honorarios.ui.janela_principal import ContadorDoMenu, JanelaPrincipal
+
+    janela = JanelaPrincipal(contexto)
+    qtbot.addWidget(janela)
+    textos = [janela.navegacao.item(i).text() for i in range(janela.navegacao.count())]
+    sub = textos.index("Parcelamento")
+    assert janela.navegacao.item(sub).data(ContadorDoMenu.PAPEL_SUBTOPICO) == 0
+    assert textos[sub + 1] == "Parcelamentos"
+    assert sub not in janela.linhas_de_tela                 # não é tela: não se escolhe
+
+
+def test_importacoes_ficam_em_configuracoes(qtbot, contexto):
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+
+    painel = PainelConfiguracoes(contexto, executor=lambda *a, **k: None)
+    qtbot.addWidget(painel)
+    nomes = [painel.abas.tabText(i) for i in range(painel.abas.count())]
+    assert "Importação" in nomes
+    abas = painel.abas_importacao
+    assert [abas.tabText(i) for i in range(abas.count())] == [
+        "Planilha de controle", "Personalizada"]
+
+
+def test_botao_de_versao_nova_so_aparece_quando_ha(qtbot, contexto, monkeypatch):
+    from types import SimpleNamespace
+
+    from honorarios.servicos import atualizacao
+    from honorarios.ui.comum import segundo_plano
+    from honorarios.ui.janela_principal import JanelaPrincipal
+
+    janela = JanelaPrincipal(contexto)
+    qtbot.addWidget(janela)
+    assert not janela.botao_versao_nova.isVisibleTo(janela)    # nada novo: escondido
+
+    nova = [True]
+    monkeypatch.setattr(atualizacao, "mais_nova", lambda lancamento: nova[0])
+    monkeypatch.setattr(segundo_plano, "executar",
+                        lambda funcao, ok, erro: ok(SimpleNamespace(versao="9.9.9")))
+    janela.verificar_atualizacao()
+    assert janela.botao_versao_nova.isVisibleTo(janela)
+    assert janela.botao_versao_nova.text() == "⬆  Atualizar para a 9.9.9"
+
+    chamadas = []
+    from honorarios.ui.paineis.configuracoes import PainelConfiguracoes
+    monkeypatch.setattr(PainelConfiguracoes, "verificar_e_atualizar",
+                        lambda self: chamadas.append(self))
+    janela.botao_versao_nova.click()
+    assert len(chamadas) == 1
+    assert janela.telas.currentWidget() is chamadas[0]
+
+    nova[0] = False            # já atualizado: o botão some
+    janela.verificar_atualizacao()
+    assert not janela.botao_versao_nova.isVisibleTo(janela)
+
+
+def test_tarefas_mostram_o_envio_das_parcelas(qtbot, contexto, cliente_com_debito,
+                                              monkeypatch):
+    from sqlalchemy import select
+
+    from honorarios.infra.modelos import TipoHonorario
+    from honorarios.servicos import parcelamentos, tarefas
+    from honorarios.ui.dialogos import cobrar
+    from honorarios.ui.paineis.tarefas import PainelTarefas
+
+    tipo = contexto.sessao.scalar(
+        select(TipoHonorario).where(TipoHonorario.nome == "Parcela de acordo"))
+    # 1ª parcela vence em 02/10 (lembrete desde 27/09); a 2ª em 02/11
+    parcelamentos.criar(
+        contexto.sessao, cliente_com_debito, linhas_do(contexto.sessao, cliente_com_debito),
+        Decimal("1000.00"), 2, date(2026, 10, 2), tipo.id)
+    contexto.salvar()
+    painel = PainelTarefas(contexto)
+    qtbot.addWidget(painel)
+    assert painel.lista.titulos()[0] == "Enviar parcelas"
+    [tarefa] = painel.quadro.parcelas
+    cartao = painel._cartao_parcela(tarefa)
+    assert cartao.situacao == "Vence em 3 dia(s)"
+    assert [a.texto for a in cartao.acoes] == ["Ver parcelas", "Enviar lembrete", "Dar baixa"]
+    assert "1 parcela(s) para enviar" in painel.resumo.text()
+
+    # enviar o lembrete pelo Cobrar: registrado, a tarefa tem baixa sozinha
+    def enviou(self):
+        self.registrou = True
+        return 1
+    monkeypatch.setattr(cobrar.DialogoCobrar, "exec", enviou)
+    painel._enviar_parcela(tarefa)
+    assert painel.quadro.parcelas == []
+    assert [t.periodo for t in painel.quadro.parcelas_feitas] == ["1/2"]
+    assert tarefas.quadro(contexto.sessao, REFERENCIA).parcelas_feitas

@@ -232,6 +232,8 @@ class _PainelDeHonorarios(QWidget):
     # None = todos; False = sem os clientes só de IR (que têm tela própria); True = só eles
     clientes_so_ir: bool | None = False
     mostrar_filtro_grupo = True
+    # as parcelas de parcelamento são acompanhadas na tela Parcelamentos
+    incluir_parcelas = False
 
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
@@ -296,7 +298,23 @@ class _PainelDeHonorarios(QWidget):
                          "O honorário volta para Em aberto", separar=True)]
         if status is not StatusPagamento.EM_ABERTO:
             return []
-        return [Acao("Cancelar honorário…", self._cancelar_um, separar=True)]
+        return [Acao("Parcelar…", self._renegociar_um,
+                     "Dividir em parcelas: vai para a tela Parcelamentos", separar=True),
+                Acao("Cancelar honorário…", self._cancelar_um)]
+
+    def _renegociar(self) -> None:
+        linhas = [linha for linha in self._selecionados() if linha.honorario.status.cobravel]
+        if not linhas or len({linha.cliente.id for linha in linhas}) > 1:
+            widgets.aviso(self, "Selecione os honorários de uma única empresa para parcelar.")
+            return
+        self._renegociar_linhas(linhas)
+
+    def _renegociar_um(self, linha: LinhaHonorario) -> None:
+        self._renegociar_linhas([linha])
+
+    def _renegociar_linhas(self, linhas: list[LinhaHonorario]) -> None:
+        if DialogoRenegociacao(self.contexto, linhas[0].cliente, linhas, self).exec():
+            self.recarregar()
 
     def _acao_de_pagamento(self, linha: LinhaHonorario) -> list[Acao]:
         """O botão verde, por último: é o que tira o honorário da cobrança."""
@@ -390,6 +408,7 @@ class _PainelDeHonorarios(QWidget):
             grupo_id=self.grupo.currentData() if self.mostrar_filtro_grupo else None,
             data_referencia=self.contexto.data_referencia,
             clientes_so_ir=self.clientes_so_ir,
+            incluir_parcelas=self.incluir_parcelas,
             **extras,
         )
 
@@ -693,7 +712,7 @@ class PainelAtrasados(_PainelDeHonorarios):
     def _botoes_do_rodape(self):
         return [
             ("Registrar cobrança em lote", self._cobrar_em_lote),
-            ("Renegociar selecionados", self._renegociar),
+            ("Parcelar selecionados", self._renegociar),
             ("Cancelar honorário", self._cancelar),
             ("Exportar lista", self._exportar),
         ]
@@ -727,31 +746,9 @@ class PainelAtrasados(_PainelDeHonorarios):
     def _rotulo_total(self) -> str:
         return "total atualizado"
 
-    def _opcoes_extras(self, linha):
-        extras = super()._opcoes_extras(linha)
-        if linha.honorario.status.cobravel:
-            extras.insert(0, Acao("Renegociar…", self._renegociar_um,
-                                  "Acordo, parcelamento ou novo vencimento", separar=True))
-            if len(extras) > 1:
-                extras[1].separar = False   # renegociar e cancelar no mesmo grupo
-        return extras
-
     def _cobrar_em_lote(self) -> None:
         self._registrar_cobranca(self._selecionados())
 
-    def _renegociar(self) -> None:
-        linhas = [linha for linha in self._selecionados() if linha.honorario.status.cobravel]
-        if not linhas or len({linha.cliente.id for linha in linhas}) > 1:
-            widgets.aviso(self, "Selecione os honorários em atraso de uma única empresa.")
-            return
-        self._renegociar_linhas(linhas)
-
-    def _renegociar_um(self, linha: LinhaHonorario) -> None:
-        self._renegociar_linhas([linha])
-
-    def _renegociar_linhas(self, linhas: list[LinhaHonorario]) -> None:
-        if DialogoRenegociacao(self.contexto, linhas[0].cliente, linhas, self).exec():
-            self.recarregar()
 
 
 # ------------------------------------------------------------------- a vencer
@@ -807,6 +804,7 @@ class PainelPagos(_PainelDeHonorarios):
     titulo = "Pagos"
     subtitulo = "Registro dos honorários quitados"
     vazio = "Nenhum honorário desta competência foi pago."
+    incluir_parcelas = True   # parcela paga é dinheiro que entrou no mês
 
     def _botoes_do_cabecalho(self):
         return [("Ficha da empresa", self._ficha, False, "Ctrl+F")]

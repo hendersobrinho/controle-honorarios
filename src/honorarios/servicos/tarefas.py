@@ -12,6 +12,11 @@ mudar a data de entrada da empresa refaz a conta. Só a baixa vira linha
 (``Tarefa``); desfazer a baixa apaga a linha. Para a lista não nascer com anos de
 pendências de quem é cliente há muito tempo, só entram os trimestres completados
 nos últimos ``JANELA_MESES`` meses.
+
+**Envio das parcelas.** Cada parcela em aberto de um parcelamento vira a tarefa de
+enviá-la ao cliente (boleto, Pix…) ``dias_lembrete_parcela`` dias antes do
+vencimento escolhido no parcelamento (5 por padrão, em Configurações). Parcela paga
+ou parcelamento cancelado saem da lista; a baixa fica como nas trimestrais.
 """
 
 from __future__ import annotations
@@ -29,6 +34,9 @@ from .erros import ErroDeValidacao
 
 JANELA_MESES = 12
 PREFIXO = "trimestre"
+PREFIXO_PARCELA = "parcela"
+CHAVE_DIAS_PARCELA = "dias_lembrete_parcela"
+DIAS_PARCELA_PADRAO = 5
 
 
 def trimestre(inicio: date) -> tuple[date, date]:
@@ -76,6 +84,58 @@ class TarefaTrimestral:
 
 
 @dataclass
+class TarefaParcela:
+    """Enviar ao cliente uma parcela do parcelamento, antes do vencimento."""
+
+    parcelamento: object    # servicos.parcelamentos.Parcelamento
+    parcela: object         # servicos.parcelamentos.Parcela
+    dias_antes: int
+    feita: Tarefa | None = None
+
+    @property
+    def cliente(self) -> Cliente:
+        return self.parcelamento.cliente
+
+    @property
+    def honorario(self):
+        return self.parcela.honorario
+
+    @property
+    def chave(self) -> str:
+        return f"{PREFIXO_PARCELA}:{self.honorario.id}"
+
+    @property
+    def vencimento(self) -> date:
+        return self.honorario.vencimento
+
+    @property
+    def prazo(self) -> date:
+        """Desde quando lembrar: alguns dias antes do vencimento."""
+        return self.vencimento - timedelta(days=self.dias_antes)
+
+    @property
+    def periodo(self) -> str:
+        return f"{self.parcela.numero}/{len(self.parcelamento.parcelas)}"
+
+    @property
+    def descricao(self) -> str:
+        return (f"Enviar a parcela {self.periodo} do parcelamento "
+                f"(vence {formatar_data(self.vencimento)})")
+
+    # o período que a baixa grava (mesma tabela das trimestrais)
+    @property
+    def inicio(self) -> date:
+        return self.vencimento
+
+    @property
+    def fim(self) -> date:
+        return self.vencimento
+
+    def dias_esperando(self, referencia: date) -> int:
+        return max(0, (referencia - self.prazo).days)
+
+
+@dataclass
 class Quadro:
     """Tudo o que a tela de tarefas mostra."""
 
@@ -84,6 +144,14 @@ class Quadro:
     feitas: list[TarefaTrimestral] = field(default_factory=list)
     # têm honorário trimestral mas falta a data de entrada: sem ela não há conta
     sem_data: list[Cliente] = field(default_factory=list)
+    # envio das parcelas dos parcelamentos
+    parcelas: list[TarefaParcela] = field(default_factory=list)
+    parcelas_proximas: list[TarefaParcela] = field(default_factory=list)
+    parcelas_feitas: list[TarefaParcela] = field(default_factory=list)
+
+    @property
+    def para_fazer(self) -> int:
+        return len(self.pendentes) + len(self.parcelas)
 
 
 def _contratos_trimestrais(sessao: Session) -> list[Contrato]:
@@ -126,20 +194,57 @@ def quadro(sessao: Session, referencia: date | None = None) -> Quadro:
     resultado.proximas.sort(key=lambda t: (t.prazo, t.cliente.nome))
     resultado.feitas.sort(key=lambda t: t.feita.concluida_em, reverse=True)
     resultado.sem_data.sort(key=lambda c: c.nome)
+    _parcelas(sessao, referencia, resultado)
     return resultado
 
 
+def dias_antes_da_parcela(sessao: Session) -> int:
+    from . import configuracoes
+
+    return configuracoes.obter_int(sessao, CHAVE_DIAS_PARCELA, DIAS_PARCELA_PADRAO)
+
+
+def _parcelas(sessao: Session, referencia: date, resultado: Quadro) -> None:
+    from . import parcelamentos
+
+    dias = dias_antes_da_parcela(sessao)
+    feitas = {t.chave: t for t in sessao.scalars(
+        select(Tarefa).where(Tarefa.chave.like(f"{PREFIXO_PARCELA}:%")))}
+    for parcelamento in parcelamentos.listar(sessao, referencia):
+        proxima_vista = False
+        for parcela in parcelamento.parcelas:
+            tarefa = TarefaParcela(parcelamento, parcela, dias)
+            tarefa.feita = feitas.get(tarefa.chave)
+            if tarefa.feita is not None:
+                resultado.parcelas_feitas.append(tarefa)
+            elif not parcela.em_aberto:
+                continue    # paga ou cancelada: não precisa mais enviar
+            elif tarefa.prazo <= referencia:
+                resultado.parcelas.append(tarefa)
+            elif not proxima_vista:   # das futuras, só a próxima de cada parcelamento
+                resultado.parcelas_proximas.append(tarefa)
+                proxima_vista = True
+    resultado.parcelas.sort(key=lambda t: (t.vencimento, t.cliente.nome))
+    resultado.parcelas_proximas.sort(key=lambda t: (t.prazo, t.cliente.nome))
+    janela = somar_meses(referencia, -JANELA_MESES)
+    resultado.parcelas_feitas = sorted(
+        (t for t in resultado.parcelas_feitas if t.vencimento >= janela),
+        key=lambda t: t.feita.concluida_em, reverse=True)
+
+
 def contar_pendentes(sessao: Session, referencia: date | None = None) -> int:
-    return len(quadro(sessao, referencia).pendentes)
+    return quadro(sessao, referencia).para_fazer
 
 
-def concluir(sessao: Session, tarefa: TarefaTrimestral, observacao: str = "") -> Tarefa:
-    """Dá baixa: o honorário do trimestre foi enviado."""
+def concluir(sessao: Session, tarefa: TarefaTrimestral | TarefaParcela,
+             observacao: str = "") -> Tarefa:
+    """Dá baixa: o honorário do trimestre (ou a parcela) foi enviado."""
     if tarefa.feita is not None:
         raise ErroDeValidacao(f"Essa tarefa já teve baixa em "
                               f"{formatar_data(tarefa.feita.concluida_em)}.")
     feita = Tarefa(
-        chave=tarefa.chave, cliente_id=tarefa.cliente.id, contrato_id=tarefa.contrato.id,
+        chave=tarefa.chave, cliente_id=tarefa.cliente.id,
+        contrato_id=tarefa.contrato.id if isinstance(tarefa, TarefaTrimestral) else None,
         descricao=tarefa.descricao, periodo_inicio=tarefa.inicio, periodo_fim=tarefa.fim,
         observacao=(observacao or "").strip(),
     )

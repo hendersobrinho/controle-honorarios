@@ -406,3 +406,10 @@ def test_correcao_a_mao_associa_ou_ignora(sessao, carteira):
     assert conferencia.nao_encontradas == []
     # quem não está mais na lista (os dois da Alfa) sai para a baixa
     assert {linha.cliente.id for linha in conferencia.sairam} == {alfa.id}
+
+
+def test_resposta_formatada_sem_tabela(sessao, carteira):
+    """Colada no Outlook, a grade atrapalhava copiar e editar: vai linha por linha."""
+    corpo = servico.html(servico.montar(sessao, HOJE))
+    assert "<table" not in corpo and "<td" not in corpo
+    assert "font-weight:bold" in corpo and "Total do Débito: 3.015,60" in corpo

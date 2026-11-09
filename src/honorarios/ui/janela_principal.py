@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPushButton,
     QStackedWidget,
     QStyle,
     QStyledItemDelegate,
@@ -37,9 +38,8 @@ from .paineis.clientes import PainelClientes
 from .paineis.configuracoes import PainelConfiguracoes
 from .paineis.email_cobrancas import PainelEmailCobrancas
 from .paineis.honorarios import PainelImpostoRenda
-from .paineis.importacao_personalizada import PainelImportacaoPersonalizada
-from .paineis.importar import PainelImportar
 from .paineis.painel import PainelResumo
+from .paineis.parcelamentos import PainelParcelamentos
 from .paineis.rankings import PainelRankings
 from .paineis.relatorios import PainelRelatorios
 from .paineis.tarefas import PainelTarefas
@@ -83,6 +83,16 @@ class JanelaPrincipal(QMainWindow):
         self.navegacao.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         coluna_layout.addWidget(self.navegacao, 1)
         coluna_layout.addWidget(Picote())
+        # só aparece quando sai versão nova no GitHub: um clique e atualiza
+        self.botao_versao_nova = QPushButton("", coluna)
+        self.botao_versao_nova.setObjectName("botaoVersaoNova")
+        self.botao_versao_nova.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.botao_versao_nova.clicked.connect(self.atualizar_versao)
+        self.botao_versao_nova.hide()
+        linha_versao = QHBoxLayout()
+        linha_versao.setContentsMargins(12, 0, 12, 0)
+        linha_versao.addWidget(self.botao_versao_nova)
+        coluna_layout.addLayout(linha_versao)
         self.botao_notificacoes = BotaoNotificacoes()
         self.botao_notificacoes.clicked.connect(self.abrir_notificacoes)
         linha_botao = QHBoxLayout()
@@ -124,14 +134,14 @@ class JanelaPrincipal(QMainWindow):
                 PainelImpostoRenda,
                 PainelTarefas,        # envio do honorário trimestral
                 PainelEmailCobrancas,
+                "Parcelamento",       # texto: subtópico dentro do grupo
+                PainelParcelamentos,  # honorários divididos em parcelas
             )),
             ("CADASTROS", (PainelClientes, PainelHonorarios, PainelTiposEEnvio)),
             ("GESTÃO", (
                 PainelResumo,
                 PainelRankings,
                 PainelRelatorios,
-                PainelImportar,
-                PainelImportacaoPersonalizada,
                 PainelConfiguracoes,
             )),
         )
@@ -145,13 +155,16 @@ class JanelaPrincipal(QMainWindow):
         self.itens_de_tela: dict[str, QListWidgetItem] = {}
         self._recem_montada: QWidget | None = None
         self._lidas: dict[int, tuple] = {}   # tela -> estado dos dados quando leu
-        total = sum(len(classes) for _, classes in grupos)
+        total = sum(not isinstance(classe, str) for _, classes in grupos for classe in classes)
         montadas = 0
         for numero, (titulo_grupo, classes) in enumerate(grupos):
             if self.navegacao.count():
                 self._separador()
             self._cabecalho_grupo(titulo_grupo, numero)
             for classe in classes:
+                if isinstance(classe, str):
+                    self._subtopico(classe, numero)
+                    continue
                 self._progresso(10 + round(85 * montadas / total), f"Carregando {classe.titulo}…")
                 montadas += 1
                 painel = classe(self.contexto) if classe in ja_na_abertura else TelaAdiada(classe)
@@ -202,6 +215,14 @@ class JanelaPrincipal(QMainWindow):
         item.setSizeHint(QSize(0, 30))
         self.navegacao.addItem(item)
 
+    def _subtopico(self, titulo: str, numero: int) -> None:
+        """Um destaque dentro do grupo (ex.: Parcelamento, em Cobrança)."""
+        item = QListWidgetItem(titulo)
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        item.setData(ContadorDoMenu.PAPEL_SUBTOPICO, numero)
+        item.setSizeHint(QSize(0, 26))
+        self.navegacao.addItem(item)
+
     def _separador(self) -> None:
         espaco = QListWidgetItem()
         espaco.setFlags(Qt.ItemFlag.NoItemFlags)
@@ -244,7 +265,7 @@ class JanelaPrincipal(QMainWindow):
 
     def _atualizar_contadores(self) -> None:
         """Quantidade ao lado das telas de cobrança, para ver o volume sem abrir."""
-        from ..servicos import caixa_email, tarefas
+        from ..servicos import caixa_email, parcelamentos, tarefas
         from ..servicos import honorarios as servico_honorarios
 
         try:   # contado no banco: não carrega nem calcula os honorários
@@ -254,10 +275,13 @@ class JanelaPrincipal(QMainWindow):
             emails = caixa_email.nao_lidos(self.contexto.sessao)
             pendentes = tarefas.contar_pendentes(self.contexto.sessao,
                                                  self.contexto.data_referencia)
+            parcelas = parcelamentos.contar_atrasados(self.contexto.sessao,
+                                                      self.contexto.data_referencia)
         except Exception:  # noqa: BLE001 - contador nunca derruba a navegação
             return
         contagens = (
             (PainelVencimentos.titulo, contagem.atrasados),
+            (PainelParcelamentos.titulo, parcelas),
             (PainelImpostoRenda.titulo, contagem.imposto_de_renda),
             (PainelTarefas.titulo, pendentes),
             (PainelEmailCobrancas.titulo, emails),
@@ -325,6 +349,11 @@ class JanelaPrincipal(QMainWindow):
         if atualizacao.pode_instalar() and servico_configuracoes.obter_bool(
                 self.contexto.sessao, atualizacao.CHAVE_AO_ABRIR, True):
             QTimer.singleShot(8000, self.verificar_atualizacao)
+            # aberto o dia todo: procura de novo de tempos em tempos
+            self.verificacao_versao = QTimer(self)
+            self.verificacao_versao.setInterval(INTERVALO_VERSAO_MS)
+            self.verificacao_versao.timeout.connect(self.verificar_atualizacao)
+            self.verificacao_versao.start()
 
     def verificar_atualizacao(self) -> None:
         """Pergunta ao GitHub (em segundo plano) se há versão nova e avisa no canto."""
@@ -333,6 +362,11 @@ class JanelaPrincipal(QMainWindow):
 
         def encontrou(lancamento) -> None:
             if not atualizacao.mais_nova(lancamento):
+                self.botao_versao_nova.hide()
+                return
+            ja_avisou = self.botao_versao_nova.isVisible()
+            self.mostrar_versao_nova(lancamento.versao)
+            if ja_avisou:
                 return
             from ..servicos import notificacoes
 
@@ -343,8 +377,8 @@ class JanelaPrincipal(QMainWindow):
                 self.contexto.sessao.rollback()
             self._atualizar_botao_notificacoes()
             self.aviso_novo.mostrar(
-                f"Saiu a versão {lancamento.versao} do Financeiro: Configurações → "
-                "Atualizações")
+                f"Saiu a versão {lancamento.versao} do Financeiro: clique em "
+                "\"Atualizar\" no menu, embaixo")
             self._posicionar_aviso()
 
         def falhou(falha) -> None:   # sem internet ao abrir: tudo bem, fica para depois
@@ -353,6 +387,23 @@ class JanelaPrincipal(QMainWindow):
             log(__name__).info("Verificação de atualização não concluída: %s", falha)
 
         segundo_plano.executar(atualizacao.ultima, encontrou, falhou)
+
+    def mostrar_versao_nova(self, versao: str) -> None:
+        self.botao_versao_nova.setText(f"⬆  Atualizar para a {versao}")
+        self.botao_versao_nova.setToolTip(
+            f"Saiu a versão {versao}: baixa, instala e abre o sistema de novo. "
+            "Os dados não são tocados.")
+        self.botao_versao_nova.show()
+
+    def atualizar_versao(self) -> None:
+        """O botão do menu: leva a Configurações → Atualizações e já atualiza."""
+        item = self.itens_de_tela.get(PainelConfiguracoes.titulo)
+        if item is None:
+            return
+        self.navegacao.setCurrentItem(item)
+        painel = self.tela(self.linhas_de_tela[self.navegacao.row(item)])
+        painel.mostrar_atualizacoes()
+        painel.verificar_e_atualizar()
 
     def verificar_notificacoes(self, ao_abrir: bool = False) -> list:
         """Cria os avisos novos do dia (o de hoje, não a data de referência).
@@ -505,6 +556,7 @@ class JanelaPrincipal(QMainWindow):
 
 
 INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000   # meia hora
+INTERVALO_VERSAO_MS = 4 * 60 * 60 * 1000    # versão nova no GitHub: a cada 4 horas
 LARGURA_MENU = 220
 ALTURA_ITEM = 34
 ABAS_DE_VENCIMENTOS = ("A vencer", "Atrasados", "Pagos", "Cobranças")
@@ -559,6 +611,7 @@ class ContadorDoMenu(QStyledItemDelegate):
     PAPEL_GRUPO = Qt.ItemDataRole.UserRole + 2       # tela: a que grupo pertence
     PAPEL_CABECALHO = Qt.ItemDataRole.UserRole + 3   # nome do grupo
     PAPEL_SEPARADOR = Qt.ItemDataRole.UserRole + 4
+    PAPEL_SUBTOPICO = Qt.ItemDataRole.UserRole + 5   # destaque dentro do grupo
 
     def paint(self, pintor: QPainter, opcao, indice) -> None:
         caixa = QRectF(opcao.rect)
@@ -568,6 +621,11 @@ class ContadorDoMenu(QStyledItemDelegate):
             meio = caixa.center().y()
             pintor.drawLine(QPointF(caixa.left() + 8, meio), QPointF(caixa.right() - 8, meio))
             pintor.restore()
+            return
+        subtopico = indice.data(self.PAPEL_SUBTOPICO)
+        if subtopico is not None:
+            self._subtopico(pintor, caixa, indice.data(Qt.ItemDataRole.DisplayRole),
+                            cor_do_grupo(subtopico))
             return
         cabecalho = indice.data(self.PAPEL_CABECALHO)
         if cabecalho is not None:
@@ -623,4 +681,32 @@ class ContadorDoMenu(QStyledItemDelegate):
         pintor.setPen(cor)
         pintor.drawText(faixa.adjusted(26, 0, -6, 0),
                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, titulo)
+        pintor.restore()
+
+    @staticmethod
+    def _subtopico(pintor: QPainter, caixa: QRectF, titulo: str, cor: QColor) -> None:
+        """Menor que o nome do grupo: um traço na cor do grupo e o nome, recuado."""
+        pintor.save()
+        pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
+        faixa = QRectF(caixa.left(), caixa.top() + 6, caixa.width(), caixa.height() - 6)
+        meio = faixa.center().y()
+        traco = QColor(cor)
+        traco.setAlphaF(0.8)
+        pintor.setPen(traco)
+        pintor.drawLine(QPointF(faixa.left() + 12, meio), QPointF(faixa.left() + 22, meio))
+        fonte = QFont(pintor.font())
+        fonte.setPixelSize(10)
+        fonte.setBold(True)
+        fonte.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.0)
+        pintor.setFont(fonte)
+        pintor.drawText(faixa.adjusted(28, 0, -6, 0),
+                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                        titulo.upper())
+        largura = QFontMetricsF(fonte).horizontalAdvance(titulo.upper())
+        linha = QColor(cor)
+        linha.setAlphaF(0.25)
+        pintor.setPen(linha)
+        inicio = faixa.left() + 28 + largura + 8
+        if inicio < faixa.right() - 12:
+            pintor.drawLine(QPointF(inicio, meio), QPointF(faixa.right() - 12, meio))
         pintor.restore()

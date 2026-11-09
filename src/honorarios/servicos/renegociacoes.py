@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
@@ -20,6 +21,26 @@ from ..infra.modelos import (
 from . import honorarios as servico_honorarios
 from .erros import ErroDeValidacao
 from .honorarios import LinhaHonorario
+
+
+@dataclass(frozen=True)
+class ParcelaPrevista:
+    numero: int
+    vencimento: date
+    valor: Decimal
+
+
+def dividir(valor: Decimal, parcelas: int, primeiro_vencimento: date) -> list[ParcelaPrevista]:
+    """As parcelas iguais, um mês depois da outra; a última leva a sobra dos centavos."""
+    if parcelas < 1:
+        return []
+    total = dinheiro(valor)
+    base = dinheiro(total / parcelas)
+    previstas = [ParcelaPrevista(numero, somar_meses(primeiro_vencimento, numero - 1), base)
+                 for numero in range(1, parcelas)]
+    previstas.append(ParcelaPrevista(parcelas, somar_meses(primeiro_vencimento, parcelas - 1),
+                                     total - base * (parcelas - 1)))
+    return previstas
 
 
 def criar(
@@ -78,12 +99,8 @@ def criar(
     if tipo is None:
         raise ErroDeValidacao("Escolha o tipo de honorário das parcelas.", "tipo")
 
-    valor_parcela = dinheiro(acordado / parcelas)
-    restante = acordado
-    for numero in range(1, parcelas + 1):
-        valor = valor_parcela if numero < parcelas else dinheiro(restante)
-        restante -= valor
-        vencimento = somar_meses(primeiro_vencimento, numero - 1)
+    for prevista in dividir(acordado, parcelas, primeiro_vencimento):
+        numero, valor, vencimento = prevista.numero, prevista.valor, prevista.vencimento
         # a parcela só recebe competência se o tipo escolhido exigir uma
         if tipo.exige_competencia is ExigeCompetencia.MES:
             competencia = Competencia(vencimento.year, vencimento.month)
@@ -97,7 +114,7 @@ def criar(
             valor=valor,
             vencimento=vencimento,
             competencia=competencia,
-            descricao=f"Acordo {acordo.id} – parcela {numero}/{parcelas}",
+            descricao=f"Parcelamento {acordo.id} – parcela {numero}/{parcelas}",
             observacoes=observacoes or "",
         )
         gerado = servico_honorarios.criar(sessao, dados)
@@ -125,6 +142,14 @@ def cancelar(sessao: Session, acordo: Renegociacao, motivo: str) -> None:
     from ..infra.modelos import Honorario
 
     acordo.cancelada_em = agora_utc()
+    sessao.add(
+        LogAlteracao(
+            entidade="renegociacao",
+            entidade_id=acordo.id,
+            acao="CANCELAR",
+            resumo=f"{acordo.cliente.nome}: acordo cancelado – {motivo.strip()}",
+        )
+    )
     for item in acordo.itens:
         if item.honorario_origem_id:
             honorario = sessao.get(Honorario, item.honorario_origem_id)

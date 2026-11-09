@@ -35,6 +35,8 @@ from ..infra.modelos import (
     GrupoHonorario,
     Honorario,
     LogAlteracao,
+    Renegociacao,
+    RenegociacaoItem,
     TipoHonorario,
 )
 from . import calculo
@@ -124,6 +126,18 @@ class Filtro:
     # None = todos; True = só clientes de Imposto de Renda; False = sem eles
     clientes_so_ir: bool | None = None
     data_referencia: date | None = None
+    # parcela de parcelamento: False tira (ela é acompanhada na tela Parcelamentos)
+    incluir_parcelas: bool = True
+
+
+def ids_das_parcelas():
+    """Subconsulta: os honorários que são parcela de um parcelamento em vigor."""
+    return (
+        select(RenegociacaoItem.honorario_gerado_id)
+        .join(Renegociacao)
+        .where(RenegociacaoItem.honorario_gerado_id.is_not(None),
+               Renegociacao.cancelada_em.is_(None))
+    )
 
 
 def clientes_so_imposto_de_renda(sessao: Session) -> set[int]:
@@ -452,6 +466,8 @@ def consultar(sessao: Session, filtro: Filtro) -> list[LinhaHonorario]:
         if alvo:
             consulta = consulta.where(Cliente.nome_busca.contains(alvo))
     consulta = consulta.where(Cliente.excluido_em.is_(None))
+    if not filtro.incluir_parcelas:
+        consulta = consulta.where(Honorario.id.not_in(ids_das_parcelas()))
     if filtro.clientes_so_ir is not None:
         so_ir = clientes_so_imposto_de_renda(sessao)
         if filtro.clientes_so_ir:
@@ -496,13 +512,15 @@ def contar_pendentes(sessao: Session, referencia: date) -> Contagem:
     """Os números do menu, contados no banco (sem carregar nem calcular nada).
 
     Mesma regra das telas: em aberto, cliente não excluído; atrasado é o que
-    venceu antes da referência; quem só tem IR conta à parte.
+    venceu antes da referência; quem só tem IR conta à parte; parcela de
+    parcelamento fica para a tela Parcelamentos.
     """
     so_ir = clientes_so_imposto_de_renda(sessao)
     consulta = (
         select(Honorario.cliente_id, Honorario.vencimento, func.count())
         .join(Cliente)
-        .where(Honorario.status == StatusPagamento.EM_ABERTO, Cliente.excluido_em.is_(None))
+        .where(Honorario.status == StatusPagamento.EM_ABERTO, Cliente.excluido_em.is_(None),
+               Honorario.id.not_in(ids_das_parcelas()))
         .group_by(Honorario.cliente_id, Honorario.vencimento)
     )
     contagem = Contagem()

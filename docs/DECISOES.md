@@ -495,6 +495,19 @@ para a frente), o acerto deixa de valer. "Voltar ao calculado" apaga o acerto, e
 cada mudança vai para o log (`AJUSTAR_JUROS`). O juros digitado na tela Cobrar
 continua valendo só para aquela cobrança.
 
+### Parcelamentos
+
+O parcelamento continua sendo a ``Renegociacao``: os honorários escolhidos ficam
+como Renegociado e as parcelas nascem como honorários novos. As parcelas de um
+parcelamento em vigor saem de A vencer e Atrasados (o filtro
+``incluir_parcelas=False`` das telas de Vencimentos) e são acompanhadas na tela
+Parcelamentos; Pagos, relatórios, ficha e o e-mail do financeiro continuam vendo
+as parcelas. O juros acertado ao parcelar vale só para o total do parcelamento; o
+das parcelas usa o mesmo acerto à mão do Editar (a partir de hoje). Cancelar com
+parcela paga não deixa: o pagamento precisa ser estornado antes. O lembrete de
+envio de cada parcela é uma tarefa como a trimestral: sai das regras a cada
+leitura (``dias_lembrete_parcela`` dias antes do vencimento) e só a baixa é gravada.
+
 ## Decisões técnicas
 
 ### PostgreSQL no escritório, SQLite no desenvolvimento

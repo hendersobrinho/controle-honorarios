@@ -19,7 +19,8 @@ cadastrado: "Ipê Ind.Com." casa com "IPE INDUSTRIA E COMERCIO").
 
 **Responder.** A resposta mantém a lista do financeiro — quem saiu não volta —
 no mesmo padrão ("Cobranças de dd/mm/aaaa", Cliente · Competência · Vencimento ·
-Valor, "Total do Débito") e junta, por cliente, as anotações que já vieram no
+Valor, "Total do Débito"), linha por linha e sem tabela (a grade atrapalhava copiar
+e editar) e junta, por cliente, as anotações que já vieram no
 e-mail com as cobranças e respostas registradas no sistema
 ("24/09: Feito cobrança, prometeu pagar em 05/10 - …"), sem repetir. O sistema
 não envia: copia a resposta com a formatação ou salva um rascunho ``.eml`` já
@@ -384,42 +385,42 @@ def texto(email: EmailCobrancas) -> str:
 _AZUL = "#1F3B73"
 
 
+_ESPACO = "&nbsp;" * 4   # entre as colunas; a leitura separa por 2+ espaços
+
+
+def _linha(conteudo: str, estilo: str = "") -> str:
+    return f"<div style='margin:0;color:{_AZUL};{estilo}'>{conteudo}</div>"
+
+
 def html(email: EmailCobrancas) -> str:
-    """O corpo formatado: uma tabela só, no visual do e-mail de hoje."""
-    celula = f"padding:1px 18px 1px 0;color:{_AZUL};white-space:nowrap"
-    linhas_html = []
+    """O corpo formatado, linha por linha — sem tabela: colado no Outlook vira texto
+    comum, que dá para copiar e editar sem a grade."""
+    linhas_html = [
+        _linha(f"Cobranças de {formatar_data(email.referencia)}"),
+        _linha("&nbsp;"),
+        _linha(_ESPACO.join(("Cliente", "Competência", "Vencimento", "Valor")),
+               "font-weight:bold"),
+        _linha("&nbsp;"),
+    ]
     for bloco in email.blocos:
         if not bloco.linhas:   # cliente que veio sem vencimento e valor
-            linhas_html.append(
-                f"<tr><td colspan='4' style='{celula}'>{escape(bloco.nome)}</td></tr>"
-            )
+            linhas_html.append(_linha(escape(bloco.nome)))
         for linha in bloco.linhas:
-            linhas_html.append(
-                f"<tr><td style='{celula}'>{escape(bloco.nome)}</td>"
-                f"<td style='{celula}'>{escape(linha.competencia)}</td>"
-                f"<td style='{celula}'>{linha.vencimento_texto}</td>"
-                f"<td style='{celula};text-align:right'>{linha.valor_texto}</td></tr>"
-            )
+            linhas_html.append(_linha(_ESPACO.join((
+                escape(bloco.nome), escape(linha.competencia), linha.vencimento_texto,
+                linha.valor_texto,
+            ))))
         if len(bloco.linhas) > 1:
-            linhas_html.append(
-                f"<tr><td colspan='4' style='color:{_AZUL};font-weight:bold'>Total do Débito: "
-                f"{formatar_moeda(bloco.total, com_simbolo=False)}</td></tr>"
-            )
+            linhas_html.append(_linha(
+                f"Total do Débito: {formatar_moeda(bloco.total, com_simbolo=False)}",
+                "font-weight:bold",
+            ))
         for nota in bloco.notas:
-            linhas_html.append(
-                f"<tr><td colspan='4' style='color:{_AZUL}'>{escape(nota)}</td></tr>"
-            )
-        linhas_html.append("<tr><td colspan='4' style='height:14px'></td></tr>")
-    cabecalho = "".join(
-        f"<th style='text-align:{lado};padding:0 18px 6px 0;color:{_AZUL}'>{nome}</th>"
-        for nome, lado in (("Cliente", "left"), ("Competência", "left"),
-                           ("Vencimento", "left"), ("Valor", "right"))
-    )
+            linhas_html.append(_linha(escape(nota)))
+        linhas_html.append(_linha("&nbsp;"))
     return (
         "<div style=\"font-family:'Segoe UI',Calibri,Arial,sans-serif;font-size:11pt\">"
-        f"<p style='color:{_AZUL}'>Cobranças de {formatar_data(email.referencia)}</p>"
-        "<table style='border-collapse:collapse;font-size:11pt' cellspacing='0'>"
-        f"<tr>{cabecalho}</tr>{''.join(linhas_html)}</table></div>"
+        + "".join(linhas_html) + "</div>"
     )
 
 

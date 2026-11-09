@@ -1720,6 +1720,16 @@ def executar_no_banco(sql: str, parametros: dict | None = None) -> dict:
 
 # ---------------------------------------------------------------------- tarefas
 def _dados_tarefa(tarefa, referencia) -> dict:
+    from .servicos import tarefas
+
+    if isinstance(tarefa, tarefas.TarefaParcela):
+        return {"chave": tarefa.chave, "cliente_id": tarefa.cliente.id,
+                "cliente": f"{tarefa.cliente.codigo} – {tarefa.cliente.nome}",
+                "parcela": tarefa.periodo, "vencimento": _plano(tarefa.vencimento),
+                "lembrar_desde": _plano(tarefa.prazo),
+                "valor": _plano(tarefa.honorario.valor_original),
+                "baixa_em": _plano(tarefa.feita.concluida_em) if tarefa.feita else None,
+                "observacao": tarefa.feita.observacao if tarefa.feita else None}
     return {"chave": tarefa.chave, "cliente_id": tarefa.cliente.id,
             "cliente": f"{tarefa.cliente.codigo} – {tarefa.cliente.nome}",
             "tipo": tarefa.contrato.tipo.nome, "trimestre": tarefa.periodo,
@@ -1734,7 +1744,9 @@ def _dados_tarefa(tarefa, referencia) -> dict:
 def listar_tarefas(data_referencia: str | None = None) -> dict:
     """Tarefas de envio do honorário trimestral: o trimestre de cada empresa conta da
     competência em que ela virou cliente do escritório (cliente_desde). Devolve as
-    pendentes, as próximas, as feitas (com baixa) e as empresas trimestrais sem data."""
+    pendentes, as próximas, as feitas (com baixa) e as empresas trimestrais sem data.
+    E o envio das parcelas dos parcelamentos (parcelas_a_enviar, alguns dias antes do
+    vencimento; proximas_parcelas; parcelas_enviadas)."""
     from .servicos import tarefas
 
     referencia = _data(data_referencia) or hoje()
@@ -1744,6 +1756,10 @@ def listar_tarefas(data_referencia: str | None = None) -> dict:
             "pendentes": [_dados_tarefa(t, referencia) for t in quadro.pendentes],
             "proximas": [_dados_tarefa(t, referencia) for t in quadro.proximas],
             "feitas": [_dados_tarefa(t, referencia) for t in quadro.feitas],
+            "parcelas_a_enviar": [_dados_tarefa(t, referencia) for t in quadro.parcelas],
+            "proximas_parcelas": [_dados_tarefa(t, referencia)
+                                  for t in quadro.parcelas_proximas],
+            "parcelas_enviadas": [_dados_tarefa(t, referencia) for t in quadro.parcelas_feitas],
             "sem_data_de_entrada": [{"cliente_id": c.id, "cliente": f"{c.codigo} – {c.nome}"}
                                     for c in quadro.sem_data],
         }
@@ -1753,7 +1769,7 @@ def _tarefa(sessao: Session, chave: str, referencia):
     from .servicos import tarefas
 
     quadro = tarefas.quadro(sessao, referencia)
-    for tarefa in quadro.pendentes + quadro.feitas:
+    for tarefa in quadro.pendentes + quadro.feitas + quadro.parcelas + quadro.parcelas_feitas:
         if tarefa.chave == chave:
             return tarefa
     raise ValueError(f"Tarefa {chave!r} não encontrada (veja listar_tarefas).")
@@ -1761,7 +1777,7 @@ def _tarefa(sessao: Session, chave: str, referencia):
 
 @_ferramenta(GRAVA)
 def dar_baixa_na_tarefa(chave: str, observacao: str = "") -> dict:
-    """Dá baixa numa tarefa pendente (o honorário do trimestre foi enviado)."""
+    """Dá baixa numa tarefa pendente (o honorário do trimestre ou a parcela foi enviado)."""
     from .servicos import tarefas
 
     with _sessao(gravar=True) as sessao:

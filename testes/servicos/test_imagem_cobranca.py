@@ -307,3 +307,21 @@ def test_modelo_mostra_a_mensagem_do_qr_so_com_qr(tmp_path, monkeypatch):
     desenho.renderizar(fundo, dados)                      # com QR
     assert "Aponte a câmera" not in vistos[0]
     assert "Aponte a câmera" in vistos[1]
+
+
+def test_parcela_aparece_so_com_o_numero_da_parcela():
+    from types import SimpleNamespace
+
+    from honorarios.servicos import imagem_cobranca
+
+    tipo = SimpleNamespace(nome="Parcela de acordo")
+    for descricao in ("Parcelamento 3 – parcela 1/3", "Acordo 12 – parcela 2/6"):
+        parcela = SimpleNamespace(descricao=descricao, competencia_ano=None,
+                                  competencia_mes=None, competencia_rotulo=descricao,
+                                  tipo=tipo)
+        esperado = "Parcela " + descricao.rsplit(" ", 1)[1]
+        assert imagem_cobranca.titulo_do_honorario(parcela) == esperado
+    mensal = SimpleNamespace(descricao="", competencia_ano=2026, competencia_mes=8,
+                             competencia_rotulo="08/2026",
+                             tipo=SimpleNamespace(nome="Honorário mensal"))
+    assert imagem_cobranca.titulo_do_honorario(mensal) == "Honorário mensal · 08/2026"

@@ -71,6 +71,8 @@ class PainelConfiguracoes(QWidget):
         self.abas.addTab(self._aba_modelos(), "Modelos de mensagem")
         self.abas.addTab(self._aba_imagem(), "Imagem da cobrança")
         self.abas.addTab(self._aba_backup(), "Backup")
+        self.aba_importacao = self._aba_importacao()
+        self.abas.addTab(self.aba_importacao, "Importação")
         self.abas.addTab(self._aba_claude(), "Claude (MCP)")
         self.aba_atualizacoes = self._aba_atualizacoes()
         self.abas.addTab(self.aba_atualizacoes, "Atualizações")
@@ -99,6 +101,13 @@ class PainelConfiguracoes(QWidget):
         self.dias_vence_breve = QSpinBox()
         self.dias_vence_breve.setRange(0, 30)
         geral.addRow("Marcar \"vence em breve\" com (dias):", self.dias_vence_breve)
+        self.dias_lembrete_parcela = QSpinBox()
+        self.dias_lembrete_parcela.setRange(0, 30)
+        self.dias_lembrete_parcela.setToolTip(
+            "Em Tarefas, o lembrete de enviar cada parcela dos parcelamentos aparece "
+            "esses dias antes do vencimento dela")
+        geral.addRow("Lembrete das parcelas (dias antes do vencimento):",
+                     self.dias_lembrete_parcela)
         self.tema = QComboBox()
         self.tema.addItem("Claro", "claro")
         self.tema.addItem("Escuro", "escuro")
@@ -569,6 +578,22 @@ class PainelConfiguracoes(QWidget):
         widgets.informar(self, texto, "Claude")
 
     # ----------------------------------------------------------- atualizações
+    def _aba_importacao(self) -> QWidget:
+        """As duas importações de planilha, que se usam pouco: saíram do menu lateral."""
+        from .importacao_personalizada import PainelImportacaoPersonalizada
+        from .importar import PainelImportar
+
+        self.importar = PainelImportar(self.contexto)
+        self.importacao_personalizada = PainelImportacaoPersonalizada(self.contexto)
+        abas = QTabWidget()
+        abas.setDocumentMode(True)
+        for painel, nome in ((self.importar, "Planilha de controle"),
+                             (self.importacao_personalizada, "Personalizada")):
+            painel.cabecalho.ocultar_titulo()   # o nome já está na aba
+            abas.addTab(painel, nome)
+        self.abas_importacao = abas
+        return abas
+
     def _aba_atualizacoes(self) -> QWidget:
         from ... import __version__
         from ...servicos import atualizacao
@@ -734,6 +759,7 @@ class PainelConfiguracoes(QWidget):
         sessao = self.contexto.sessao
         self.contexto.atualizar()
         self._mostrar_situacao_claude()
+        self.importacao_personalizada.recarregar()
         from ...servicos import atualizacao
 
         self.atualizar_ao_abrir.blockSignals(True)
@@ -749,6 +775,9 @@ class PainelConfiguracoes(QWidget):
         self.formato_link.definir(FormatoLinkWhatsapp(servico.formato_link(sessao)))
         self.ordem_saudacao.definir(servico.ordem_saudacao(sessao))
         self.dias_vence_breve.setValue(servico.obter_int(sessao, "dias_vence_em_breve", 5))
+        from ...servicos import tarefas
+
+        self.dias_lembrete_parcela.setValue(tarefas.dias_antes_da_parcela(sessao))
         indice = self.tema.findData(servico.obter(sessao, "tema", "claro"))
         self.tema.setCurrentIndex(max(0, indice))
         self.backup_ao_fechar.setCurrentIndex(
@@ -856,6 +885,10 @@ class PainelConfiguracoes(QWidget):
             servico.gravar(sessao, "recebedor_chave", self.chave.text().strip())
             servico.gravar(sessao, "formato_link_whatsapp", self.formato_link.valor().value)
             servico.gravar(sessao, "dias_vence_em_breve", str(self.dias_vence_breve.value()))
+            from ...servicos import tarefas
+
+            servico.gravar(sessao, tarefas.CHAVE_DIAS_PARCELA,
+                           str(self.dias_lembrete_parcela.value()))
             servico.gravar(sessao, "tema", self.tema.currentData())
             servico.gravar(sessao, "backup_ao_fechar", self.backup_ao_fechar.currentData())
             servico.gravar(sessao, "backup_manter", str(self.backup_manter.value()))
