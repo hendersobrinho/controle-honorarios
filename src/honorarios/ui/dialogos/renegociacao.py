@@ -50,6 +50,7 @@ class DialogoRenegociacao(QDialog):
         self.cliente = cliente
         self._escolhidos = {linha.honorario.id for linha in linhas}
         self._valor_mexido = False
+        self._juros_dia_mexido = False   # juros ao dia das parcelas digitado à mão
         # juros acertado aqui, por honorário (None = o calculado); só vale no parcelamento
         self._juros: dict[int, Decimal | None] = {}
         # prévia: o juros que cada parcela terá no próprio vencimento (por número)
@@ -152,6 +153,23 @@ class DialogoRenegociacao(QDialog):
             "Desmarcado: a parcela só corre juros depois do vencimento.")
         self.juros_correndo.toggled.connect(lambda *_: self._recalcular())
         formulario.addRow("", self.juros_correndo)
+        juros_dia = QHBoxLayout()
+        juros_dia.setSpacing(6)
+        self.juros_dia = CampoMoeda(0)
+        self.juros_dia.setToolTip(
+            "Quanto cada parcela corre de juros por dia. Vem calculado (a parte de cada "
+            "parcela no juros ao dia do cliente); digite outro valor para estipular um "
+            "juros novo, ou zero para as parcelas não correrem juros.")
+        self.juros_dia.valueChanged.connect(self._digitou_juros_dia)
+        juros_dia.addWidget(self.juros_dia, 1)
+        self.botao_juros_dia = widgets.QPushButton("Voltar ao calculado")
+        self.botao_juros_dia.setObjectName("linkFiltro")
+        self.botao_juros_dia.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.botao_juros_dia.clicked.connect(self._juros_dia_calculado)
+        juros_dia.addWidget(self.botao_juros_dia)
+        formulario.addRow("Juros ao dia (cada parcela):", juros_dia)
+        self.juros_dia_dica = widgets.rotulo_fraco("")
+        formulario.addRow("", self.juros_dia_dica)
         self.observacoes = QPlainTextEdit()
         self.observacoes.setMaximumHeight(60)
         formulario.addRow("Observações:", self.observacoes)
@@ -220,6 +238,7 @@ class DialogoRenegociacao(QDialog):
             "Escolha o cliente e marque os honorários que entram no parcelamento."
         )
         self._valor_mexido = False
+        self._juros_dia_mexido = False
         self._recalcular()
 
     def escolhidos(self) -> list:
@@ -281,6 +300,37 @@ class DialogoRenegociacao(QDialog):
             self._juros[linha.honorario.id] = None
         self._juros_mudou()
 
+    def _digitou_juros_dia(self, *_args) -> None:
+        self._juros_dia_mexido = True
+        self._recalcular()
+
+    def _juros_dia_calculado(self) -> None:
+        self._juros_dia_mexido = False
+        self._recalcular()
+
+    def juros_dia_estipulado(self) -> Decimal | None:
+        """O juros ao dia digitado à mão para as parcelas (None = o calculado)."""
+        return self.juros_dia.valor() if self._juros_dia_mexido else None
+
+    def _fatores(self, previstas) -> list[Decimal]:
+        return renegociacoes.fatores_das_parcelas(
+            renegociacoes.fator_do_juros(self.escolhidos()), previstas)
+
+    def _mostrar_juros_dia(self, previstas) -> None:
+        calculado = ZERO
+        if previstas and self.cliente is not None:
+            calculado = renegociacoes.juros_dia_calculado(
+                self.cliente, self._fatores(previstas)[0], hoje())
+        if not self._juros_dia_mexido:
+            self.juros_dia.blockSignals(True)
+            self.juros_dia.definir(calculado)
+            self.juros_dia.blockSignals(False)
+        self.botao_juros_dia.setVisible(self._juros_dia_mexido)
+        self.juros_dia_dica.setText(
+            f"Estipulado à mão (o calculado é {formatar_moeda(calculado)} por dia)"
+            if self._juros_dia_mexido else
+            "Calculado: a parte de cada parcela no juros ao dia do cliente")
+
     def _digitou_valor(self, *_args) -> None:
         self._valor_mexido = True
         self._recalcular()
@@ -299,6 +349,7 @@ class DialogoRenegociacao(QDialog):
             self.valor_acordado.blockSignals(False)
         valor = self.valor_acordado.valor()
         previstas = self.previstas() if valor > 0 else []
+        self._mostrar_juros_dia(previstas)
         self._juros_previsto = self._prever_juros(previstas)
         self.modelo_parcelas.definir_itens(previstas)
         quantidade = len(self.escolhidos())
@@ -330,9 +381,8 @@ class DialogoRenegociacao(QDialog):
     def _prever_juros(self, previstas) -> dict[int, Decimal]:
         if not previstas or self.cliente is None or not self.juros_correndo.isChecked():
             return {}
-        fatores = renegociacoes.fatores_das_parcelas(
-            renegociacoes.fator_do_juros(self.escolhidos()), previstas)
-        juros = renegociacoes.juros_previstos(self.cliente, previstas, fatores, hoje())
+        juros = renegociacoes.juros_previstos(self.cliente, previstas, self._fatores(previstas),
+                                              hoje(), self.juros_dia_estipulado())
         return {p.numero: valor for p, valor in zip(previstas, juros, strict=True)}
 
     def _confirmar(self) -> None:
@@ -367,6 +417,7 @@ class DialogoRenegociacao(QDialog):
                 tipo_id=self.tipo.valor(),
                 observacoes=self.observacoes.toPlainText(),
                 juros_ate_o_vencimento=self.juros_correndo.isChecked(),
+                juros_dia=self.juros_dia_estipulado(),
             )
             self.contexto.salvar()
 

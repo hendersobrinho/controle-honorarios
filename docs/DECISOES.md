@@ -518,7 +518,9 @@ saldo no pago em parte), dividido entre as parcelas na proporção do valor. Ass
 cliente paga por dia, somando as parcelas, o mesmo que pagava antes. Desmarcando
 "Juros continua correndo até o vencimento" a parcela só corre juros depois do
 vencimento (com a mesma fração). Parcelas de antes desta regra (sem os dois campos)
-seguem a regra antiga. ``calculo.regra_de_juros`` concentra isso: o início da
+seguem a regra antiga. O juros ao dia pode ser estipulado à mão no parcelamento
+(``juros_dia``, R$ por dia de cada parcela): aí vale esse valor fixo, no lugar do
+juros do cliente e da fração. ``calculo.regra_de_juros`` concentra isso: o início da
 contagem e a taxa escalada; os dias de atraso continuam contados do vencimento.
 
 ## Decisões técnicas

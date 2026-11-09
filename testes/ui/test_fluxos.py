@@ -3190,3 +3190,39 @@ def test_previa_do_juros_das_parcelas_e_cobrar_no_vencimento(
     assert cobrar.usar_outra_data.isChecked()
     assert cobrar._selecao().data_referencia == primeira.honorario.vencimento
     assert primeira.linha.atualizacao.juros == previsto[0]
+
+
+def test_parcelar_com_juros_ao_dia_estipulado(qtbot, contexto, cliente_com_debito, monkeypatch):
+    from honorarios.servicos import renegociacoes
+    from honorarios.ui.comum import widgets
+    from honorarios.ui.dialogos import renegociacao
+
+    referencia = contexto.data_referencia
+    monkeypatch.setattr(renegociacao, "hoje", lambda: referencia)
+    monkeypatch.setattr(renegociacoes, "hoje", lambda: referencia)
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    dialogo = renegociacao.DialogoRenegociacao(contexto, cliente_com_debito,
+                                               linhas_do(contexto.sessao, cliente_com_debito))
+    qtbot.addWidget(dialogo)
+    dialogo.parcelas.setValue(2)
+    dialogo.primeiro_vencimento.definir(referencia + timedelta(days=10))
+    calculado = dialogo.juros_dia.valor()
+    assert calculado > 0 and dialogo.juros_dia_estipulado() is None
+    assert not dialogo.botao_juros_dia.isVisibleTo(dialogo)
+    dialogo.juros_dia.definir(Decimal("3.00"))           # um juros novo, à mão
+    assert dialogo.juros_dia_estipulado() == Decimal("3.00")
+    assert dialogo._juros_previsto[1] == Decimal("30.00")  # 10 dias × R$ 3,00
+    assert dialogo.botao_juros_dia.isVisibleTo(dialogo)
+    dialogo.parcelas.setValue(3)                          # mudar o resto não desfaz o à mão
+    assert dialogo.juros_dia.valor() == Decimal("3.00")
+    dialogo._confirmar()
+    from honorarios.servicos import parcelamentos
+
+    criado = parcelamentos.obter(contexto.sessao, dialogo.acordo.id, referencia)
+    assert [p.honorario.juros_dia for p in criado.parcelas] == [Decimal("3.00")] * 3
+
+    outro = renegociacao.DialogoRenegociacao(contexto)
+    qtbot.addWidget(outro)
+    outro.juros_dia.definir(Decimal("1.00"))
+    outro._juros_dia_calculado()                          # volta ao calculado
+    assert outro.juros_dia_estipulado() is None

@@ -65,17 +65,26 @@ def fatores_das_parcelas(fator_total: Decimal, previstas) -> list[Decimal]:
     return [(fator_total * p.valor / soma).quantize(FATOR) for p in previstas]
 
 
+def juros_dia_calculado(cliente: Cliente, fator: Decimal, referencia: date) -> Decimal:
+    """O juros ao dia de uma parcela pela regra: a fração dela no juros do cliente."""
+    from . import calculo
+
+    return calculo.taxa_vigente_em(cliente, referencia) * fator
+
+
 def juros_previstos(cliente: Cliente, previstas, fatores: Sequence[Decimal],
-                    desde: date) -> list[Decimal]:
+                    desde: date, juros_dia: Decimal | None = None) -> list[Decimal]:
     """O juros que cada parcela terá no próprio vencimento, contado desde ``desde``
-    (com o juros ao dia de hoje do cliente). Para a prévia do parcelamento."""
+    (com o juros ao dia de hoje do cliente, ou com ``juros_dia`` estipulado à mão).
+    Para a prévia do parcelamento."""
     from ..dominio.juros import calcular_juros_com_parciais
     from . import calculo
 
     taxas = calculo.taxas_do_cliente(cliente)
     resultado = []
     for prevista, fator in zip(previstas, fatores, strict=True):
-        escaladas = tuple(replace(t, valor_dia=t.valor_dia * fator) for t in taxas)
+        escaladas = ((calculo.taxa_fixa(juros_dia),) if juros_dia is not None else
+                     tuple(replace(t, valor_dia=t.valor_dia * fator) for t in taxas))
         resultado.append(calcular_juros_com_parciais(
             vencimento=desde, data_referencia=prevista.vencimento, taxas=escaladas,
             valor_original=prevista.valor).juros)
@@ -93,10 +102,14 @@ def criar(
     desconto: Decimal = ZERO,
     observacoes: str = "",
     juros_ate_o_vencimento: bool = True,
+    juros_dia: Decimal | None = None,
 ) -> Renegociacao:
     """``juros_ate_o_vencimento``: cada parcela corre juros desde hoje (o dia do
     parcelamento) até o vencimento dela, e depois, se atrasar. Sem isso, só depois
-    do vencimento. Nos dois casos, com a fração dela do juros ao dia."""
+    do vencimento. Nos dois casos, com a fração dela do juros ao dia — ou, com
+    ``juros_dia``, com esse juros ao dia estipulado à mão para cada parcela."""
+    if juros_dia is not None and juros_dia < 0:
+        raise ErroDeValidacao("O juros ao dia das parcelas não pode ser negativo.")
     if not linhas:
         raise ErroDeValidacao("Selecione os honorários que entram no acordo.")
     if parcelas < 1:
@@ -165,7 +178,8 @@ def criar(
             observacoes=observacoes or "",
         )
         gerado = servico_honorarios.criar(sessao, dados)
-        gerado.juros_fator = fator
+        gerado.juros_fator = fator if juros_dia is None else None
+        gerado.juros_dia = juros_dia
         gerado.juros_desde = acordo.data if juros_ate_o_vencimento else None
         acordo.itens.append(RenegociacaoItem(honorario_gerado_id=gerado.id, valor=valor))
 

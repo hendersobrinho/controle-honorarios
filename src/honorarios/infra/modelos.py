@@ -440,6 +440,9 @@ class Honorario(Base):
     # parcela no juros que os honorários parcelados vinham pagando
     juros_desde: Mapped[date | None] = mapped_column(Date)
     juros_fator: Mapped[Decimal | None] = mapped_column(Fator)
+    # juros ao dia estipulado à mão no parcelamento (R$ por dia desta parcela): no
+    # lugar do juros do cliente e da fração acima
+    juros_dia: Mapped[Decimal | None] = mapped_column(Fator)
     total_congelado: Mapped[Decimal | None] = mapped_column(Dinheiro)
     cancelado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     motivo_cancelamento: Mapped[str] = mapped_column(Text, default="", nullable=False)

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from honorarios.dominio.enums import StatusPagamento
-from honorarios.dominio.valores import Competencia
+from honorarios.dominio.valores import ZERO, Competencia
 from honorarios.infra.modelos import TipoHonorario
 from honorarios.servicos import cobrancas, pagamentos, parcelamentos
 from honorarios.servicos import honorarios as servico_honorarios
@@ -199,3 +199,44 @@ def test_tirar_o_juros_da_parcela_antes_do_vencimento(sessao, cenario):
     assert calculo.atualizar(primeira, date(2026, 10, 9)).juros == Decimal("0.00")
     # e dali em diante volta a correr (20 dias 13,33 − os 10 já tirados 6,67)
     assert calculo.atualizar(primeira, date(2026, 10, 19)).juros == Decimal("6.66")
+
+
+def test_juros_ao_dia_estipulado_a_mao(sessao, cenario):
+    from honorarios.servicos import calculo, renegociacoes
+
+    cliente, linhas = cenario
+    tipo = sessao.scalar(select(TipoHonorario).where(TipoHonorario.nome == "Parcela de acordo"))
+    parcelamentos.criar(sessao, cliente, linhas, Decimal("1500.00"), 3, date(2026, 10, 29),
+                        tipo.id, juros_dia=Decimal("2.00"))
+    sessao.commit()
+    [parcelamento] = parcelamentos.listar(sessao, REFERENCIA)
+    primeira = parcelamento.parcelas[0].honorario
+    assert (primeira.juros_dia, primeira.juros_fator) == (Decimal("2.00"), None)
+    # R$ 2,00 por dia desde o parcelamento: 30 dias até o vencimento, mais 10 de atraso
+    assert calculo.atualizar(primeira, date(2026, 10, 29)).juros == Decimal("60.00")
+    assert calculo.atualizar(primeira, date(2026, 11, 8)).juros == Decimal("80.00")
+    # a prévia usa o mesmo juros
+    previstas = parcelamentos.dividir(Decimal("1500.00"), 3, date(2026, 10, 29))
+    assert renegociacoes.juros_previstos(cliente, previstas, [ZERO] * 3, REFERENCIA,
+                                         Decimal("2.00"))[0] == Decimal("60.00")
+
+
+def test_juros_ao_dia_zero_nao_corre_juros(sessao, cenario):
+    from honorarios.servicos import calculo
+
+    cliente, linhas = cenario
+    tipo = sessao.scalar(select(TipoHonorario).where(TipoHonorario.nome == "Parcela de acordo"))
+    parcelamentos.criar(sessao, cliente, linhas, Decimal("1500.00"), 3, date(2026, 10, 29),
+                        tipo.id, juros_dia=ZERO)
+    sessao.commit()
+    [parcelamento] = parcelamentos.listar(sessao, REFERENCIA)
+    assert calculo.atualizar(parcelamento.parcelas[0].honorario,
+                             date(2026, 12, 31)).juros == Decimal("0.00")
+
+
+def test_juros_ao_dia_negativo_nao_deixa(sessao, cenario):
+    cliente, linhas = cenario
+    tipo = sessao.scalar(select(TipoHonorario).where(TipoHonorario.nome == "Parcela de acordo"))
+    with pytest.raises(ErroDeValidacao, match="negativo"):
+        parcelamentos.criar(sessao, cliente, linhas, Decimal("1500.00"), 3, date(2026, 10, 29),
+                            tipo.id, juros_dia=Decimal("-1"))

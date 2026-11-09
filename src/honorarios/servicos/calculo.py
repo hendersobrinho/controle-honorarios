@@ -72,6 +72,14 @@ def taxa_vigente_em(cliente: Cliente, referencia: date | None = None) -> Decimal
     return atual
 
 
+TAXA_DESDE_SEMPRE = date(1900, 1, 1)
+
+
+def taxa_fixa(valor_dia: Decimal) -> TaxaVigente:
+    """Um juros ao dia só, valendo para qualquer data."""
+    return TaxaVigente(vigencia_inicio=TAXA_DESDE_SEMPRE, valor_dia=valor_dia)
+
+
 def regra_de_juros(
     honorario: Honorario, taxas: Sequence[TaxaVigente], vencimento: date | None = None,
 ) -> tuple[date, tuple[TaxaVigente, ...]]:
@@ -79,10 +87,13 @@ def regra_de_juros(
 
     O normal: depois do vencimento, com o juros ao dia do cliente. A parcela de
     parcelamento conta desde o dia do parcelamento (``juros_desde``) e com a sua
-    fração do juros ao dia (``juros_fator``).
+    fração do juros ao dia (``juros_fator``), ou com o juros ao dia estipulado à mão
+    no parcelamento (``juros_dia``).
     """
     vencimento = vencimento or honorario.vencimento
     inicio = min(honorario.juros_desde, vencimento) if honorario.juros_desde else vencimento
+    if honorario.juros_dia is not None:
+        return inicio, (taxa_fixa(Decimal(str(honorario.juros_dia))),)
     if honorario.juros_fator is None:
         return inicio, tuple(taxas)
     fator = Decimal(str(honorario.juros_fator))
