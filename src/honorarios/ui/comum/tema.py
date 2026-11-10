@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtGui import QColor
 
 CORES = {
@@ -60,6 +62,10 @@ def cor(nome: str, tema: str = "claro") -> QColor:
     return QColor(CORES.get(tema, CORES["claro"])[nome])
 
 
+# o ✓ da caixa de marcar (barra normal: o stylesheet do Qt não aceita "\\")
+MARCADO = (Path(__file__).resolve().parent.parent.parent / "recursos" / "marcado.svg").as_posix()
+
+
 def folha_de_estilo(tema: str = "claro") -> str:
     c = CORES.get(tema, CORES["claro"])
     acesa = QColor(c["destaque_texto"])   # o item do menu sob o mouse: destaque bem leve
@@ -70,10 +76,30 @@ def folha_de_estilo(tema: str = "claro") -> str:
         color: {c["texto"]};
         font-size: 13px;
     }}
-    /* sem isso o rótulo pinta o fundo da janela por cima do cartão branco.
-       caixas de marcação ficam de fora: estilizá-las faz o Qt desenhar o
-       indicador pelo stylesheet, e ele some. */
+    /* sem isso o rótulo pinta o fundo da janela por cima do cartão branco */
     QLabel {{ background: transparent; }}
+    /* caixa de marcar com contraste: borda escura, e cheia na cor de destaque com
+       o ✓ branco quando marcada (o ✓ é desenhado pela imagem: estilizado, o Qt não
+       desenha mais o indicador sozinho) */
+    QCheckBox {{ background: transparent; spacing: 8px; }}
+    QCheckBox::indicator, QAbstractItemView::indicator {{
+        width: 16px; height: 16px;
+        border: 2px solid {c["texto_fraco"]};
+        border-radius: 4px;
+        background: {c["superficie"]};
+    }}
+    QCheckBox::indicator:hover, QAbstractItemView::indicator:hover {{
+        border-color: {c["destaque"]};
+    }}
+    QCheckBox::indicator:checked, QAbstractItemView::indicator:checked {{
+        background: {c["destaque"]};
+        border-color: {c["destaque"]};
+        image: url("{MARCADO}");
+    }}
+    QCheckBox::indicator:disabled {{
+        border-color: {c["borda"]}; background: {c["faixa"]};
+    }}
+    QCheckBox:disabled {{ color: {c["texto_fraco"]}; }}
     /* menus (Opções do cartão, Ações…): o item sob o mouse ganha fundo e uma
        barrinha na cor de destaque, como um link aceso */
     QMenu {{

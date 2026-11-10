@@ -15,8 +15,8 @@ from ..comum import cores, tema, widgets
 from ..comum.campos import CampoBusca
 from ..comum.cartoes import Acao, DadosCartao, DataCartao, PainelDeCartoes, SecaoCartoes
 from ..contexto import Contexto
+from ..dialogos.assistente_parcelamento import parcelar
 from ..dialogos.parcelas import DialogoParcelas, situacao_da_parcela
-from ..dialogos.renegociacao import DialogoRenegociacao
 
 
 class PainelParcelamentos(QWidget):
@@ -189,9 +189,8 @@ class PainelParcelamentos(QWidget):
             self.aviso.setText(texto)
 
     def _novo(self) -> None:
-        dialogo = DialogoRenegociacao(self.contexto, parent=self)
-        if dialogo.exec():
-            acordo = dialogo.acordo
+        acordo = parcelar(self.contexto, parent=self)
+        if acordo is not None:
             self._depois(f"✓ Parcelamento de {acordo.cliente.nome}: "
                          f"{formatar_moeda(acordo.valor_acordado)} em {acordo.parcelas} "
                          "parcela(s).")

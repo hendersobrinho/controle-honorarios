@@ -34,11 +34,11 @@ from ..comum.campos import CampoBusca
 from ..comum.cartoes import Acao, DadosCartao, DataCartao, PainelDeCartoes, SecaoCartoes
 from ..comum.filtros import BarraDeFiltros, FiltroData, FiltroOpcoes
 from ..contexto import Contexto
+from ..dialogos.assistente_parcelamento import parcelar
 from ..dialogos.cobrar import DialogoCobrar
 from ..dialogos.ficha import DialogoFicha
 from ..dialogos.historico import DialogoHistorico
 from ..dialogos.pagamento import DialogoPagamento
-from ..dialogos.renegociacao import DialogoRenegociacao
 
 # --------------------------------------------------------------------- cartões
 
@@ -313,7 +313,7 @@ class _PainelDeHonorarios(QWidget):
         self._renegociar_linhas([linha])
 
     def _renegociar_linhas(self, linhas: list[LinhaHonorario]) -> None:
-        if DialogoRenegociacao(self.contexto, linhas[0].cliente, linhas, self).exec():
+        if parcelar(self.contexto, linhas[0].cliente, linhas, parent=self) is not None:
             self.recarregar()
 
     def _acao_de_pagamento(self, linha: LinhaHonorario) -> list[Acao]:

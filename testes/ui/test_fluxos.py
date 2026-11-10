@@ -3226,3 +3226,135 @@ def test_parcelar_com_juros_ao_dia_estipulado(qtbot, contexto, cliente_com_debit
     outro.juros_dia.definir(Decimal("1.00"))
     outro._juros_dia_calculado()                          # volta ao calculado
     assert outro.juros_dia_estipulado() is None
+
+
+# ------------------------------------------------------ parcelar passo a passo
+
+
+def _assistente(qtbot, contexto, monkeypatch, *args, **kwargs):
+    from honorarios.servicos import renegociacoes
+    from honorarios.ui.dialogos import assistente_parcelamento as ap
+
+    referencia = contexto.data_referencia
+    monkeypatch.setattr(ap, "hoje", lambda: referencia)
+    monkeypatch.setattr(renegociacoes, "hoje", lambda: referencia)
+    dialogo = ap.AssistenteParcelamento(contexto, *args, **kwargs)
+    qtbot.addWidget(dialogo)
+    return dialogo
+
+
+def test_parcelar_numa_tela_so(qtbot, contexto, cliente_com_debito, monkeypatch):
+    from honorarios.servicos import parcelamentos
+    from honorarios.ui.comum import widgets
+
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    dialogo = _assistente(qtbot, contexto, monkeypatch)
+    assert not dialogo.botao_parcelar.isEnabled()          # sem cliente
+    dialogo.campo_cliente.mudou.emit(cliente_com_debito)
+    dialogo.modelo.marcar_todos()
+    assert dialogo.valor_a_parcelar() == Decimal("1551.00")   # com o juros de hoje
+    assert not dialogo.juros_total.isEnabled()             # personalizado apagado
+    dialogo.parcelas.setValue(3)
+    dialogo.primeiro_vencimento.definir(contexto.data_referencia + timedelta(days=10))
+    assert [p.valor for p in dialogo.modelo_parcelas.itens] == [Decimal("517.00")] * 3
+    assert dialogo._juros_previsto[1] > 0                  # o juros corre até vencer
+    assert "3 × R$ 517,00" in dialogo.total_parcelar.text()
+    dialogo._confirmar()
+    criado = parcelamentos.obter(contexto.sessao, dialogo.acordo.id, contexto.data_referencia)
+    assert len(criado.parcelas) == 3
+    assert criado.parcelas[0].honorario.juros_desde == contexto.data_referencia
+
+
+def test_parcelar_com_juros_total_personalizado(qtbot, contexto, cliente_com_debito,
+                                                monkeypatch):
+    from honorarios.servicos import parcelamentos
+    from honorarios.ui.comum import widgets
+
+    monkeypatch.setattr(widgets, "confirmar", lambda *a, **k: True)
+    linhas = linhas_do(contexto.sessao, cliente_com_debito)
+    dialogo = _assistente(qtbot, contexto, monkeypatch, cliente_com_debito, linhas)
+    calculado = dialogo.juros_calculado_total()
+    valor = sum((linha.atualizacao.saldo for linha in linhas), start=Decimal(0))
+    dialogo.personalizado.setChecked(True)
+    assert dialogo.juros_total.isEnabled() and dialogo.juros_total.valor() == calculado
+    dialogo.juros_total.definir(Decimal("10.00"))           # o juros inteiro, não por dia
+    juros = [dialogo.atualizacao(linha).juros for linha in dialogo.escolhidos()]
+    assert sum(juros) == Decimal("10.00")
+    assert dialogo.valor_a_parcelar() == valor + Decimal("10.00")
+    dialogo.juros_correndo.setChecked(False)               # só se atrasar
+    assert dialogo._juros_previsto == {}
+    dialogo._confirmar()
+    criado = parcelamentos.obter(contexto.sessao, dialogo.acordo.id, contexto.data_referencia)
+    assert criado.acordo.valor_acordado == valor + Decimal("10.00")
+    assert criado.parcelas[0].honorario.juros_desde is None
+
+
+def test_alterar_o_juros_da_empresa_ao_parcelar(qtbot, contexto, cliente_com_debito,
+                                                monkeypatch):
+    from honorarios.servicos import calculo
+    from honorarios.ui.dialogos import assistente_parcelamento as ap
+
+    linhas = linhas_do(contexto.sessao, cliente_com_debito)
+    dialogo = _assistente(qtbot, contexto, monkeypatch, cliente_com_debito, linhas)
+    antes = dialogo.juros_calculado_total()
+    janela = ap.DialogoJurosDaEmpresa(contexto, cliente_com_debito)
+    qtbot.addWidget(janela)
+    novo = calculo.taxa_vigente_em(cliente_com_debito) * 2
+    janela.valor_dia.definir(novo)
+    janela._salvar()
+    assert calculo.taxa_vigente_em(cliente_com_debito) == novo   # gravou no cadastro
+    dialogo._carregar_cliente(cliente_com_debito)
+    assert len(dialogo.escolhidos()) == 2                  # as marcações ficam
+    assert dialogo.juros_calculado_total() == antes * 2
+    assert "R$" in dialogo.juros_empresa.text()
+
+
+def test_juros_do_cobrar_vira_o_personalizado(qtbot, contexto, cliente_com_debito,
+                                              monkeypatch):
+    linhas = linhas_do(contexto.sessao, cliente_com_debito)
+    dialogo = _assistente(qtbot, contexto, monkeypatch, cliente_com_debito, linhas,
+                          juros={linhas[0].honorario.id: Decimal("5.00")})
+    assert dialogo.personalizado.isChecked()
+    assert dialogo.juros_total.valor() == Decimal("5.00") + linhas[1].atualizacao.juros
+
+
+def test_janela_do_juros_inteiro_ou_por_dia(qtbot, contexto, cliente_com_debito):
+    from honorarios.ui.dialogos import juros_manual
+
+    linha = linhas_do(contexto.sessao, cliente_com_debito)[0]
+
+    # a janela do juros: o juros inteiro ou um valor por dia × dias de atraso
+    atual = linha.atualizacao
+    janela = juros_manual.DialogoJurosManual("x", linha.honorario, atual)
+    qtbot.addWidget(janela)
+    janela.campo.definir(Decimal("1.00"))
+    assert "parece o juros de UM dia" in janela.conta.text()
+    janela.modo_dia.setChecked(True)
+    janela.campo.definir(Decimal("2.00"))
+    assert janela.juros_escolhido() == Decimal("2.00") * atual.dias_atraso
+    janela._aplicar()
+    assert janela.juros == Decimal("2.00") * atual.dias_atraso
+    assert janela.valor_dia == Decimal("2.00")
+
+
+def test_cobrar_tem_parcelar_com_os_juros_da_tela(qtbot, contexto, cliente_com_debito,
+                                                  monkeypatch):
+    from honorarios.ui.dialogos import assistente_parcelamento
+    from honorarios.ui.dialogos.cobrar import DialogoCobrar
+
+    linhas = linhas_do(contexto.sessao, cliente_com_debito)
+    cobrar = DialogoCobrar(contexto, cliente_com_debito, linhas)
+    qtbot.addWidget(cobrar)
+    assert cobrar.botao_parcelar.isVisibleTo(cobrar)
+    cobrar.definir_juros(cobrar.linhas[0], Decimal("7.00"))
+    recebido = {}
+
+    def parcelar(contexto_, cliente, linhas_, juros, parent=None):
+        recebido.update(cliente=cliente, ids=[x.honorario.id for x in linhas_], juros=juros)
+        return "acordo"
+
+    monkeypatch.setattr(assistente_parcelamento, "parcelar", parcelar)
+    cobrar._parcelar()
+    assert recebido["cliente"] is cliente_com_debito
+    assert recebido["juros"] == {cobrar.linhas[0].honorario.id: Decimal("7.00")}
+    assert cobrar.parcelou == "acordo" and cobrar.registrou

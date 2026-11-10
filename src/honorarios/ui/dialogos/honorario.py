@@ -144,6 +144,12 @@ class DialogoHonorario(QDialog):
         self.juros.textEdited.connect(self._digitou_juros)
         self.juros.valueChanged.connect(lambda *_: self._mostrar_juros())
         caixa.addWidget(self.juros, 1)
+        self.botao_por_dia = widgets.QPushButton("Por dia…")
+        self.botao_por_dia.setObjectName("linkFiltro")
+        self.botao_por_dia.setToolTip("Informar o juros por dia: o sistema multiplica pelos "
+                                      "dias de atraso e põe o total aqui")
+        self.botao_por_dia.clicked.connect(self._juros_por_dia)
+        caixa.addWidget(self.botao_por_dia)
         self.botao_calculado = widgets.QPushButton("Voltar ao calculado")
         self.botao_calculado.setObjectName("linkFiltro")
         self.botao_calculado.clicked.connect(self._voltar_ao_calculado)
@@ -184,6 +190,25 @@ class DialogoHonorario(QDialog):
             self.juros.blockSignals(False)
         self._mostrar_juros(calculado)
 
+    def _dias_de_atraso(self) -> int:
+        from ...dominio.juros import dias_em_atraso
+
+        return dias_em_atraso(self.vencimento.valor(), self._referencia())
+
+    def _taxa_dia(self) -> Decimal:
+        cliente = self.honorario.cliente if self.honorario is not None else None
+        return calculo.taxa_vigente_em(cliente, self._referencia()) if cliente else Decimal(0)
+
+    def _juros_por_dia(self) -> None:
+        from ..comum.juros_por_dia import DialogoJurosPorDia
+
+        dialogo = DialogoJurosPorDia(self._dias_de_atraso(), self._taxa_dia(), self)
+        if dialogo.exec() and dialogo.total is not None:
+            self._juros_mexido = True
+            self._juros_manual = True
+            self.juros.definir(dialogo.total)
+            self._mostrar_juros()
+
     def _voltar_ao_calculado(self) -> None:
         self._juros_mexido = True
         self._juros_manual = False
@@ -199,9 +224,13 @@ class DialogoHonorario(QDialog):
         self.botao_calculado.setVisible(manual)
         referencia = formatar_data(self._referencia())
         if manual:
+            from ..comum.juros_por_dia import aviso_do_dia
+
             self.juros_conta.setText(
-                f"✎ Acertado à mão — o cálculo dá {formatar_moeda(calculado)} em {referencia}. "
-                "Daqui para a frente, os dias de atraso continuam somando por cima."
+                aviso_do_dia(self.juros.valor(), self._dias_de_atraso(), self._taxa_dia())
+                or f"✎ Acertado à mão (é o juros inteiro, não o de um dia) — o cálculo dá "
+                f"{formatar_moeda(calculado)} em {referencia}. Daqui para a frente, os dias "
+                "de atraso continuam somando por cima."
             )
         elif calculado:
             self.juros_conta.setText(f"Calculado em {referencia}. Digite outro valor para "

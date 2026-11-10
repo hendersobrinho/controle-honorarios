@@ -142,6 +142,7 @@ class DialogoCobrar(QDialog):
         self.cliente = cliente
         self.linhas = list(linhas)
         self.registrou = False
+        self.parcelou = None   # o parcelamento feito pelo botão Parcelar…
         # id do honorário → juros digitado à mão (vale até fechar a tela)
         self.juros_manuais: dict[int, Decimal] = {}
         self._juros_do_honorario: dict[int, Decimal] = {}   # sem o digitado aqui
@@ -250,6 +251,13 @@ class DialogoCobrar(QDialog):
         rodape.addWidget(self.aviso, 1)
         fechar = widgets.QPushButton("Fechar")
         fechar.clicked.connect(self.reject)
+        self.botao_parcelar = widgets.QPushButton("Parcelar…")
+        self.botao_parcelar.setToolTip(
+            "Parcelar os honorários marcados, com os juros desta tela (o que foi mudado à "
+            "mão aqui vai junto)")
+        self.botao_parcelar.clicked.connect(self._parcelar)
+        self.botao_parcelar.setVisible(bool(self._parcelaveis(self.linhas)))
+        rodape.addWidget(self.botao_parcelar)
         registrar = widgets.QPushButton("Marcar como cobrado")
         registrar.setObjectName("primario")
         registrar.setShortcut("Ctrl+Return")
@@ -396,6 +404,11 @@ class DialogoCobrar(QDialog):
         self.juros_editor.setToolTip("Digite os juros e tecle Enter (ou saia do campo)")
         self.juros_editor.editingFinished.connect(self._aplicar_juros_digitado)
         linha.addWidget(self.juros_editor)
+        self.botao_por_dia = widgets.QPushButton("Por dia…")
+        self.botao_por_dia.setToolTip("Informar o juros por dia: o sistema multiplica pelos "
+                                      "dias de atraso e põe o total aqui")
+        self.botao_por_dia.clicked.connect(self._juros_por_dia)
+        linha.addWidget(self.botao_por_dia)
         self.botao_calculado = widgets.QPushButton("Usar o calculado")
         self.botao_calculado.setToolTip("Desfaz os juros digitados e volta à conta do sistema")
         self.botao_calculado.clicked.connect(self._voltar_ao_calculado)
@@ -666,6 +679,7 @@ class DialogoCobrar(QDialog):
         linha = self.modelo.item(indice) if indice >= 0 else None
         self._editada = linha
         self.juros_editor.setVisible(linha is not None)
+        self.botao_por_dia.setVisible(linha is not None)
         self.botao_calculado.setVisible(linha is not None)
         if linha is None:
             self.editado_rotulo.setText(
@@ -673,7 +687,9 @@ class DialogoCobrar(QDialog):
             return
         # só o que foi digitado aqui volta: o acerto feito no Editar é o juros do honorário
         self.botao_calculado.setEnabled(linha.honorario.id in self.juros_manuais)
-        self.editado_rotulo.setText(f"✎ Juros a cobrar de <b>{escape(_rotulo(linha))}</b>:")
+        self.editado_rotulo.setText(
+            f"✎ Juros a cobrar de <b>{escape(_rotulo(linha))}</b> (o juros inteiro, não o "
+            "de um dia):" + self._aviso_do_dia(linha))
         self.juros_editor.blockSignals(True)
         self.juros_editor.definir(linha.atualizacao.juros)
         self.juros_editor.blockSignals(False)
@@ -693,6 +709,58 @@ class DialogoCobrar(QDialog):
             return
         self._gerar()
         self.botao_calculado.setEnabled(linha.honorario.id in self.juros_manuais)
+        self._escolher_para_editar(self.tabela.currentIndex().row())
+
+    def _aviso_do_dia(self, linha: LinhaHonorario) -> str:
+        from ..comum.juros_por_dia import aviso_do_dia
+
+        if linha.honorario.id not in self.juros_manuais:
+            return ""
+        aviso = aviso_do_dia(linha.atualizacao.juros, linha.atualizacao.dias_atraso,
+                             calculo.taxa_vigente_em(self.cliente, self._data_dos_valores()))
+        return f"<br><span style='color:#b45309'>{escape(aviso)}</span>" if aviso else ""
+
+    def _juros_por_dia(self) -> None:
+        from ..comum.juros_por_dia import DialogoJurosPorDia
+
+        linha = self._editada
+        if linha is None:
+            return
+        taxa = calculo.taxa_vigente_em(self.cliente, self._data_dos_valores())
+        dialogo = DialogoJurosPorDia(linha.atualizacao.dias_atraso, taxa, self)
+        if dialogo.exec() and dialogo.total is not None:
+            self.definir_juros(linha, dialogo.total)
+            self._escolher_para_editar(self.tabela.currentIndex().row())
+
+    def _parcelaveis(self, linhas) -> list[LinhaHonorario]:
+        """Os honorários que dá para parcelar: do próprio cliente, em aberto e que não
+        são parcela de outro parcelamento."""
+        from sqlalchemy import select
+
+        from ...servicos import honorarios as servico_honorarios
+
+        parcelas = set(self.contexto.sessao.scalars(
+            select(servico_honorarios.ids_das_parcelas().subquery().c[0])))
+        return [linha for linha in linhas
+                if linha.honorario.cliente_id == self.cliente.id
+                and linha.honorario.status.cobravel and linha.honorario.id not in parcelas]
+
+    def _parcelar(self) -> None:
+        from .assistente_parcelamento import parcelar
+
+        linhas = self._parcelaveis(self.modelo.marcados())
+        if not linhas:
+            widgets.aviso(self, "Marque os honorários do cliente que vão ser parcelados "
+                                "(parcela de outro parcelamento não entra).")
+            return
+        juros = {linha.honorario.id: valor for linha in linhas
+                 if (valor := self.juros_manuais.get(linha.honorario.id)) is not None}
+        acordo = parcelar(self.contexto, self.cliente, linhas, juros, parent=self)
+        if acordo is not None:
+            # os honorários viraram parcelas: esta cobrança não vale mais para eles
+            self.parcelou = acordo
+            self.registrou = True
+            self.accept()
 
     def _voltar_ao_calculado(self) -> None:
         if self._editada is None:
