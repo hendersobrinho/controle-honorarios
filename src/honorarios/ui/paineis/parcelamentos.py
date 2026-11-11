@@ -254,7 +254,7 @@ class PainelParcelamentos(QWidget):
             self.contexto.desfazer()
             return
         self._depois(f"Parcelamento de {parcelamento.cliente.nome} cancelado: os honorários "
-                     "voltaram para Vencimentos.")
+                     "voltaram para a tela Honorários em aberto.")
 
     def _tirar_juros(self, parcelamento: servico.Parcelamento) -> None:
         from ...dominio.valores import hoje

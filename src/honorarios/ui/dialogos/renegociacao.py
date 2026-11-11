@@ -69,8 +69,8 @@ class DialogoRenegociacao(QDialog):
         layout = QVBoxLayout(self)
         self.cabecalho = widgets.Cabecalho(
             "Novo parcelamento",
-            "Marque os honorários que entram: um ou vários. Eles saem de Vencimentos e "
-            "as parcelas passam a ser acompanhadas em Parcelamentos.",
+            "Marque os honorários que entram: um ou vários. Eles saem da tela Honorários em "
+            "aberto e as parcelas passam a ser acompanhadas em Parcelamentos.",
         )
         layout.addWidget(self.cabecalho)
 
@@ -243,7 +243,7 @@ class DialogoRenegociacao(QDialog):
                                     Qt.ItemDataRole.CheckStateRole)
         self.cabecalho.definir_subtitulo(
             f"{len(linhas)} honorário(s) em aberto. Marque os que entram no parcelamento: "
-            "eles saem de Vencimentos e as parcelas passam a ser acompanhadas em "
+            "eles saem da tela Honorários em aberto e as parcelas passam a ser acompanhadas em "
             "Parcelamentos." if cliente is not None else
             "Escolha o cliente e marque os honorários que entram no parcelamento."
         )

@@ -1,4 +1,5 @@
-"""Cadastro de cliente: dados e juros ao dia, contatos e o honorário recorrente."""
+"""Painel do cliente: numa tela só, para ver e editar — dados e juros ao dia,
+contatos e os honorários recorrentes (com a forma de envio de cada um)."""
 
 from __future__ import annotations
 
@@ -14,9 +15,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -30,6 +31,8 @@ from ..comum.seletor_cliente import CampoCliente
 from ..contexto import Contexto
 
 COLUNAS_CONTATO = ("Nome", "Como chamar", "WhatsApp", "E-mail", "Principal")
+COLUNAS_CONTRATO = ("Tipo", "Valor", "Periodicidade", "Vence dia", "Forma de envio",
+                    "Situação")
 
 
 class DialogoCliente(QDialog):
@@ -37,8 +40,8 @@ class DialogoCliente(QDialog):
         super().__init__(parent)
         self.contexto = contexto
         self.cliente = cliente
-        self.setWindowTitle("Editar cliente" if cliente else "Novo cliente")
-        self.resize(780, 660)
+        self.setWindowTitle(f"Cliente – {cliente.nome}" if cliente else "Novo cliente")
+        widgets.tamanho_na_tela(self, 1240, 800)
         self._montar()
         if cliente:
             self._carregar()
@@ -46,10 +49,29 @@ class DialogoCliente(QDialog):
 
     def _montar(self) -> None:
         layout = QVBoxLayout(self)
-        self.abas = QTabWidget()
-        layout.addWidget(self.abas, 1)
-        aba_dados = QWidget()
-        dados_layout = QVBoxLayout(aba_dados)
+        self.cabecalho = widgets.Cabecalho(
+            self.cliente.nome if self.cliente else "Novo cliente",
+            "Tudo do cliente numa tela: veja, edite e salve no fim",
+        )
+        if self.cliente is not None:
+            self.cabecalho.adicionar_botao("Débitos e histórico (ficha)…", self._ficha)
+        layout.addWidget(self.cabecalho)
+
+        # duas colunas: à esquerda quem é o cliente; à direita com quem falar e o
+        # que ele paga. Rola quando a tela é pequena.
+        self.rolagem = QScrollArea()
+        self.rolagem.setWidgetResizable(True)
+        self.rolagem.setFrameShape(QScrollArea.Shape.NoFrame)
+        corpo = QWidget()
+        colunas = QHBoxLayout(corpo)
+        colunas.setContentsMargins(0, 0, 0, 0)
+        colunas.setSpacing(14)
+        dados_layout = QVBoxLayout()
+        direita = QVBoxLayout()
+        colunas.addLayout(dados_layout, 5)
+        colunas.addLayout(direita, 6)
+        self.rolagem.setWidget(corpo)
+        layout.addWidget(self.rolagem, 1)
 
         grupo = QGroupBox("Dados do cliente")
         formulario = QFormLayout(grupo)
@@ -105,11 +127,12 @@ class DialogoCliente(QDialog):
         caixa_juros.addWidget(self.nota_juros)
         dados_layout.addWidget(grupo_juros)
         dados_layout.addStretch(1)
-        self.abas.addTab(aba_dados, "Dados")
 
-        grupo_contatos = QWidget()
+        grupo_contatos = QGroupBox("Contatos")
         caixa = QVBoxLayout(grupo_contatos)
         self.contatos = QTableWidget(0, len(COLUNAS_CONTATO))
+        self.contatos.setMinimumHeight(110)
+        self.contatos.setMaximumHeight(170)
         self.contatos.setHorizontalHeaderLabels(COLUNAS_CONTATO)
         self.contatos.verticalHeader().setVisible(False)
         cabecalho = self.contatos.horizontalHeader()
@@ -124,12 +147,13 @@ class DialogoCliente(QDialog):
         botoes.addWidget(adicionar)
         botoes.addWidget(remover)
         botoes.addStretch(1)
-        botoes.addWidget(
+        caixa.addLayout(botoes)
+        caixa.addWidget(
             widgets.rotulo_fraco("\"Como chamar\" é o nome usado na saudação da mensagem.")
         )
-        caixa.addLayout(botoes)
-        self.abas.addTab(grupo_contatos, "Contatos")
-        self.abas.addTab(self._aba_honorario(), "Honorário recorrente")
+        direita.addWidget(grupo_contatos)
+        self.grupo_honorario = self._grupo_honorario()
+        direita.addWidget(self.grupo_honorario, 1)
         self.empresa.mudou.connect(lambda *_: self._ajustar_honorario())
 
         acoes = QHBoxLayout()
@@ -145,10 +169,10 @@ class DialogoCliente(QDialog):
         layout.addLayout(acoes)
 
     # ------------------------------------------------------- honorário recorrente
-    def _aba_honorario(self) -> QWidget:
+    def _grupo_honorario(self) -> QGroupBox:
         from .contrato import FormularioContrato
 
-        pagina = QWidget()
+        pagina = QGroupBox("Honorários recorrentes e forma de envio")
         caixa = QVBoxLayout(pagina)
         self.aviso_honorario = QLabel()
         self.aviso_honorario.setObjectName("ajudaConta")
@@ -162,9 +186,9 @@ class DialogoCliente(QDialog):
         else:
             # já cadastrado: os honorários recorrentes dele, para cuidar daqui
             self.formulario_honorario = None
-            self.tabela_contratos = QTableWidget(0, 5)
-            self.tabela_contratos.setHorizontalHeaderLabels(
-                ("Tipo", "Valor", "Periodicidade", "Vence dia", "Situação"))
+            self.tabela_contratos = QTableWidget(0, len(COLUNAS_CONTRATO))
+            self.tabela_contratos.setMinimumHeight(140)
+            self.tabela_contratos.setHorizontalHeaderLabels(COLUNAS_CONTRATO)
             self.tabela_contratos.verticalHeader().setVisible(False)
             self.tabela_contratos.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
             self.tabela_contratos.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -186,7 +210,32 @@ class DialogoCliente(QDialog):
                 botoes.addWidget(botao)
             botoes.addStretch(1)
             caixa.addLayout(botoes)
+        formas = QHBoxLayout()
+        dica = widgets.rotulo_fraco(
+            "A forma de envio (e-mail, WhatsApp…) é escolhida em cada honorário recorrente.")
+        dica.setWordWrap(True)
+        formas.addWidget(dica, 1)
+        botao_formas = widgets.QPushButton("Formas de envio…")
+        botao_formas.setToolTip("Cria, renomeia ou desativa as formas de envio da lista")
+        botao_formas.clicked.connect(self._formas_envio)
+        formas.addWidget(botao_formas)
+        caixa.addLayout(formas)
         return pagina
+
+    def _formas_envio(self) -> None:
+        from ..paineis.formas_envio import DialogoFormasEnvio
+
+        DialogoFormasEnvio(self.contexto, self).exec()
+        if self.formulario_honorario is not None:
+            self.formulario_honorario.recarregar_formas()
+        else:
+            self._mostrar_contratos()
+
+    def _ficha(self) -> None:
+        from .ficha import DialogoFicha
+
+        DialogoFicha(self.contexto, self.cliente, self, com_cadastro=False).exec()
+        self._mostrar_contratos()
 
     def _paga_pela_empresa(self) -> bool:
         return self.empresa.valor() is not None
@@ -229,6 +278,7 @@ class DialogoCliente(QDialog):
         for linha, contrato in enumerate(self.contratos_listados):
             textos = (contrato.tipo.nome, formatar_moeda(contrato.valor),
                       contrato.periodicidade.rotulo, str(contrato.dia_vencimento),
+                      contrato.forma_envio.nome if contrato.forma_envio else "—",
                       "Suspenso" if contrato.suspenso else "Ativo")
             for coluna, texto in enumerate(textos):
                 self.tabela_contratos.setItem(linha, coluna, QTableWidgetItem(texto))
@@ -382,10 +432,11 @@ class DialogoCliente(QDialog):
                 widgets.confirmar(
                     self, "Salvar o cliente sem honorário recorrente?", "Sem honorário",
                     "Serve para quem é só de Imposto de Renda ou de serviços avulsos. Se ele "
-                    "paga por outra empresa, preencha \"Paga pela empresa\" na aba Dados. "
+                    "paga por outra empresa, preencha \"Paga pela empresa\" nos dados. "
                     "Dá para cadastrar o honorário depois, no cadastro do cliente.",
                     acao="Salvar sem honorário"):
-            self.abas.setCurrentIndex(self.abas.count() - 1)
+            self.rolagem.ensureWidgetVisible(self.grupo_honorario)
+            self.formulario_honorario.setFocus()
             return
 
         def acao():

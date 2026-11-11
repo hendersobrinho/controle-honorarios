@@ -1,6 +1,6 @@
 """Formas de envio da cobrança (WhatsApp do cliente, e-mail, malote…).
 
-Cadastro que antes ficava nas Configurações: aqui, junto dos grupos e tipos.
+Abre pelo cadastro dos clientes (tela Clientes e painel de cada cliente).
 Mostra quantos clientes, contratos e honorários usam cada forma, para saber o
 que se pode desativar sem susto.
 """
@@ -8,7 +8,14 @@ que se pode desativar sem susto.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QInputDialog, QTableView, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QTableView,
+    QVBoxLayout,
+    QWidget,
+)
 from sqlalchemy import func, select
 
 from ...infra.modelos import Contrato, Honorario
@@ -124,3 +131,21 @@ class PainelFormasEnvio(QWidget):
         deu_certo, _ = widgets.executar(self, acao)
         if deu_certo:
             self.recarregar()
+
+
+class DialogoFormasEnvio(QDialog):
+    """A lista de formas de envio, aberta do cadastro dos clientes."""
+
+    def __init__(self, contexto: Contexto, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Formas de envio")
+        self.resize(620, 460)
+        layout = QVBoxLayout(self)
+        self.painel = PainelFormasEnvio(contexto, self)
+        layout.addWidget(self.painel, 1)
+        fechar = widgets.QPushButton("Fechar")
+        fechar.clicked.connect(self.accept)
+        linha = QHBoxLayout()
+        linha.addStretch(1)
+        linha.addWidget(fechar)
+        layout.addLayout(linha)

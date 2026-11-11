@@ -1,17 +1,19 @@
-"""Tipos e formas de envio: os cadastros de apoio da cobrança, em abas."""
+"""Tipos de faturamento: os grupos e tipos de honorário.
+
+As formas de envio ficam no cadastro dos clientes (tela Clientes).
+"""
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from ..comum import widgets
 from ..contexto import Contexto
-from .formas_envio import PainelFormasEnvio
 from .tipos import PainelTipos
 
 
 class PainelTiposEEnvio(QWidget):
-    titulo = "Tipos e formas de envio"
+    titulo = "Tipos de faturamento"
 
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
@@ -19,17 +21,10 @@ class PainelTiposEEnvio(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
         layout.addWidget(widgets.Cabecalho(
-            "Tipos e formas de envio",
-            "Grupos e tipos de honorário, e por onde a cobrança chega a cada cliente",
-        ))
+            "Tipos de faturamento", "Grupos e tipos de honorário"))
         self.tipos = PainelTipos(contexto)
-        self.formas = PainelFormasEnvio(contexto)
-        self.abas = QTabWidget()
-        for painel, rotulo in ((self.tipos, "Grupos e tipos"), (self.formas, "Formas de envio")):
-            painel.cabecalho.ocultar_titulo()
-            self.abas.addTab(painel, rotulo)
-        self.abas.currentChanged.connect(lambda *_: self.recarregar())
-        layout.addWidget(self.abas, 1)
+        self.tipos.cabecalho.ocultar_titulo()
+        layout.addWidget(self.tipos, 1)
 
     def recarregar(self) -> None:
-        self.abas.currentWidget().recarregar()
+        self.tipos.recarregar()

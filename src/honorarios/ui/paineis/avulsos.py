@@ -3,7 +3,7 @@
 É o histórico dos avulsos lançados, pagos ou não, como "Honorários recorrentes"
 é o lugar dos contratos. Dá para cobrar daqui mesmo (ou já no lançamento, com
 "Salvar e cobrar"); o avulso também entra nas telas de cobrança (Atrasados,
-A vencer, Imposto de Renda) assim que é lançado, e a baixa fica nelas.
+A vencer) assim que é lançado, e a baixa fica nelas.
 """
 
 from __future__ import annotations

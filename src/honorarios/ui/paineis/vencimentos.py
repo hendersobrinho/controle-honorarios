@@ -20,7 +20,7 @@ from .honorarios import PainelAtrasados, PainelAVencer, PainelPagos
 
 
 class PainelVencimentos(QWidget):
-    titulo = "Vencimentos"
+    titulo = "Honorários em aberto"
 
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
@@ -28,8 +28,8 @@ class PainelVencimentos(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
         layout.addWidget(widgets.Cabecalho(
-            "Vencimentos", "O que vai vencer, o que venceu sem pagamento, o que já foi pago "
-            "e as cobranças feitas"
+            "Honorários em aberto",
+            "O que vai vencer, o que venceu sem pagamento, o que já foi pago e as cobranças feitas"
         ))
         self.a_vencer = PainelAVencer(contexto)
         self.atrasados = PainelAtrasados(contexto)

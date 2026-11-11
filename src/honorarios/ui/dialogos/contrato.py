@@ -48,6 +48,7 @@ class FormularioContrato(QWidget):
 
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
+        self.contexto = contexto
         sessao = contexto.sessao
         formulario = QFormLayout(self)
         formulario.setContentsMargins(0, 0, 0, 0)
@@ -98,6 +99,11 @@ class FormularioContrato(QWidget):
 
     def preenchido(self) -> bool:
         return self.tipo.valor() is not None
+
+    def recarregar_formas(self) -> None:
+        """Depois de mexer na lista de formas de envio."""
+        self.forma_envio.recarregar(servico_tipos.listar_formas(self.contexto.sessao),
+                                    "— não informado —")
 
     def carregar(self, contrato) -> None:
         self.tipo.definir(contrato.tipo_id)

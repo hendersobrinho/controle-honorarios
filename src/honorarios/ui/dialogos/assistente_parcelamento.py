@@ -384,8 +384,8 @@ class AssistenteParcelamento(QDialog):
             f"parcela(s) ≈ <b>{dia} por dia</b> em cada uma. Assim o cliente paga por dia "
             "o mesmo de antes.<br><br>"
             "<b>Depois de parcelar</b><br>"
-            "Os honorários saem de Vencimentos (ficam como Renegociado) e as parcelas "
-            "aparecem em Parcelamentos e no lembrete de Tarefas."), "Como funciona")
+            "Os honorários saem da tela Honorários em aberto (ficam como Renegociado) e as "
+            "parcelas aparecem em Parcelamentos e no lembrete de Tarefas."), "Como funciona")
 
     def _tela_antiga(self) -> None:
         self.usar_tela_antiga = True

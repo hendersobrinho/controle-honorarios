@@ -230,7 +230,7 @@ class _PainelDeHonorarios(QWidget):
     subtitulo = ""
     vazio = "Nada por aqui."
     # None = todos; False = sem os clientes só de IR (que têm tela própria); True = só eles
-    clientes_so_ir: bool | None = False
+    clientes_so_ir: bool | None = None   # sem divisão de clientes de IR
     mostrar_filtro_grupo = True
     # as parcelas de parcelamento são acompanhadas na tela Parcelamentos
     incluir_parcelas = False
@@ -890,110 +890,8 @@ class PainelPagos(_PainelDeHonorarios):
         return "recebido"
 
 
-# ----------------------------------------------------------- imposto de renda
-
-
-class PainelImpostoRenda(_PainelDeHonorarios):
-    """Clientes que só têm honorário de Imposto de Renda, com cobrança própria.
-
-    Em aberto e pagos continuam separados: a tela alterna entre os dois, e o
-    ano do IR (IRPF 2026, 2025…) é o recorte natural em vez do período.
-    """
-
-    titulo = "Clientes de IR"
-    subtitulo = "Clientes que só têm honorário de Imposto de Renda"
-    vazio = "Nenhum honorário de Imposto de Renda com esses filtros."
-    clientes_so_ir = True
-    mostrar_filtro_grupo = False
-
-    def _botoes_do_cabecalho(self):
-        return [
-            ("Cobrar selecionados", self._cobrar, True, "Ctrl+B"),
-            ("Registrar pagamento", self._pagar, False, "Ctrl+P"),
-            ("Ficha da empresa", self._ficha, False, "Ctrl+F"),
-        ]
-
-    def _botoes_do_rodape(self):
-        return [
-            ("Estornar pagamento", self._estornar),
-            ("Cancelar honorário", self._cancelar),
-            ("Exportar lista", self._exportar),
-        ]
-
-    def _montar_filtros(self, filtros: BarraDeFiltros) -> None:
-        self.situacao = filtros.adicionar(FiltroOpcoes("Mostrar", [
-            ("Em aberto", StatusPagamento.EM_ABERTO.value), ("Pagos", StatusPagamento.PAGO.value),
-        ]))
-        self.situacao.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
-        ano_atual = self.contexto.data_referencia.year
-        self.ano = filtros.adicionar(FiltroOpcoes("Ano do IR", [("todos", None)] + [
-            (str(ano), ano) for ano in range(ano_atual, ano_atual - 6, -1)
-        ]))
-        self.ano.currentIndexChanged.connect(lambda *_: self.recarregar_com_aviso())
-
-    @property
-    def mostrando_pagos(self) -> bool:
-        return self.situacao.currentData() == StatusPagamento.PAGO.value
-
-    def recarregar(self) -> None:
-        pagos = self.mostrando_pagos
-        visiveis = {
-            "Cobrar selecionados": not pagos,
-            "Registrar pagamento": not pagos,
-            "Cancelar honorário": not pagos,
-            "Estornar pagamento": pagos,
-        }
-        for texto, visivel in visiveis.items():
-            botao = self.botoes.get(texto)
-            if botao is not None:
-                botao.setVisible(visivel)
-        super().recarregar()
-
-    def _consultar(self) -> list[LinhaHonorario]:
-        status = StatusPagamento.PAGO if self.mostrando_pagos else StatusPagamento.EM_ABERTO
-        return servico.consultar(
-            self.contexto.sessao,
-            self._filtro_base(status=status, competencia_ano=self.ano.currentData()),
-        )
-
-    def _agrupar(self, linhas):
-        if self.mostrando_pagos:
-            return servico.agrupar_por_mes_pagamento(linhas)
-        atrasados = sorted(
-            (linha for linha in linhas if linha.atualizacao.dias_atraso > 0),
-            key=lambda linha: linha.atualizacao.dias_atraso,
-            reverse=True,
-        )
-        no_prazo = sorted(
-            (linha for linha in linhas if linha.atualizacao.dias_atraso == 0),
-            key=lambda linha: linha.honorario.vencimento,
-        )
-        return [
-            (rotulo, itens)
-            for rotulo, itens in (("Atrasados", atrasados), ("A vencer", no_prazo))
-            if itens
-        ]
-
-    def _cartao(self, linha: LinhaHonorario) -> DadosCartao:
-        if self.mostrando_pagos:
-            return cartao_de_pago(linha, self._acao_agradecer(linha),
-                                  self._opcoes_do_cartao(linha))
-        return super()._cartao(linha)
-
-    def _acoes_do_cartao(self, linha):
-        acoes = super()._acoes_do_cartao(linha)
-        if linha.honorario.status.cobravel:
-            rotulo = "Cobrar" if linha.atualizacao.dias_atraso else "Lembrete"
-            acoes.append(Acao(rotulo, self._cobrar_um))
-        return acoes + self._acao_de_pagamento(linha)
-
-    def _rotulo_total(self) -> str:
-        return "recebido" if self.mostrando_pagos else "total atualizado"
-
-
 __all__ = [
     "PainelAVencer",
-    "PainelImpostoRenda",
     "PainelAtrasados",
     "PainelPagos",
     "cartao_de_honorario",

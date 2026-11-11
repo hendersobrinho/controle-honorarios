@@ -505,30 +505,25 @@ def consultar(sessao: Session, filtro: Filtro) -> list[LinhaHonorario]:
 class Contagem:
     atrasados: int = 0
     a_vencer: int = 0
-    imposto_de_renda: int = 0
 
 
 def contar_pendentes(sessao: Session, referencia: date) -> Contagem:
     """Os números do menu, contados no banco (sem carregar nem calcular nada).
 
     Mesma regra das telas: em aberto, cliente não excluído; atrasado é o que
-    venceu antes da referência; quem só tem IR conta à parte; parcela de
-    parcelamento fica para a tela Parcelamentos.
+    venceu antes da referência; parcela de parcelamento fica para a tela
+    Parcelamentos.
     """
-    so_ir = clientes_so_imposto_de_renda(sessao)
     consulta = (
-        select(Honorario.cliente_id, Honorario.vencimento, func.count())
+        select(Honorario.vencimento, func.count())
         .join(Cliente)
         .where(Honorario.status == StatusPagamento.EM_ABERTO, Cliente.excluido_em.is_(None),
                Honorario.id.not_in(ids_das_parcelas()))
-        .group_by(Honorario.cliente_id, Honorario.vencimento)
+        .group_by(Honorario.vencimento)
     )
     contagem = Contagem()
-    for cliente_id, vencimento, quantidade in sessao.execute(consulta):
-        vencido = vencimento < referencia
-        if cliente_id in so_ir:
-            contagem.imposto_de_renda += quantidade
-        elif vencido:
+    for vencimento, quantidade in sessao.execute(consulta):
+        if vencimento < referencia:
             contagem.atrasados += quantidade
         else:
             contagem.a_vencer += quantidade

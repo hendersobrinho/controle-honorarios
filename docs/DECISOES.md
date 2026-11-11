@@ -675,6 +675,31 @@ antigos; "Dar baixa em todas" resolve o acúmulo do começo. O trimestre conta d
 competência de entrada porque o escritório não usa o trimestre do ano, e a tarefa
 nasce no dia seguinte ao fim do trimestre ("quando completar").
 
+### Painel do cliente, sem divisão de IR e acordos nas tarefas
+O cadastro do cliente tinha três abas (Dados, Contatos, Honorário recorrente) e a
+forma de envio ficava noutra tela (Tipos e formas de envio): para ver um cliente
+inteiro era preciso abrir abas e telas. Virou um painel numa tela só, em duas
+colunas e com rolagem para notebook, que serve para ver e para editar; dois cliques
+na lista abrem o painel (a ficha, com os débitos, tem botão próprio). A forma de
+envio é de cada honorário recorrente, então aparece na lista deles, e a lista de
+formas abre do cadastro dos clientes. A tela de grupos e tipos ficou só com eles,
+como **Tipos de faturamento**.
+
+A separação dos clientes de IR (tela Clientes de IR, aba Imposto de Renda e a
+contagem à parte) saiu: são pessoas físicas como as outras e a divisão confundia
+mais do que ajudava. O dado continua (`GrupoHonorario.imposto_de_renda`,
+`clientes_so_imposto_de_renda`) para relatórios e para o nome do honorário anual.
+
+O menu passou a ter **Cadastros** em cima e **Cobrança** depois, mas abre na tela
+de vencimentos, que é o trabalho do dia — renomeada **Honorários em aberto**.
+
+O acordo de valor do Cobrar ("pague R$ X até tal data") vira tarefa como as
+parcelas: calculada a cada leitura (`TarefaAcordo`, chave `acordo:<menor id>`),
+só a baixa gravada. Os honorários acordados juntos (mesmo cliente, mesmas datas)
+são uma tarefa; o acordo mais novo de cada honorário substitui o anterior; pago
+tudo, a tarefa some sem baixa, porque não há o que acompanhar. Passado o prazo ela
+continua, porque é aí que mais precisa de atenção.
+
 ### Campos de data e valor de digitação livre
 O `QDateEdit` divide a data em seções (dia, mês, ano): não deixa apagar nem digitar
 a data inteira de uma vez, e cada tecla cai numa seção. O `QDoubleSpinBox` mistura

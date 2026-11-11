@@ -84,10 +84,13 @@ def colunas_honorario(
 
 
 class DialogoFicha(QDialog):
-    def __init__(self, contexto: Contexto, cliente, parent=None) -> None:
+    def __init__(self, contexto: Contexto, cliente, parent=None,
+                 com_cadastro: bool = True) -> None:
         super().__init__(parent)
         self.contexto = contexto
         self.cliente = cliente
+        # aberta do painel do cliente, o cadastro já está na tela de trás
+        self.com_cadastro = com_cadastro
         self.setWindowTitle(f"Ficha – {cliente.nome}")
         self.resize(1080, 720)
         self._montar()
@@ -98,8 +101,9 @@ class DialogoFicha(QDialog):
         self.cabecalho = widgets.Cabecalho(self.cliente.nome)
         self.cabecalho.adicionar_botao("Cobrar", self._cobrar, primario=True, atalho="Ctrl+B")
         self.cabecalho.adicionar_botao("Novo honorário", self._novo_honorario)
-        botao = self.cabecalho.adicionar_botao("Editar cadastro", self._editar_cadastro)
-        botao.setToolTip("Dados, juros, contatos, data de entrada e honorário recorrente")
+        if self.com_cadastro:
+            botao = self.cabecalho.adicionar_botao("Editar cadastro", self._editar_cadastro)
+            botao.setToolTip("Dados, juros, contatos, data de entrada e honorário recorrente")
         self.botao_suspensao = self.cabecalho.adicionar_botao(
             "Suspender cobrança", self._alternar_suspensao
         )

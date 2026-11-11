@@ -17,24 +17,33 @@ nos últimos ``JANELA_MESES`` meses.
 enviá-la ao cliente (boleto, Pix…) ``dias_lembrete_parcela`` dias antes do
 vencimento escolhido no parcelamento (5 por padrão, em Configurações). Parcela paga
 ou parcelamento cancelado saem da lista; a baixa fica como nas trimestrais.
+
+**Pagamento dos acordos.** O acordo feito no Cobrar ("pague R$ X até tal data") vira
+a tarefa de acompanhar o pagamento até a data combinada. Fica na lista enquanto
+algum honorário do acordo estiver em aberto — passado o prazo, continua, avisando
+que o juros voltou a correr. Pago tudo, sai sozinha; a baixa serve para tirar da
+lista o que não precisa mais acompanhar. Um acordo novo do mesmo honorário
+substitui o antigo.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..dominio.enums import Periodicidade
-from ..dominio.valores import formatar_data, hoje, somar_meses
-from ..infra.modelos import Cliente, Contrato, Tarefa
+from ..dominio.enums import Periodicidade, StatusPagamento
+from ..dominio.valores import ZERO, formatar_data, formatar_moeda, hoje, somar_meses
+from ..infra.modelos import AcordoValor, Cliente, Contrato, Honorario, Tarefa
 from .erros import ErroDeValidacao
 
 JANELA_MESES = 12
 PREFIXO = "trimestre"
 PREFIXO_PARCELA = "parcela"
+PREFIXO_ACORDO = "acordo"
 CHAVE_DIAS_PARCELA = "dias_lembrete_parcela"
 DIAS_PARCELA_PADRAO = 5
 
@@ -136,6 +145,67 @@ class TarefaParcela:
 
 
 @dataclass
+class TarefaAcordo:
+    """Acompanhar o pagamento de um acordo até a data combinada."""
+
+    acordos: list[AcordoValor]   # um por honorário, feitos juntos no Cobrar
+    feita: Tarefa | None = None
+
+    @property
+    def cliente(self) -> Cliente:
+        return self.acordos[0].honorario.cliente
+
+    @property
+    def honorarios(self) -> list[Honorario]:
+        return [acordo.honorario for acordo in self.acordos]
+
+    @property
+    def em_aberto(self) -> list[Honorario]:
+        return [h for h in self.honorarios if h.status is StatusPagamento.EM_ABERTO]
+
+    @property
+    def chave(self) -> str:
+        return f"{PREFIXO_ACORDO}:{min(acordo.id for acordo in self.acordos)}"
+
+    @property
+    def total(self) -> Decimal:
+        return sum((Decimal(acordo.total) for acordo in self.acordos), start=ZERO)
+
+    @property
+    def data_base(self) -> date:
+        return self.acordos[0].data_base
+
+    @property
+    def vencimento(self) -> date:
+        return self.acordos[0].valido_ate
+
+    @property
+    def prazo(self) -> date:
+        return self.vencimento
+
+    @property
+    def periodo(self) -> str:
+        return f"até {formatar_data(self.vencimento)}"
+
+    @property
+    def descricao(self) -> str:
+        return (f"Acompanhar o pagamento do acordo: {formatar_moeda(self.total)} "
+                f"até {formatar_data(self.vencimento)}")
+
+    # o período que a baixa grava (mesma tabela das trimestrais)
+    @property
+    def inicio(self) -> date:
+        return self.data_base
+
+    @property
+    def fim(self) -> date:
+        return self.vencimento
+
+    def dias_esperando(self, referencia: date) -> int:
+        return max(0, (referencia - self.vencimento).days)
+
+
+@dataclass
 class Quadro:
     """Tudo o que a tela de tarefas mostra."""
 
@@ -148,10 +218,18 @@ class Quadro:
     parcelas: list[TarefaParcela] = field(default_factory=list)
     parcelas_proximas: list[TarefaParcela] = field(default_factory=list)
     parcelas_feitas: list[TarefaParcela] = field(default_factory=list)
+    # pagamento dos acordos feitos no Cobrar
+    acordos: list[TarefaAcordo] = field(default_factory=list)
+    acordos_feitos: list[TarefaAcordo] = field(default_factory=list)
 
     @property
     def para_fazer(self) -> int:
-        return len(self.pendentes) + len(self.parcelas)
+        return len(self.pendentes) + len(self.parcelas) + len(self.acordos)
+
+    @property
+    def todas(self) -> list:
+        return (self.pendentes + self.feitas + self.parcelas + self.parcelas_feitas
+                + self.acordos + self.acordos_feitos)
 
 
 def _contratos_trimestrais(sessao: Session) -> list[Contrato]:
@@ -195,6 +273,7 @@ def quadro(sessao: Session, referencia: date | None = None) -> Quadro:
     resultado.feitas.sort(key=lambda t: t.feita.concluida_em, reverse=True)
     resultado.sem_data.sort(key=lambda c: c.nome)
     _parcelas(sessao, referencia, resultado)
+    _acordos(sessao, referencia, resultado)
     return resultado
 
 
@@ -232,13 +311,44 @@ def _parcelas(sessao: Session, referencia: date, resultado: Quadro) -> None:
         key=lambda t: t.feita.concluida_em, reverse=True)
 
 
+def _acordos(sessao: Session, referencia: date, resultado: Quadro) -> None:
+    janela = somar_meses(referencia, -JANELA_MESES)
+    consulta = (
+        select(AcordoValor).join(Honorario).join(Cliente)
+        .where(AcordoValor.valido_ate >= janela, Cliente.excluido_em.is_(None))
+        .order_by(AcordoValor.criado_em, AcordoValor.id)
+    )
+    # o acordo mais novo de cada honorário: um acordo refeito substitui o anterior
+    ultimo: dict[int, AcordoValor] = {}
+    for acordo in sessao.scalars(consulta):
+        ultimo[acordo.honorario_id] = acordo
+    # os acordos feitos juntos (mesmo cliente, mesmas datas) são uma tarefa só
+    grupos: dict[tuple, list[AcordoValor]] = {}
+    for acordo in ultimo.values():
+        chave = (acordo.honorario.cliente_id, acordo.data_base, acordo.valido_ate)
+        grupos.setdefault(chave, []).append(acordo)
+    feitas = {t.chave: t for t in sessao.scalars(
+        select(Tarefa).where(Tarefa.chave.like(f"{PREFIXO_ACORDO}:%")))}
+    for acordos in grupos.values():
+        tarefa = TarefaAcordo(sorted(acordos, key=lambda a: a.id))
+        tarefa.feita = feitas.get(tarefa.chave)
+        if tarefa.feita is not None:
+            resultado.acordos_feitos.append(tarefa)
+        elif tarefa.em_aberto:
+            resultado.acordos.append(tarefa)
+        # pago tudo: não há o que acompanhar
+    resultado.acordos.sort(key=lambda t: (t.vencimento, t.cliente.nome))
+    resultado.acordos_feitos.sort(key=lambda t: t.feita.concluida_em, reverse=True)
+
+
 def contar_pendentes(sessao: Session, referencia: date | None = None) -> int:
     return quadro(sessao, referencia).para_fazer
 
 
-def concluir(sessao: Session, tarefa: TarefaTrimestral | TarefaParcela,
+def concluir(sessao: Session, tarefa: TarefaTrimestral | TarefaParcela | TarefaAcordo,
              observacao: str = "") -> Tarefa:
-    """Dá baixa: o honorário do trimestre (ou a parcela) foi enviado."""
+    """Dá baixa: o honorário do trimestre (ou a parcela) foi enviado; o acordo não
+    precisa mais ser acompanhado."""
     if tarefa.feita is not None:
         raise ErroDeValidacao(f"Essa tarefa já teve baixa em "
                               f"{formatar_data(tarefa.feita.concluida_em)}.")

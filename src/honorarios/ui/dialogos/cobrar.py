@@ -535,7 +535,7 @@ class DialogoCobrar(QDialog):
         corpo.addWidget(self.abas, 1)
         dica = widgets.rotulo_fraco(
             "A resposta do cliente se anota depois, no Opções do cartão ou na aba "
-            "Cobranças de Vencimentos.")
+            "Cobranças de Honorários em aberto.")
         corpo.addWidget(dica)
         return cartao
 

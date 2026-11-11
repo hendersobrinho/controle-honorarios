@@ -267,9 +267,8 @@ class DialogoGrupo(QDialog):
         layout.addWidget(
             widgets.rotulo_fraco(
                 "O grupo é a seção em que os honorários aparecem nas telas de cobrança. "
-                "Clientes que só têm honorários do grupo de Imposto de Renda vão para a "
-                "tela Imposto de Renda, separados dos demais. Só um grupo pode ter essa "
-                "marcação."
+                "O de Imposto de Renda tem o honorário por ano (IRPF 2026…), lançado à "
+                "mão. Só um grupo pode ter essa marcação."
             )
         )
         layout.addStretch(1)

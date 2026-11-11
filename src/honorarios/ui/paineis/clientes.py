@@ -1,5 +1,4 @@
-"""Lista de clientes: cadastro, juros e cobrança. Abas: ativos, só de Imposto de
-Renda e inativos.
+"""Lista de clientes: cadastro, juros e cobrança. Abas: ativos e inativos.
 
 A dívida não aparece aqui: em aberto, atraso e totais têm as telas de cobrança.
 """
@@ -43,7 +42,6 @@ class PainelClientes(QWidget):
     def __init__(self, contexto: Contexto, parent=None) -> None:
         super().__init__(parent)
         self.contexto = contexto
-        self.so_ir: set[int] = set()
         self._montar()
         self.recarregar()
 
@@ -52,10 +50,11 @@ class PainelClientes(QWidget):
         layout.setSpacing(10)
         self.cabecalho = widgets.Cabecalho("Clientes", "Pessoas físicas, jurídicas e domésticas")
         self.cabecalho.adicionar_botao("Novo cliente", self._novo, primario=True, atalho="Ctrl+N")
-        self.cabecalho.adicionar_botao("Editar", self._editar)
+        self.cabecalho.adicionar_botao("Abrir cliente", self._editar)
         self.cabecalho.adicionar_botao("Juros ao dia", self._juros)
         self.cabecalho.adicionar_botao("Suspender / retomar", self._alternar_suspensao)
         self.cabecalho.adicionar_botao("Ficha", self._ficha, atalho="Ctrl+F")
+        self.cabecalho.adicionar_botao("Formas de envio", self._formas_envio)
         self.cabecalho.adicionar_botao("Atualizar", self.recarregar, atalho="F5")
         layout.addWidget(self.cabecalho)
 
@@ -63,14 +62,9 @@ class PainelClientes(QWidget):
         self.abas.setExpanding(False)
         self.abas.setDrawBase(False)
         self.abas.addTab("Ativos")
-        self.abas.addTab("Imposto de Renda")
         self.abas.addTab("Inativos")
         self.abas.setTabToolTip(
-            1, "Clientes que só têm honorário de Imposto de Renda. A cobrança deles fica "
-            "na tela Imposto de Renda."
-        )
-        self.abas.setTabToolTip(
-            2, "Clientes marcados como inativos no cadastro. Ficam fora da lista principal."
+            1, "Clientes marcados como inativos no cadastro. Ficam fora da lista principal."
         )
         self.abas.currentChanged.connect(lambda *_: self.recarregar())
         layout.addWidget(self.abas)
@@ -118,7 +112,8 @@ class PainelClientes(QWidget):
         )
         self.tabela = preparar_tabela(QTableView(), esticar=1)
         self.tabela.setModel(self.modelo)
-        self.tabela.doubleClicked.connect(lambda *_: self._ficha())
+        # duplo clique abre o painel do cliente: ver e editar tudo numa tela
+        self.tabela.doubleClicked.connect(lambda *_: self._editar())
         layout.addWidget(self.tabela, 1)
 
         rodape = QHBoxLayout()
@@ -135,9 +130,6 @@ class PainelClientes(QWidget):
     # ------------------------------------------------------------------ dados
     def recarregar(self) -> None:
         self.contexto.atualizar()
-        from ...servicos import honorarios as servico_honorarios
-
-        self.so_ir = servico_honorarios.clientes_so_imposto_de_renda(self.contexto.sessao)
         indice = self.grupo_tipo.checkedId()
         tipo = {1: TipoPessoa.PF, 2: TipoPessoa.PJ}.get(indice)
         filtro = dict(
@@ -146,30 +138,22 @@ class PainelClientes(QWidget):
             data_referencia=self.contexto.data_referencia,
             com_totais=False,
         )
-        nao_inativos = servico.listar(self.contexto.sessao, inativos=False, **filtro)
-        # quem só tem IR fica na aba dele; inativo vai para Inativos, seja IR ou não
-        ativos = [linha for linha in nao_inativos if linha.cliente.id not in self.so_ir]
-        so_ir = [linha for linha in nao_inativos if linha.cliente.id in self.so_ir]
+        ativos = servico.listar(self.contexto.sessao, inativos=False, **filtro)
         inativos = servico.listar(self.contexto.sessao, inativos=True, **filtro)
         self.abas.setTabText(0, f"Ativos ({len(ativos)})")
-        self.abas.setTabText(1, f"Imposto de Renda ({len(so_ir)})")
-        self.abas.setTabText(2, f"Inativos ({len(inativos)})")
+        self.abas.setTabText(1, f"Inativos ({len(inativos)})")
         aba = self.abas.currentIndex()
-        linhas = (ativos, so_ir, inativos)[aba]
+        linhas = (ativos, inativos)[aba]
         self.modelo.definir_itens(linhas)
         ajustar_colunas(self.tabela, self.modelo.colunas)
-        if aba == 2:
+        if aba == 1:
             self.resumo.setText(
                 f"{len(linhas)} cliente(s) inativo(s). Para reativar, edite o cadastro e "
                 "mude a situação."
             )
             return
         suspensos = sum(1 for linha in linhas if linha.cobranca_suspensa)
-        partes = [
-            f"{len(linhas)} cliente(s) ativo(s)" if aba == 0
-            else f"{len(linhas)} cliente(s) só de Imposto de Renda — a cobrança deles fica "
-            "na tela Imposto de Renda"
-        ]
+        partes = [f"{len(linhas)} cliente(s) ativo(s)"]
         if suspensos:
             partes.append(f"{suspensos} com cobrança suspensa")
         self.resumo.setText(" · ".join(partes))
@@ -190,6 +174,11 @@ class PainelClientes(QWidget):
         cliente = self._selecionado()
         if cliente and DialogoCliente(self.contexto, cliente, parent=self).exec():
             self.recarregar()
+
+    def _formas_envio(self) -> None:
+        from .formas_envio import DialogoFormasEnvio
+
+        DialogoFormasEnvio(self.contexto, self).exec()
 
     def _juros(self) -> None:
         cliente = self._selecionado()

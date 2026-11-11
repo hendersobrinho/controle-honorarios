@@ -1,5 +1,6 @@
 """Tarefas: enviar o honorário trimestral quando o trimestre da empresa se completa,
-e cada parcela dos parcelamentos alguns dias antes do vencimento.
+cada parcela dos parcelamentos alguns dias antes do vencimento e o pagamento dos
+acordos feitos no Cobrar até a data combinada.
 
 O trimestre conta da competência em que a empresa virou cliente do escritório
 (campo "Cliente do escritório desde", no cadastro), não do trimestre do ano. As
@@ -35,7 +36,8 @@ class PainelTarefas(QWidget):
         self.cabecalho = widgets.Cabecalho(
             "Tarefas",
             "Envio do honorário trimestral (o trimestre conta da competência em que a "
-            "empresa virou cliente) e das parcelas dos parcelamentos, antes do vencimento.",
+            "empresa virou cliente), das parcelas dos parcelamentos e o pagamento dos "
+            "acordos.",
         )
         self.botao_todas = self.cabecalho.adicionar_botao(
             "Dar baixa em todas", self._baixa_em_todas)
@@ -68,6 +70,9 @@ class PainelTarefas(QWidget):
             SecaoCartoes("Enviar parcelas", quadro.parcelas, self._cartao_parcela,
                          subtitulo=f"parcelamentos: lembrete {dias} dia(s) antes do "
                                    "vencimento de cada parcela"),
+            SecaoCartoes("Pagamento de acordos", quadro.acordos, self._cartao_acordo,
+                         subtitulo="acordo feito no Cobrar: acompanhe até a data combinada "
+                                   "(pago, sai sozinho)"),
             SecaoCartoes("Para fazer", quadro.pendentes, self._cartao_pendente,
                          subtitulo="trimestre completo: é hora de enviar o honorário"),
             SecaoCartoes("Próximos trimestres", quadro.proximas, self._cartao_proximo,
@@ -82,10 +87,14 @@ class PainelTarefas(QWidget):
                          subtitulo="com baixa (dá para desfazer)"),
             SecaoCartoes("Parcelas enviadas", quadro.parcelas_feitas, self._cartao_parcela_feita,
                          subtitulo="com baixa (dá para desfazer)"),
+            SecaoCartoes("Acordos com baixa", quadro.acordos_feitos, self._cartao_acordo_feito,
+                         subtitulo="dá para desfazer"),
         ]
         self.lista.definir_secoes(secoes)
         self.botao_todas.setEnabled(bool(quadro.pendentes))
         partes = [f"<b>{quadro.para_fazer}</b> para fazer"]
+        if quadro.acordos:
+            partes.append(f"{len(quadro.acordos)} acordo(s) para acompanhar")
         if quadro.parcelas:
             partes.append(f"{len(quadro.parcelas)} parcela(s) para enviar")
         atrasadas = sum(1 for t in quadro.pendentes
@@ -226,7 +235,72 @@ class PainelTarefas(QWidget):
             acoes=[Acao("Desfazer baixa", self._desfazer, "Volta para as parcelas a enviar")],
         )
 
+    def _base_acordo(self, tarefa: servico.TarefaAcordo) -> dict:
+        cliente = tarefa.cliente
+        honorarios = ", ".join(f"{h.tipo.nome} {h.competencia_rotulo}".strip()
+                               for h in tarefa.honorarios)
+        return {
+            "titulo": f"{cliente.codigo} – {cliente.nome}",
+            "subtitulo": f"Pagamento do acordo · {formatar_moeda(tarefa.total)} até "
+                         f"{formatar_data(tarefa.vencimento)}",
+            "detalhes": [
+                ("Honorários", honorarios),
+                ("Valor do acordo", formatar_moeda(tarefa.total)),
+                ("Valores de", formatar_data(tarefa.data_base)),
+            ],
+            "item": tarefa,
+        }
+
+    def _cartao_acordo(self, tarefa: servico.TarefaAcordo) -> DadosCartao:
+        faltam = (tarefa.vencimento - self.contexto.data_referencia).days
+        if faltam < 0:
+            situacao = f"Venceu há {-faltam} dia(s) — o juros voltou a correr"
+            cor = self._cor("atrasado")
+        elif faltam == 0:
+            situacao, cor = "Vence hoje", self._cor("atencao")
+        else:
+            situacao, cor = f"Vence em {faltam} dia(s)", self._cor("destaque_texto")
+        dados = self._base_acordo(tarefa)
+        if len(tarefa.em_aberto) < len(tarefa.honorarios):
+            dados["detalhes"].append(
+                ("Em aberto", f"{len(tarefa.em_aberto)} de {len(tarefa.honorarios)}"))
+        return DadosCartao(
+            **dados,
+            situacao=situacao,
+            cor=cor,
+            datas=[DataCartao("Pagar até", formatar_data(tarefa.vencimento), cor)],
+            acoes=[
+                Acao("Cadastro", self._abrir_cadastro_do_item, "Abrir o painel do cliente"),
+                Acao("Cobrar", self._cobrar_acordo,
+                     "Lembrar o cliente do acordo (ou combinar outro)", primaria=True),
+                Acao("Dar baixa", self._dar_baixa,
+                     "Não precisa mais acompanhar este acordo", pagamento=True),
+            ],
+        )
+
+    def _cartao_acordo_feito(self, tarefa: servico.TarefaAcordo) -> DadosCartao:
+        return DadosCartao(
+            **self._base_acordo(tarefa),
+            situacao=f"Baixa em {formatar_data(tarefa.feita.concluida_em)}",
+            cor=self._cor("pago"),
+            datas=[DataCartao("Pagar até", formatar_data(tarefa.vencimento))],
+            acoes=[Acao("Desfazer baixa", self._desfazer,
+                        "Volta para os acordos a acompanhar")],
+        )
+
     # ------------------------------------------------------------------ ações
+    def _cobrar_acordo(self, tarefa: servico.TarefaAcordo) -> None:
+        from ...servicos import honorarios as servico_honorarios
+        from ..dialogos.cobrar import DialogoCobrar
+
+        referencia = self.contexto.data_referencia
+        linhas = [servico_honorarios.montar_linha(h, data_referencia=referencia)
+                  for h in tarefa.em_aberto]
+        if not linhas:
+            return
+        DialogoCobrar(self.contexto, tarefa.cliente, linhas, self).exec()
+        self.recarregar()
+
     def _ver_parcelas(self, tarefa: servico.TarefaParcela) -> None:
         from ..dialogos.parcelas import DialogoParcelas
 
@@ -259,6 +333,10 @@ class PainelTarefas(QWidget):
         if isinstance(tarefa, servico.TarefaParcela):
             self.aviso.setText(f"✓ Parcela {tarefa.periodo} de {tarefa.cliente.nome} enviada. "
                                "Se foi engano, \"Desfazer baixa\" em Parcelas enviadas.")
+            return
+        if isinstance(tarefa, servico.TarefaAcordo):
+            self.aviso.setText(f"✓ Acordo de {tarefa.cliente.nome} com baixa. Se foi engano, "
+                               "\"Desfazer baixa\" em Acordos com baixa.")
             return
         self.aviso.setText(f"✓ Baixa: {tarefa.cliente.nome}, trimestre {tarefa.periodo}. "
                            "Se foi engano, \"Desfazer baixa\" em Feitas.")
@@ -295,7 +373,8 @@ class PainelTarefas(QWidget):
             self.contexto.desfazer()
             return
         self.recarregar()
-        rotulo = "parcela" if isinstance(tarefa, servico.TarefaParcela) else "trimestre"
+        rotulo = ("parcela" if isinstance(tarefa, servico.TarefaParcela)
+                  else "acordo" if isinstance(tarefa, servico.TarefaAcordo) else "trimestre")
         self.aviso.setText(f"Baixa desfeita: {tarefa.cliente.nome}, {rotulo} {tarefa.periodo}.")
 
     def _abrir_cadastro_do_item(self, item) -> None:
@@ -304,6 +383,8 @@ class PainelTarefas(QWidget):
         if isinstance(item, servico.TarefaParcela):   # a parcela leva às parcelas
             self._ver_parcelas(item)
             return
-        cliente = item.cliente if isinstance(item, servico.TarefaTrimestral) else item
+        cliente = (item.cliente
+                   if isinstance(item, servico.TarefaTrimestral | servico.TarefaAcordo)
+                   else item)
         if DialogoCliente(self.contexto, cliente, self).exec():
             self.recarregar()

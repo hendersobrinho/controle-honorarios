@@ -271,7 +271,6 @@ def resumo_geral(data_referencia: str | None = None) -> dict:
             "data_referencia": _plano(referencia),
             "atrasados": contagem.atrasados,
             "a_vencer": contagem.a_vencer,
-            "imposto_de_renda": contagem.imposto_de_renda,
             "total_em_aberto": _plano(servico.total_de(em_aberto)),
             "total_em_aberto_formatado": formatar_moeda(servico.total_de(em_aberto)),
         }
@@ -1722,6 +1721,16 @@ def executar_no_banco(sql: str, parametros: dict | None = None) -> dict:
 def _dados_tarefa(tarefa, referencia) -> dict:
     from .servicos import tarefas
 
+    if isinstance(tarefa, tarefas.TarefaAcordo):
+        return {"chave": tarefa.chave, "cliente_id": tarefa.cliente.id,
+                "cliente": f"{tarefa.cliente.codigo} – {tarefa.cliente.nome}",
+                "honorario_ids": [h.id for h in tarefa.honorarios],
+                "em_aberto_ids": [h.id for h in tarefa.em_aberto],
+                "valor_acordo": _plano(tarefa.total), "valores_de": _plano(tarefa.data_base),
+                "pagar_ate": _plano(tarefa.vencimento),
+                "dias_vencido": tarefa.dias_esperando(referencia),
+                "baixa_em": _plano(tarefa.feita.concluida_em) if tarefa.feita else None,
+                "observacao": tarefa.feita.observacao if tarefa.feita else None}
     if isinstance(tarefa, tarefas.TarefaParcela):
         return {"chave": tarefa.chave, "cliente_id": tarefa.cliente.id,
                 "cliente": f"{tarefa.cliente.codigo} – {tarefa.cliente.nome}",
@@ -1746,7 +1755,8 @@ def listar_tarefas(data_referencia: str | None = None) -> dict:
     competência em que ela virou cliente do escritório (cliente_desde). Devolve as
     pendentes, as próximas, as feitas (com baixa) e as empresas trimestrais sem data.
     E o envio das parcelas dos parcelamentos (parcelas_a_enviar, alguns dias antes do
-    vencimento; proximas_parcelas; parcelas_enviadas)."""
+    vencimento; proximas_parcelas; parcelas_enviadas). E o pagamento dos acordos feitos
+    na cobrança (acordos_a_acompanhar, até a data combinada; acordos_com_baixa)."""
     from .servicos import tarefas
 
     referencia = _data(data_referencia) or hoje()
@@ -1760,6 +1770,8 @@ def listar_tarefas(data_referencia: str | None = None) -> dict:
             "proximas_parcelas": [_dados_tarefa(t, referencia)
                                   for t in quadro.parcelas_proximas],
             "parcelas_enviadas": [_dados_tarefa(t, referencia) for t in quadro.parcelas_feitas],
+            "acordos_a_acompanhar": [_dados_tarefa(t, referencia) for t in quadro.acordos],
+            "acordos_com_baixa": [_dados_tarefa(t, referencia) for t in quadro.acordos_feitos],
             "sem_data_de_entrada": [{"cliente_id": c.id, "cliente": f"{c.codigo} – {c.nome}"}
                                     for c in quadro.sem_data],
         }
@@ -1769,7 +1781,7 @@ def _tarefa(sessao: Session, chave: str, referencia):
     from .servicos import tarefas
 
     quadro = tarefas.quadro(sessao, referencia)
-    for tarefa in quadro.pendentes + quadro.feitas + quadro.parcelas + quadro.parcelas_feitas:
+    for tarefa in quadro.todas:
         if tarefa.chave == chave:
             return tarefa
     raise ValueError(f"Tarefa {chave!r} não encontrada (veja listar_tarefas).")

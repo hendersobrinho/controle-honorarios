@@ -163,4 +163,4 @@ def test_contagem_do_menu_bate_com_as_telas(sessao):
     linhas = servico.pendentes(sessao, servico.Filtro(data_referencia=referencia))
     atrasados = sum(1 for linha in linhas if linha.atualizacao.dias_atraso > 0)
     assert (contagem.atrasados, contagem.a_vencer) == (atrasados, len(linhas) - atrasados)
-    assert (contagem.atrasados, contagem.a_vencer, contagem.imposto_de_renda) == (2, 1, 0)
+    assert (contagem.atrasados, contagem.a_vencer) == (2, 1)

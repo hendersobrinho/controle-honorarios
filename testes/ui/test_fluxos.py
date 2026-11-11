@@ -276,7 +276,7 @@ def test_dialogo_gerar_competencia_previa_e_geracao(qtbot, contexto, monkeypatch
 # ------------------------------------------------------------------ clientes
 
 
-def test_clientes_so_de_ir_ficam_na_aba_deles(qtbot, contexto, cliente_com_debito):
+def test_clientes_de_ir_ficam_com_os_outros(qtbot, contexto, cliente_com_debito):
     from honorarios.dominio.enums import SituacaoCliente, TipoPessoa
     from honorarios.ui.paineis.clientes import PainelClientes
 
@@ -294,11 +294,9 @@ def test_clientes_so_de_ir_ficam_na_aba_deles(qtbot, contexto, cliente_com_debit
     painel = PainelClientes(contexto)
     qtbot.addWidget(painel)
     ids = lambda: [linha.cliente.id for linha in painel.modelo.itens]  # noqa: E731
-    assert ids() == [cliente_com_debito.id]              # ativos: sem os só de IR
+    assert set(ids()) == {cliente_com_debito.id, so_ir.id}   # sem divisão de IR
+    assert painel.abas.count() == 2
     painel.abas.setCurrentIndex(1)
-    assert ids() == [so_ir.id]
-    assert "só de Imposto de Renda" in painel.resumo.text()
-    painel.abas.setCurrentIndex(2)
     assert ids() == [ir_inativo.id]                      # inativo fica em Inativos
 
 
@@ -320,9 +318,8 @@ def test_painel_clientes_separa_inativos_e_nao_mostra_divida(
     # o inativo só aparece na aba dele
     assert painel.modelo.rowCount() == 1
     assert painel.abas.tabText(0) == "Ativos (1)"
-    assert painel.abas.tabText(1) == "Imposto de Renda (0)"
-    assert painel.abas.tabText(2) == "Inativos (1)"
-    painel.abas.setCurrentIndex(2)
+    assert painel.abas.tabText(1) == "Inativos (1)"
+    painel.abas.setCurrentIndex(1)
     assert [linha.cliente.id for linha in painel.modelo.itens] == [inativo.id]
     painel.abas.setCurrentIndex(0)
     assert "1 cliente(s) ativo(s)" in painel.resumo.text()
@@ -380,14 +377,13 @@ def test_cadastro_do_cliente_ja_cria_o_honorario_recorrente(qtbot, contexto, mon
                         or False)
     dialogo = DialogoCliente(contexto)
     qtbot.addWidget(dialogo)
-    assert dialogo.abas.tabText(2) == "Honorário recorrente"
+    assert not hasattr(dialogo, "abas")              # tudo numa tela só, sem abas
     dialogo.codigo.setText("778")
     dialogo.nome.setText("EMPRESA COM MENSAL LTDA")
     dialogo.juros.definir(Decimal("1.00"))
-    # sem honorário: pergunta; recusando, vai para a aba e nada é gravado
+    # sem honorário: pergunta; recusando, nada é gravado
     dialogo._salvar()
     assert perguntas == ["Salvar o cliente sem honorário recorrente?"]
-    assert dialogo.abas.currentIndex() == 2
     assert clientes.por_codigo(contexto.sessao, "778") is None
 
     formulario = dialogo.formulario_honorario
@@ -502,26 +498,30 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
 
     janela = JanelaPrincipal(contexto)
     qtbot.addWidget(janela)
-    assert janela.telas.count() == 12
-    assert len(janela.linhas_de_tela) == 12
+    assert janela.telas.count() == 11
+    assert len(janela.linhas_de_tela) == 11
     titulos = [janela.telas.widget(i).titulo for i in range(janela.telas.count())]
     assert "Tarefas" in titulos
     # as importações ficam em Configurações → Importação, fora do menu
     assert "Importar planilha" not in titulos and "Importação personalizada" not in titulos
-    assert titulos[4] == "Parcelamentos"   # subtópico no fim de Cobrança
+    # Cadastros em cima, depois Cobrança (com Parcelamentos no fim)
+    assert titulos[:7] == ["Clientes", "Honorários", "Tipos de faturamento", "Honorários em aberto",
+                           "Tarefas", "Gerenciador de e-mail", "Parcelamentos"]
     assert "Gerenciador de e-mail" in titulos
     assert "Ranking dos atrasados" in titulos
     # as cobranças enviadas viraram a última aba de Vencimentos
     assert "Cobranças enviadas" not in titulos and "Cobranças" not in titulos
-    assert "Clientes de IR" in titulos and "Tipos e formas de envio" in titulos
+    assert "Clientes de IR" not in titulos and "Tipos e formas de envio" not in titulos
+    assert "Formas de envio" not in titulos          # ficou no cadastro dos clientes
     # recorrentes e avulsos viraram abas de uma tela só
     assert "Honorários" in titulos
     assert "Honorários recorrentes" not in titulos and "Honorários avulsos" not in titulos
     assert not any("Fila" in titulo for titulo in titulos)
     # a vencer, atrasados e pagos são abas de Vencimentos, nessa ordem
-    assert titulos[0] == "Vencimentos"
     assert not {"A vencer", "Atrasados", "Pagos"} & set(titulos)
-    vencimentos = janela.telas.widget(0)
+    # abre no trabalho do dia, mesmo com Cadastros em cima
+    assert janela.telas.currentWidget().titulo == "Honorários em aberto"
+    vencimentos = janela.telas.currentWidget()
     assert [vencimentos.abas.widget(i).titulo for i in range(4)] == [
         "A vencer", "Atrasados", "Pagos", "Cobranças"]
     for linha in janela.linhas_de_tela:
@@ -530,13 +530,14 @@ def test_janela_principal_abre_todas_as_telas(qtbot, contexto):
 
 
 def test_titulo_de_grupo_da_navegacao_nao_troca_de_tela(qtbot, contexto):
-    """Os títulos COBRANÇA/CADASTROS/GESTÃO são rótulos, não telas."""
+    """Os títulos CADASTROS/COBRANÇA/GESTÃO são rótulos, não telas."""
     from honorarios.ui.janela_principal import JanelaPrincipal
 
     janela = JanelaPrincipal(contexto)
     qtbot.addWidget(janela)
     antes = janela.telas.currentIndex()
-    janela.navegacao.setCurrentRow(0)  # "COBRANÇA"
+    assert janela.navegacao.item(0).text() == "CADASTROS"
+    janela.navegacao.setCurrentRow(0)
     assert janela.telas.currentIndex() == antes
 
 
@@ -1160,44 +1161,14 @@ def cliente_so_ir(contexto):
     return cliente
 
 
-def test_tela_de_imposto_de_renda_so_mostra_clientes_so_de_ir(
-    qtbot, contexto, cliente_com_debito, cliente_so_ir
-):
-    from honorarios.ui.paineis.honorarios import PainelAtrasados, PainelImpostoRenda
-
-    ir = PainelImpostoRenda(contexto)
-    qtbot.addWidget(ir)
-    assert {linha.cliente.id for linha in ir.lista.itens} == {cliente_so_ir.id}
-    assert ir.lista.titulos() == ["Atrasados", "A vencer"]
-    assert not ir.grupo.isVisibleTo(ir)            # filtro de grupo não faz sentido aqui
+def test_cliente_so_de_ir_aparece_nos_atrasados(qtbot, contexto, cliente_com_debito,
+                                                 cliente_so_ir):
+    from honorarios.ui.paineis.honorarios import PainelAtrasados
 
     atrasados = PainelAtrasados(contexto)
     qtbot.addWidget(atrasados)
-    assert cliente_so_ir.id not in {linha.cliente.id for linha in atrasados.lista.itens}
-    assert cliente_com_debito.id in {linha.cliente.id for linha in atrasados.lista.itens}
-
-
-def test_tela_de_imposto_de_renda_filtra_ano_e_mostra_pagos(qtbot, contexto, cliente_so_ir):
-    from honorarios.servicos import pagamentos
-    from honorarios.ui.paineis.honorarios import PainelImpostoRenda
-
-    painel = PainelImpostoRenda(contexto)
-    qtbot.addWidget(painel)
-    painel.ano.setCurrentIndex(painel.ano.findData(2025))
-    assert [linha.honorario.competencia_ano for linha in painel.lista.itens] == [2025]
-
-    painel.ano.setCurrentIndex(0)
-    linha = next(item for item in painel.lista.itens if item.honorario.competencia_ano == 2026)
-    previa = pagamentos.previa(linha.honorario, date(2026, 7, 1))
-    pagamentos.registrar(
-        contexto.sessao, linha.honorario,
-        pagamentos.DadosPagamento(data=date(2026, 7, 1), valor_pago=previa.total_devido),
-    )
-    contexto.salvar()
-
-    painel.situacao.setCurrentIndex(1)             # Pagos
-    assert [item.honorario.id for item in painel.lista.itens] == [linha.honorario.id]
-    assert painel.lista.secoes[0].cartoes[0].valor_rotulo == "Recebido"
+    ids = {linha.cliente.id for linha in atrasados.lista.itens}
+    assert {cliente_so_ir.id, cliente_com_debito.id} <= ids
 
 
 def test_tela_de_grupos_e_tipos_mostra_os_tipos_do_grupo(qtbot, contexto):
@@ -1238,16 +1209,6 @@ def test_dialogo_de_tipo_mostra_previa_e_insere_variavel(qtbot, contexto):
 
     dialogo.texto.setText("referente a {inexistente}")
     assert "⚠" in dialogo.previas[0].text()
-
-
-def test_lista_de_clientes_poe_o_so_ir_na_aba_dele(qtbot, contexto, cliente_so_ir):
-    from honorarios.ui.paineis.clientes import PainelClientes
-
-    painel = PainelClientes(contexto)
-    qtbot.addWidget(painel)
-    assert cliente_so_ir.id not in [item.cliente.id for item in painel.modelo.itens]
-    painel.abas.setCurrentIndex(1)                 # Imposto de Renda
-    assert cliente_so_ir.id in [item.cliente.id for item in painel.modelo.itens]
 
 
 # ------------------------------------------------------ imagem da cobrança
@@ -1722,7 +1683,7 @@ def test_notificacoes_na_janela(qtbot, contexto, cliente_com_debito, monkeypatch
     item = lista.itens.itemAt(0).widget()
     item.findChild(QPushButton, "cartaoAcao").click()
     vencimentos = janela.telas.currentWidget()
-    assert vencimentos.titulo == "Vencimentos"
+    assert vencimentos.titulo == "Honorários em aberto"
     painel = vencimentos.abas.currentWidget()                # já na aba do aviso
     assert painel.titulo in ("A vencer", "Atrasados")
     assert painel.busca.text() == cliente_com_debito.nome
@@ -2056,7 +2017,8 @@ def test_telas_montadas_ao_abrir_e_sem_reler_a_toa(qtbot, contexto, monkeypatch)
 
     leituras = []
     monkeypatch.setattr(pagos, "recarregar", lambda: leituras.append(1))
-    primeira = next(iter(janela.linhas_de_tela))
+    primeira = next(linha for linha, indice in janela.linhas_de_tela.items()
+                    if janela.telas.widget(indice).titulo == "Honorários em aberto")
     janela.navegacao.setCurrentRow(primeira)
     janela.navegacao.setCurrentRow(linha_pagos)
     assert leituras == []                                  # nada mudou: não relê
@@ -2186,18 +2148,22 @@ def test_vencimentos_pelo_numero_da_empresa(qtbot, contexto):
                                                                date(2026, 9, 10)]
 
 
-def test_formas_de_envio_junto_dos_tipos(qtbot, contexto, monkeypatch):
+def test_formas_de_envio_no_cadastro_dos_clientes(qtbot, contexto, monkeypatch):
     from PySide6.QtWidgets import QInputDialog
 
     from honorarios.servicos import tipos
     from honorarios.ui.comum import widgets
+    from honorarios.ui.paineis.formas_envio import DialogoFormasEnvio
     from honorarios.ui.paineis.tipos_e_envio import PainelTiposEEnvio
 
-    painel = PainelTiposEEnvio(contexto)
-    qtbot.addWidget(painel)
-    assert [painel.abas.tabText(i) for i in range(2)] == ["Grupos e tipos", "Formas de envio"]
-    painel.abas.setCurrentWidget(painel.formas)
-    formas = painel.formas
+    faturamento = PainelTiposEEnvio(contexto)
+    qtbot.addWidget(faturamento)
+    assert faturamento.titulo == "Tipos de faturamento"
+    assert not hasattr(faturamento, "formas")        # as formas foram para Clientes
+
+    dialogo = DialogoFormasEnvio(contexto)
+    qtbot.addWidget(dialogo)
+    formas = dialogo.painel
     antes = formas.modelo.rowCount()
     monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Correio", True)))
     formas._nova_forma()
@@ -3063,7 +3029,8 @@ def test_menu_tem_o_subtopico_parcelamento(qtbot, contexto):
     qtbot.addWidget(janela)
     textos = [janela.navegacao.item(i).text() for i in range(janela.navegacao.count())]
     sub = textos.index("Parcelamento")
-    assert janela.navegacao.item(sub).data(ContadorDoMenu.PAPEL_SUBTOPICO) == 0
+    # dentro do 2º grupo (Cobrança), com a cor dele
+    assert janela.navegacao.item(sub).data(ContadorDoMenu.PAPEL_SUBTOPICO) == 1
     assert textos[sub + 1] == "Parcelamentos"
     assert sub not in janela.linhas_de_tela                 # não é tela: não se escolhe
 
@@ -3131,6 +3098,7 @@ def test_tarefas_mostram_o_envio_das_parcelas(qtbot, contexto, cliente_com_debit
     painel = PainelTarefas(contexto)
     qtbot.addWidget(painel)
     assert painel.lista.titulos()[0] == "Enviar parcelas"
+    assert painel.quadro.acordos == []               # parcelamento não é acordo de valor
     [tarefa] = painel.quadro.parcelas
     cartao = painel._cartao_parcela(tarefa)
     assert cartao.situacao == "Vence em 3 dia(s)"
@@ -3358,3 +3326,87 @@ def test_cobrar_tem_parcelar_com_os_juros_da_tela(qtbot, contexto, cliente_com_d
     assert recebido["cliente"] is cliente_com_debito
     assert recebido["juros"] == {cobrar.linhas[0].honorario.id: Decimal("7.00")}
     assert cobrar.parcelou == "acordo" and cobrar.registrou
+
+
+def test_tarefas_mostram_o_pagamento_do_acordo(qtbot, contexto, cliente_com_debito,
+                                               monkeypatch):
+    from honorarios.servicos import acordos
+    from honorarios.ui.dialogos import cobrar
+    from honorarios.ui.paineis.tarefas import PainelTarefas
+
+    honorarios = [linha.honorario for linha in linhas_do(contexto.sessao, cliente_com_debito)]
+    acordos.registrar(contexto.sessao, honorarios, REFERENCIA, date(2026, 10, 5))
+    contexto.salvar()
+    painel = PainelTarefas(contexto)
+    qtbot.addWidget(painel)
+    assert "Pagamento de acordos" in painel.lista.titulos()
+    [tarefa] = painel.quadro.acordos
+    cartao = painel._cartao_acordo(tarefa)
+    assert cartao.situacao == "Vence em 6 dia(s)"
+    assert [a.texto for a in cartao.acoes] == ["Cadastro", "Cobrar", "Dar baixa"]
+    assert "1 acordo(s) para acompanhar" in painel.resumo.text()
+
+    abertos = []
+    monkeypatch.setattr(cobrar.DialogoCobrar, "exec",
+                        lambda self: abertos.append(len(self.linhas)) or 0)
+    painel._cobrar_acordo(tarefa)
+    assert abertos == [len(honorarios)]
+
+    painel._dar_baixa(tarefa)
+    assert painel.quadro.acordos == [] and len(painel.quadro.acordos_feitos) == 1
+    painel._desfazer(painel.quadro.acordos_feitos[0])
+    assert len(painel.quadro.acordos) == 1
+
+
+def test_painel_do_cliente_mostra_tudo_numa_tela(qtbot, contexto, cliente_com_debito,
+                                                 monkeypatch):
+    from PySide6.QtWidgets import QPushButton
+
+    from honorarios.dominio.enums import Periodicidade
+    from honorarios.servicos import contratos, tipos
+    from honorarios.ui.dialogos import ficha
+    from honorarios.ui.dialogos.cliente import COLUNAS_CONTRATO, DialogoCliente
+    from honorarios.ui.paineis import formas_envio
+
+    forma = tipos.listar_formas(contexto.sessao)[0]
+    tipo = next(t for t in tipos.listar_tipos(contexto.sessao)
+                if t.nome == "Honorário mensal")
+    contratos.criar(contexto.sessao, contratos.DadosContrato(
+        cliente_id=cliente_com_debito.id, tipo_id=tipo.id, valor=Decimal("500.00"),
+        periodicidade=Periodicidade.MENSAL, dia_vencimento=10, forma_envio_id=forma.id,
+        vigencia_inicio=date(2026, 1, 1)))
+    contexto.salvar()
+
+    painel = DialogoCliente(contexto, cliente_com_debito)
+    qtbot.addWidget(painel)
+    # dados, juros, contatos e honorários recorrentes: tudo na mesma tela
+    assert not hasattr(painel, "abas")
+    assert painel.nome.text() == cliente_com_debito.nome
+    assert painel.contatos.rowCount() == len(cliente_com_debito.contatos)
+    coluna = COLUNAS_CONTRATO.index("Forma de envio")
+    assert painel.tabela_contratos.item(0, coluna).text() == forma.nome
+
+    botoes = {botao.text(): botao for botao in painel.findChildren(QPushButton)}
+    abertas = []
+    monkeypatch.setattr(formas_envio.DialogoFormasEnvio, "exec",
+                        lambda self: abertas.append("formas") or 0)
+    botoes["Formas de envio…"].click()
+    monkeypatch.setattr(ficha.DialogoFicha, "exec",
+                        lambda self: abertas.append(self.com_cadastro) or 0)
+    botoes["Débitos e histórico (ficha)…"].click()
+    assert abertas == ["formas", False]       # a ficha não reabre o cadastro por cima
+
+
+def test_clientes_abre_o_painel_no_duplo_clique(qtbot, contexto, cliente_com_debito,
+                                                monkeypatch):
+    from honorarios.ui.dialogos import cliente as dialogo_cliente
+    from honorarios.ui.paineis.clientes import PainelClientes
+
+    abertos = []
+    monkeypatch.setattr(dialogo_cliente.DialogoCliente, "exec",
+                        lambda self: abertos.append(self.cliente) or 0)
+    painel = PainelClientes(contexto)
+    qtbot.addWidget(painel)
+    painel.tabela.selectRow(0)
+    painel.tabela.doubleClicked.emit(painel.modelo.index(0, 0))
+    assert abertos == [cliente_com_debito]

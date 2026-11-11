@@ -37,7 +37,6 @@ from .paineis.cadastro_honorarios import PainelHonorarios
 from .paineis.clientes import PainelClientes
 from .paineis.configuracoes import PainelConfiguracoes
 from .paineis.email_cobrancas import PainelEmailCobrancas
-from .paineis.honorarios import PainelImpostoRenda
 from .paineis.painel import PainelResumo
 from .paineis.parcelamentos import PainelParcelamentos
 from .paineis.rankings import PainelRankings
@@ -129,15 +128,14 @@ class JanelaPrincipal(QMainWindow):
         # misturam),
         # e as cobranças já feitas ficam ao lado, para anotar a resposta.
         grupos = (
+            ("CADASTROS", (PainelClientes, PainelHonorarios, PainelTiposEEnvio)),
             ("COBRANÇA", (
                 PainelVencimentos,    # abas: A vencer, Atrasados, Pagos, Cobranças
-                PainelImpostoRenda,
-                PainelTarefas,        # envio do honorário trimestral
+                PainelTarefas,        # envio do honorário trimestral e das parcelas
                 PainelEmailCobrancas,
                 "Parcelamento",       # texto: subtópico dentro do grupo
                 PainelParcelamentos,  # honorários divididos em parcelas
             )),
-            ("CADASTROS", (PainelClientes, PainelHonorarios, PainelTiposEEnvio)),
             ("GESTÃO", (
                 PainelResumo,
                 PainelRankings,
@@ -149,7 +147,7 @@ class JanelaPrincipal(QMainWindow):
         # Só as telas que trabalham desde a abertura são montadas já (a primeira
         # tela e a do e-mail, que verifica a caixa); as outras, na primeira vez em
         # que forem abertas — cada uma lê e calcula os seus dados ao ser montada.
-        ja_na_abertura = (grupos[0][1][0], PainelEmailCobrancas)
+        ja_na_abertura = (PainelVencimentos, PainelEmailCobrancas)
         self.paineis: list[QWidget] = []
         self.linhas_de_tela: dict[int, int] = {}   # linha da lista -> índice da tela
         self.itens_de_tela: dict[str, QListWidgetItem] = {}
@@ -190,7 +188,9 @@ class JanelaPrincipal(QMainWindow):
         margens = self.navegacao.contentsMargins()
         self.navegacao.setMinimumHeight(altura + margens.top() + margens.bottom() + 12)
         self.navegacao.currentRowChanged.connect(self._trocar_tela)
-        self.navegacao.setCurrentRow(next(iter(self.linhas_de_tela)))
+        # abre no trabalho do dia (Honorários em aberto), mesmo com Cadastros em cima
+        self.navegacao.setCurrentRow(
+            self.navegacao.row(self.itens_de_tela[PainelVencimentos.titulo]))
         self._atualizar_contadores()
 
         self.statusBar().showMessage(self._mensagem_status())
@@ -282,7 +282,6 @@ class JanelaPrincipal(QMainWindow):
         contagens = (
             (PainelVencimentos.titulo, contagem.atrasados),
             (PainelParcelamentos.titulo, parcelas),
-            (PainelImpostoRenda.titulo, contagem.imposto_de_renda),
             (PainelTarefas.titulo, pendentes),
             (PainelEmailCobrancas.titulo, emails),
         )
