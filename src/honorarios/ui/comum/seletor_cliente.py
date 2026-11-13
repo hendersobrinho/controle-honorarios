@@ -178,7 +178,7 @@ class CampoCliente(QWidget):
     # ------------------------------------------------------------- interno
     def _aplicar(self, cliente: Cliente | None, avisar: bool = True) -> None:
         self._cliente = cliente
-        self.texto.setText(f"{cliente.codigo} – {cliente.nome}" if cliente else "")
+        self.texto.setText(f"{cliente.rotulo}" if cliente else "")
         self.texto.setCursorPosition(0)
         if avisar:
             self.mudou.emit(cliente)

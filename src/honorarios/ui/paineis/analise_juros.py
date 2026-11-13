@@ -1050,7 +1050,7 @@ class _DetalheCliente(QWidget):
             return
         cliente = self.analise.cliente
         if destino is None:
-            sugestao = pasta_exportacoes() / f"analise-juros-{cliente.codigo}.pdf"
+            sugestao = pasta_exportacoes() / f"analise-juros-{cliente.codigo or cliente.id}.pdf"
             destino, _ = QFileDialog.getSaveFileName(
                 self, "Exportar análise de juros", str(sugestao), "PDF (*.pdf)"
             )
@@ -1079,7 +1079,7 @@ class _DetalheCliente(QWidget):
     def definir(self, analise: AnaliseJuros) -> None:
         self.analise = analise
         cliente = analise.cliente
-        self.nome.setText(f"{cliente.codigo} – {cliente.nome}")
+        self.nome.setText(f"{cliente.rotulo}")
         self.subtitulo.setText(
             f"Juros hoje: {formatar_moeda(analise.taxa_atual or ZERO)} ao dia · "
             f"{len(analise.honorarios)} honorário(s) pago(s) no período"
@@ -1236,7 +1236,7 @@ class AbaAnaliseJuros(QWidget):
             else:
                 chip, cor = "em dia", _cor("texto_fraco")
             item.setData(
-                Qt.ItemDataRole.UserRole + 1, (f"{cliente.codigo} – {cliente.nome}", detalhe,
+                Qt.ItemDataRole.UserRole + 1, (f"{cliente.rotulo}", detalhe,
                                                chip, cor)
             )
             item.setToolTip(cliente.nome)

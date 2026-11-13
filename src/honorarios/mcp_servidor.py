@@ -35,7 +35,6 @@ from .dominio.enums import (
     ResultadoCobranca,
     SituacaoCliente,
     StatusPagamento,
-    SubtipoCliente,
     TipoPessoa,
 )
 from .dominio.valores import Competencia, agora_utc, formatar_moeda, hoje, ler_data
@@ -50,6 +49,7 @@ from .servicos import (
     contratos,
     pagamentos,
     rankings,
+    subtipos,
     tipos,
 )
 from .servicos import honorarios as servico
@@ -411,7 +411,8 @@ def ranking_de_devedores(criterio: str = "maiores", limite: int = 10) -> dict:
 
 @_ferramenta(LEITURA)
 def listar_tipos_e_grupos(incluir_inativos: bool = False) -> dict:
-    """Grupos e tipos de honorário (com ids), formas de envio e formas de pagamento válidas."""
+    """Grupos e tipos de honorário (com ids), formas de envio, formas de pagamento válidas
+    e os subtipos de cliente (pessoa física: Doméstica…)."""
     with _sessao() as sessao:
         return {
             "grupos": [{"id": g.id, "nome": g.nome, "ativo": g.ativo}
@@ -421,6 +422,9 @@ def listar_tipos_e_grupos(incluir_inativos: bool = False) -> dict:
             "formas_de_envio": [{"id": f.id, "nome": f.nome}
                                 for f in tipos.listar_formas(sessao)],
             "formas_de_pagamento": [item.value for item in FormaPagamento],
+            # subtipos de pessoa física (o nome é o que vai em atualizar_cliente)
+            "subtipos_de_cliente": [{"id": s.id, "nome": s.nome, "ativo": s.ativo}
+                                    for s in subtipos.listar(sessao, not incluir_inativos)],
         }
 
 
@@ -461,7 +465,8 @@ def criar_cliente(
     cliente_desde: str | None = None,
 ) -> dict:
     """Cadastra um cliente. ``juros_dia`` é o juros de atraso em R$ por dia (obrigatório, sem
-    padrão). Pessoa física pode ser vinculada (empresa_id) à empresa PJ que paga por ela.
+    padrão). ``codigo`` é obrigatório na pessoa jurídica; na física pode ir vazio (""). Pessoa
+    física pode ser vinculada (empresa_id) à empresa PJ que paga por ela.
     ``cliente_desde``: quando virou cliente do escritório (o trimestre do honorário
     trimestral conta dele)."""
     with _sessao(gravar=True) as sessao:
@@ -491,7 +496,8 @@ def atualizar_cliente(
     """Altera só os campos informados; os contatos ficam como estão. empresa_id vincula à
     empresa; desvincular_empresa tira o vínculo. ``cliente_desde`` é quando virou cliente
     do escritório (base do trimestre nas tarefas); sem_data_de_entrada apaga a data. Para o
-    juros use alterar_juros_cliente."""
+    juros use alterar_juros_cliente. ``subtipo`` (só pessoa física) é o nome de um dos
+    subtipos de listar_tipos_e_grupos; "" tira o subtipo."""
     with _sessao(gravar=True) as sessao:
         c = _cliente(sessao, cliente_id)
         dados = clientes.DadosCliente(
@@ -499,7 +505,7 @@ def atualizar_cliente(
             nome=nome or c.nome,
             documento=c.documento if documento is None else documento,
             tipo_pessoa=c.tipo_pessoa,
-            subtipo=_enum(SubtipoCliente, subtipo, c.subtipo),
+            subtipo=c.subtipo if subtipo is None else subtipo,
             situacao=_enum(SituacaoCliente, situacao, c.situacao),
             observacoes=c.observacoes if observacoes is None else observacoes,
             # a camada de serviço trata a lista como a verdade: sem repassar os
@@ -1174,7 +1180,7 @@ def cobrar_por_whatsapp(
                                          for x in linhas}}
         if com_imagem:
             imagem, destino = _imagem_de_cobranca(
-                sessao, selecao, f"cobranca_{c.codigo}_{referencia:%Y-%m-%d}", prazo)
+                sessao, selecao, f"cobranca_{c.codigo or c.id}_{referencia:%Y-%m-%d}", prazo)
             try:
                 _copiar_imagem(imagem, destino)
                 resultado["imagem_copiada"] = True
@@ -1307,7 +1313,7 @@ def cadastrar_contatos_em_lote(contatos: list[dict], gravar: bool = False) -> di
             "resumo": contagem,
             "itens": [
                 {"item": c.indice,
-                 "cliente": f"{c.cliente.codigo} – {c.cliente.nome}" if c.cliente else None,
+                 "cliente": f"{c.cliente.rotulo}" if c.cliente else None,
                  "cliente_id": c.cliente.id if c.cliente else None,
                  "achado_por": c.achado_por or None, "acao": c.acao,
                  "contato_existente_id": c.contato.id if c.contato else None,
@@ -1723,7 +1729,7 @@ def _dados_tarefa(tarefa, referencia) -> dict:
 
     if isinstance(tarefa, tarefas.TarefaAcordo):
         return {"chave": tarefa.chave, "cliente_id": tarefa.cliente.id,
-                "cliente": f"{tarefa.cliente.codigo} – {tarefa.cliente.nome}",
+                "cliente": f"{tarefa.cliente.rotulo}",
                 "honorario_ids": [h.id for h in tarefa.honorarios],
                 "em_aberto_ids": [h.id for h in tarefa.em_aberto],
                 "valor_acordo": _plano(tarefa.total), "valores_de": _plano(tarefa.data_base),
@@ -1733,14 +1739,14 @@ def _dados_tarefa(tarefa, referencia) -> dict:
                 "observacao": tarefa.feita.observacao if tarefa.feita else None}
     if isinstance(tarefa, tarefas.TarefaParcela):
         return {"chave": tarefa.chave, "cliente_id": tarefa.cliente.id,
-                "cliente": f"{tarefa.cliente.codigo} – {tarefa.cliente.nome}",
+                "cliente": f"{tarefa.cliente.rotulo}",
                 "parcela": tarefa.periodo, "vencimento": _plano(tarefa.vencimento),
                 "lembrar_desde": _plano(tarefa.prazo),
                 "valor": _plano(tarefa.honorario.valor_original),
                 "baixa_em": _plano(tarefa.feita.concluida_em) if tarefa.feita else None,
                 "observacao": tarefa.feita.observacao if tarefa.feita else None}
     return {"chave": tarefa.chave, "cliente_id": tarefa.cliente.id,
-            "cliente": f"{tarefa.cliente.codigo} – {tarefa.cliente.nome}",
+            "cliente": f"{tarefa.cliente.rotulo}",
             "tipo": tarefa.contrato.tipo.nome, "trimestre": tarefa.periodo,
             "enviar_desde": _plano(tarefa.prazo),
             "dias_esperando": tarefa.dias_esperando(referencia),
@@ -1772,7 +1778,7 @@ def listar_tarefas(data_referencia: str | None = None) -> dict:
             "parcelas_enviadas": [_dados_tarefa(t, referencia) for t in quadro.parcelas_feitas],
             "acordos_a_acompanhar": [_dados_tarefa(t, referencia) for t in quadro.acordos],
             "acordos_com_baixa": [_dados_tarefa(t, referencia) for t in quadro.acordos_feitos],
-            "sem_data_de_entrada": [{"cliente_id": c.id, "cliente": f"{c.codigo} – {c.nome}"}
+            "sem_data_de_entrada": [{"cliente_id": c.id, "cliente": f"{c.rotulo}"}
                                     for c in quadro.sem_data],
         }
 

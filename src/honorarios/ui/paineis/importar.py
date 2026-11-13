@@ -73,7 +73,7 @@ class PainelImportar(QWidget):
                 Coluna("Aba", lambda item: item.aba),
                 Coluna("Linha", lambda item: str(item.linha),
                        alinhamento=Qt.AlignmentFlag.AlignCenter),
-                Coluna("Cliente", lambda item: f"{item.codigo} – {item.nome}"),
+                Coluna("Cliente", lambda item: f"{item.rotulo}"),
                 Coluna("Tipo", lambda item: item.tipo_honorario),
                 Coluna("Competência", lambda item: item.competencia.rotulo() or item.descricao,
                        alinhamento=Qt.AlignmentFlag.AlignCenter),

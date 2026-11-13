@@ -187,6 +187,7 @@ def importar(
             documento=lido.documento,
             tipo_pessoa=lido.tipo_pessoa,
             subtipo=lido.subtipo,
+            criar_subtipo=True,
             juros_dia=lido.juros_dia if lido.juros_dia is not None else Decimal("0.00"),
             observacoes=(
                 "Importado da planilha"
@@ -202,7 +203,7 @@ def importar(
                     importacao_id=registro.id,
                     aba=lido.origem,
                     campo="Cliente",
-                    valor=f"{lido.codigo} – {lido.nome}",
+                    valor=f"{lido.rotulo}",
                     gravidade="ERRO",
                     motivo=str(falha),
                 )

@@ -32,7 +32,6 @@ from ...dominio.enums import (
     SituacaoCliente,
     SituacaoEnvio,
     StatusPagamento,
-    SubtipoCliente,
     TipoPessoa,
 )
 from ...dominio.valores import (
@@ -58,6 +57,7 @@ from .. import clientes as servico_clientes
 from .. import configuracoes
 from .. import contratos as servico_contratos
 from .. import honorarios as servico_honorarios
+from .. import subtipos as servico_subtipos
 from ..erros import ErroDeNegocio, ErroDeValidacao
 from .leitor import MAPA_STATUS, Problema, _data, _decimal, _juros, _texto
 
@@ -96,7 +96,8 @@ CAMPOS: tuple[Campo, ...] = (
           "Com ou sem pontuação; é o que reconhece o cliente já cadastrado"),
     Campo("cliente_tipo_pessoa", "Tipo de pessoa", GRUPO_CLIENTE, "pessoa",
           "PF ou PJ; vazio, vale o que o CPF/CNPJ indicar"),
-    Campo("cliente_subtipo", "Subtipo", GRUPO_CLIENTE, "subtipo", "Doméstica ou vazio"),
+    Campo("cliente_subtipo", "Subtipo", GRUPO_CLIENTE, "subtipo",
+          "Doméstica, outro subtipo ou vazio (o que não existe é cadastrado)"),
     Campo("cliente_situacao", "Situação", GRUPO_CLIENTE, "situacao",
           "Ativo, Inativo ou Suspenso"),
     Campo("cliente_juros_dia", "Juros por dia (R$)", GRUPO_CLIENTE, "taxa",
@@ -420,8 +421,6 @@ APELIDOS = {
         "fisica": TipoPessoa.PF, "juridica": TipoPessoa.PJ, "cpf": TipoPessoa.PF,
         "cnpj": TipoPessoa.PJ, "empresa": TipoPessoa.PJ, "domestica": TipoPessoa.PF,
     }),
-    "subtipo": _apelidos(SubtipoCliente, {"": SubtipoCliente.NENHUM, "-": SubtipoCliente.NENHUM,
-                                          "nenhum": SubtipoCliente.NENHUM}),
     "situacao": _apelidos(SituacaoCliente),
     "periodicidade": _apelidos(Periodicidade),
     "meio": _apelidos(MeioCobranca),
@@ -441,6 +440,7 @@ class Referencias:
 
     tipos: dict[str, TipoHonorario]
     formas: dict[str, FormaEnvio]
+    subtipos: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def do_banco(cls, sessao: Session) -> Referencias:
@@ -452,6 +452,10 @@ class Referencias:
             formas={
                 normalizar_busca(forma.nome): forma
                 for forma in sessao.scalars(select(FormaEnvio)).all()
+            },
+            subtipos={
+                normalizar_busca(subtipo.nome): subtipo.nome
+                for subtipo in servico_subtipos.listar(sessao, somente_ativos=False)
             },
         )
 
@@ -523,6 +527,12 @@ def converter(campo: Campo, bruto, referencias: Referencias):
         if tipo_honorario is None:
             raise _ValorInvalido("Tipo de honorário não existe no cadastro")
         return tipo_honorario
+    if tipo == "subtipo":
+        texto = " ".join(_texto(bruto).split())
+        if normalizar_busca(texto) in servico_subtipos.VAZIOS:
+            return servico_subtipos.SEM_SUBTIPO
+        # o nome como está cadastrado; o que não existe é cadastrado ao gravar
+        return referencias.subtipos.get(normalizar_busca(texto), texto)
     if tipo == "forma_envio":
         forma = referencias.formas.get(normalizar_busca(_texto(bruto)))
         if forma is None:
@@ -997,8 +1007,9 @@ def _mesclar(atual: servico_clientes.DadosCliente, plano: ClientePlanejado,
         if valor is not None and valor != getattr(atual, atributo):
             setattr(novo, atributo, valor)
             mudou.append(rotulo)
-    if novo.tipo_pessoa is TipoPessoa.PJ and novo.subtipo is not SubtipoCliente.NENHUM:
-        novo.subtipo = SubtipoCliente.NENHUM
+    if novo.tipo_pessoa is TipoPessoa.PJ:
+        novo.subtipo = servico_subtipos.SEM_SUBTIPO
+    novo.criar_subtipo = True   # subtipo da planilha que não existe é cadastrado
     observacao = valores.get("cliente_observacoes")
     if observacao and observacao not in (atual.observacoes or ""):
         novo.observacoes = f"{atual.observacoes}\n{observacao}".strip()

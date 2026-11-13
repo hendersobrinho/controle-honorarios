@@ -52,7 +52,7 @@ def colunas_honorario(
         colunas.append(
             Coluna(
                 "Cliente",
-                lambda linha: f"{linha.cliente.codigo} – {linha.cliente.nome}",
+                lambda linha: f"{linha.cliente.rotulo}",
                 cor=cor,
                 largura=280,
             )
@@ -301,7 +301,7 @@ class DialogoFicha(QDialog):
         self.resumo = dados
 
         self.cabecalho.definir_subtitulo(
-            f"Código {self.cliente.codigo} · {self.cliente.tipo_pessoa.rotulo} · "
+            f"{self.cliente.texto_codigo}{self.cliente.tipo_pessoa.rotulo} · "
             f"{formatar_moeda(dados.total_em_aberto)} em aberto"
         )
         self.cartao_total.definir(dados.total_em_aberto)
@@ -313,11 +313,7 @@ class DialogoFicha(QDialog):
 
         self.campo_codigo.setText(self.cliente.codigo)
         self.campo_documento.setText(formatar_documento(self.cliente.documento) or "—")
-        subtipo = (
-            f" · {self.cliente.subtipo.rotulo}"
-            if self.cliente.subtipo.name != "NENHUM"
-            else ""
-        )
+        subtipo = f" · {self.cliente.subtipo}" if self.cliente.subtipo else ""
         self.campo_tipo.setText(f"{self.cliente.tipo_pessoa.rotulo}{subtipo}")
         self.campo_situacao.setText(self.cliente.situacao.rotulo)
 
@@ -331,12 +327,12 @@ class DialogoFicha(QDialog):
         vinculados = servico_clientes.vinculados(sessao, self.cliente)
         if self.cliente.empresa is not None:
             self.campo_vinculo.setText(
-                f"{self.cliente.empresa.codigo} – {self.cliente.empresa.nome}"
+                f"{self.cliente.empresa.rotulo}"
             )
         elif vinculados:
             self.campo_vinculo.setText(
                 "Paga pelos honorários de: "
-                + "; ".join(f"{c.codigo} – {c.nome}" for c in vinculados)
+                + "; ".join(f"{c.rotulo}" for c in vinculados)
             )
         else:
             self.campo_vinculo.setText("—")

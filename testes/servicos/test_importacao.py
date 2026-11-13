@@ -163,7 +163,7 @@ def test_enviado_para_cliente_e_status_de_envio(planilha):
     linha = next(item for item in leitura.linhas if item.nome == "MARIA DA SILVA EXEMPLO")
     assert linha.status is StatusPagamento.EM_ABERTO
     assert linha.situacao_envio.name == "ENVIADO"
-    assert linha.subtipo.name == "DOMESTICA"
+    assert linha.subtipo == "Doméstica"
 
 
 def test_documento_invalido_e_descartado_com_aviso(planilha):

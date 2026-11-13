@@ -32,7 +32,6 @@ from ...dominio.enums import (
     SituacaoCliente,
     SituacaoEnvio,
     StatusPagamento,
-    SubtipoCliente,
     TipoPessoa,
 )
 from ...infra.modelos import FormaEnvio, TipoHonorario
@@ -50,7 +49,6 @@ from ..contexto import Contexto
 NOVO_LAYOUT = "(novo layout)"
 OPCOES_ENUM = {
     "pessoa": TipoPessoa,
-    "subtipo": SubtipoCliente,
     "situacao": SituacaoCliente,
     "periodicidade": Periodicidade,
     "meio": MeioCobranca,
@@ -253,8 +251,11 @@ class PainelImportacaoPersonalizada(QWidget):
         combo.clear()
         combo.addItem("")
         if campo.tipo in OPCOES_ENUM:
-            opcoes = [item.rotulo for item in OPCOES_ENUM[campo.tipo]
-                      if item is not SubtipoCliente.NENHUM]
+            opcoes = [item.rotulo for item in OPCOES_ENUM[campo.tipo]]
+        elif campo.tipo == "subtipo":
+            from ...servicos import subtipos
+
+            opcoes = [s.nome for s in subtipos.listar(self.contexto.sessao)]
         elif campo.tipo == "sim_nao":
             opcoes = ["Sim", "Não"]
         elif campo.tipo == "tipo_honorario":

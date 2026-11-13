@@ -19,7 +19,6 @@ from ...dominio.enums import (
     MeioCobranca,
     SituacaoEnvio,
     StatusPagamento,
-    SubtipoCliente,
     TipoPessoa,
 )
 from ...dominio.valores import (
@@ -30,6 +29,7 @@ from ...dominio.valores import (
     so_digitos,
     validar_documento,
 )
+from ..subtipos import SEM_SUBTIPO
 
 ABA_BASE = "Controle Financeiro"
 ABA_IRPF = "Controle de IRPF"
@@ -58,11 +58,11 @@ MAPA_TIPO = {
 }
 
 MAPA_PESSOA = {
-    "pf": (TipoPessoa.PF, SubtipoCliente.NENHUM),
-    "pj": (TipoPessoa.PJ, SubtipoCliente.NENHUM),
-    "domestica": (TipoPessoa.PF, SubtipoCliente.DOMESTICA),
-    "imposto de renda": (TipoPessoa.PF, SubtipoCliente.NENHUM),
-    "irpf": (TipoPessoa.PF, SubtipoCliente.NENHUM),
+    "pf": (TipoPessoa.PF, SEM_SUBTIPO),
+    "pj": (TipoPessoa.PJ, SEM_SUBTIPO),
+    "domestica": (TipoPessoa.PF, "Doméstica"),
+    "imposto de renda": (TipoPessoa.PF, SEM_SUBTIPO),
+    "irpf": (TipoPessoa.PF, SEM_SUBTIPO),
 }
 
 
@@ -94,7 +94,7 @@ class LinhaLida:
     nome: str
     documento: str
     tipo_pessoa: TipoPessoa
-    subtipo: SubtipoCliente
+    subtipo: str
     tipo_honorario: str
     competencia: Competencia
     descricao: str
@@ -124,7 +124,7 @@ class ClienteLido:
     nome: str
     documento: str
     tipo_pessoa: TipoPessoa
-    subtipo: SubtipoCliente
+    subtipo: str
     juros_dia: Decimal | None = None
     jurosdivergentes: list[Decimal] = field(default_factory=list)
     origem: str = ABA_BASE
@@ -263,8 +263,8 @@ def separar_cobrancas(
     return cobrancas, problemas, "\n".join(sobras)
 
 
-def _pessoa(tipo_texto: str) -> tuple[TipoPessoa, SubtipoCliente]:
-    return MAPA_PESSOA.get(normalizar_busca(tipo_texto), (TipoPessoa.PJ, SubtipoCliente.NENHUM))
+def _pessoa(tipo_texto: str) -> tuple[TipoPessoa, str]:
+    return MAPA_PESSOA.get(normalizar_busca(tipo_texto), (TipoPessoa.PJ, SEM_SUBTIPO))
 
 
 def _tipo_honorario(tipo_faturamento: str, competencia_bruta: str, aba: str) -> tuple[str, bool]:
@@ -309,7 +309,7 @@ def _registrar_cliente(
     nome: str,
     documento: str,
     tipo_pessoa: TipoPessoa,
-    subtipo: SubtipoCliente,
+    subtipo: str,
     juros: Decimal | None,
     aba: str,
     linha: int,
@@ -339,7 +339,7 @@ def _registrar_cliente(
             )
         tipo_pessoa = pelo_documento
         if tipo_pessoa is TipoPessoa.PJ:
-            subtipo = SubtipoCliente.NENHUM
+            subtipo = SEM_SUBTIPO
 
     alvo_nome = normalizar_busca(nome)
     chave = (
@@ -370,7 +370,7 @@ def _registrar_cliente(
             existente.codigo = codigo
         if documento:
             existente.tipo_pessoa = tipo_pessoa
-            if subtipo is not SubtipoCliente.NENHUM:
+            if subtipo != SEM_SUBTIPO:
                 existente.subtipo = subtipo
         elif existente.origem == ABA_RECALL and aba != ABA_RECALL:
             existente.tipo_pessoa = tipo_pessoa

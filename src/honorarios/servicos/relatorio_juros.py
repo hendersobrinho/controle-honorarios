@@ -66,7 +66,7 @@ def analise_cliente_pdf(
     cliente = analise.cliente
     gerado_em = gerado_em or hoje()
     r = RelatorioPdf(
-        "Análise de juros", f"{cliente.codigo} – {cliente.nome}", recebedor, gerado_em
+        "Análise de juros", f"{cliente.rotulo}", recebedor, gerado_em
     )
     cor, estilo, p, tabela = r.cor, r.estilo, r.p, r.tabela
     largura_util = r.largura_util

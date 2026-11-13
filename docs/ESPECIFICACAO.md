@@ -1,4 +1,4 @@
-# Especificação — Financeiro Métodos 1.11.0
+# Especificação — Financeiro Métodos 1.12.0
 
 Consolidação do que foi acordado, do que a planilha antiga fazia e do que o
 sistema faz no lugar dela.
@@ -6,7 +6,7 @@ sistema faz no lugar dela.
 | | |
 |---|---|
 | **Programa** | Financeiro Métodos |
-| **Versão** | 1.11.0 (novembro de 2026) |
+| **Versão** | 1.12.0 (novembro de 2026) |
 | **Plataforma** | Windows (instalador Inno Setup); roda também do código em Linux |
 | **Tecnologia** | Python 3.12, PySide6 (Qt 6), SQLAlchemy 2, Alembic |
 | **Banco** | PostgreSQL num computador da rede do escritório, compartilhado por todos; SQLite só no desenvolvimento e nos testes |
@@ -141,6 +141,7 @@ As migrações são do Alembic. Banco novo recebe todas as tabelas e é marcado 
 | 26 | Novo parcelamento cabe em tela de notebook: explicação do juros ao dia na mesma linha do campo, altura mínima das listas e janela no tamanho da tela de onde abre | 1.9.2 | concluída |
 | 27 | Parcelar numa tela só: juros da empresa com Alterar rápido no cadastro, juros total personalizado (apagado até marcar), parcelas e prévia juntos, explicação no ⓘ Como funciona; tela antiga ainda disponível; juros à mão como o inteiro ou por dia (× dias de atraso), com aviso quando o inteiro parece o de um dia (parcelamento, Editar e Cobrar); Parcelar… no Cobrar levando o juros mudado ali; caixas de marcar com contraste (borda escura, cheia com ✓ quando marcada) | 1.10.0 | concluída |
 | 28 | Painel do cliente numa tela só (dados, juros, contatos, honorários recorrentes com a forma de envio), formas de envio no cadastro dos clientes, Tipos de faturamento, menu com Cadastros em cima e a tela Honorários em aberto (antes Vencimentos), sem a divisão de clientes de IR, acordo de pagamento nas Tarefas | 1.11.0 | concluída |
+| 29 | Código opcional na pessoa física (aparece só pelo nome); subtipos de cliente cadastrados pelo usuário, com o botão Subtipos… no cadastro do cliente (criar, renomear, ativar/desativar) | 1.12.0 | concluída |
 
 Cada fase com recurso novo sobe a versão do meio; correção sobe a última. A 1.0.0
 chegou a ser reaproveitada para as fases 12 e 13 enquanto o sistema não estava

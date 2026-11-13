@@ -163,7 +163,7 @@ class PainelMesAMes(QWidget):
         layout.addWidget(self.filtros)
 
         self.modelo = ModeloTabela([
-            Coluna("Cliente", lambda linha: f"{linha.cliente.codigo} – {linha.cliente.nome}"),
+            Coluna("Cliente", lambda linha: f"{linha.cliente.rotulo}"),
             Coluna("Origem", lambda linha: "Recorrente" if linha.honorario.contrato_id
                    else "Avulso", alinhamento=Qt.AlignmentFlag.AlignCenter, largura=92),
             Coluna("Tipo", lambda linha: linha.honorario.tipo.nome),

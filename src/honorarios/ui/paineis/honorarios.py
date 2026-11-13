@@ -151,7 +151,7 @@ def cartao_de_honorario(
     prazo = tema.cor("atrasado" if atualizacao.dias_atraso > 0 else "atencao",
                      cores.tema_atual()) if cores.cobrado_hoje(linha) else cor
     return DadosCartao(
-        titulo=f"{linha.cliente.codigo} – {linha.cliente.nome}",
+        titulo=f"{linha.cliente.rotulo}",
         subtitulo=_descricao(linha.honorario),
         detalhes=detalhes,
         valor=formatar_moeda(atualizacao.total),
@@ -200,7 +200,7 @@ def cartao_de_pago(
     else:
         situacao = "Pago em dia"
     return DadosCartao(
-        titulo=f"{linha.cliente.codigo} – {linha.cliente.nome}",
+        titulo=f"{linha.cliente.rotulo}",
         subtitulo=_descricao(honorario),
         detalhes=detalhes,
         valor=formatar_moeda(linha.atualizacao.total),

@@ -128,7 +128,7 @@ class PainelAvulsos(QWidget):
 
         self.modelo = ModeloTabela(
             [
-                Coluna("Cliente", lambda linha: f"{linha.cliente.codigo} – {linha.cliente.nome}"),
+                Coluna("Cliente", lambda linha: f"{linha.cliente.rotulo}"),
                 Coluna("Tipo", lambda linha: linha.honorario.tipo.nome),
                 Coluna("Descrição", lambda linha: linha.honorario.competencia_rotulo
                        or linha.honorario.descricao or "—"),

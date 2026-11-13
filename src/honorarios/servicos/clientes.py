@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from ..dominio.enums import SituacaoCliente, StatusPagamento, SubtipoCliente, TipoPessoa
+from ..dominio.enums import SituacaoCliente, StatusPagamento, TipoPessoa
 from ..dominio.valores import (
     ZERO,
     agora_utc,
@@ -44,7 +44,7 @@ class DadosCliente:
     nome: str
     documento: str = ""
     tipo_pessoa: TipoPessoa = TipoPessoa.PJ
-    subtipo: SubtipoCliente = SubtipoCliente.NENHUM
+    subtipo: str = ""            # nome do subtipo (Doméstica…); vazio = nenhum
     situacao: SituacaoCliente = SituacaoCliente.ATIVO
     observacoes: str = ""
     juros_dia: Decimal | None = None
@@ -53,6 +53,8 @@ class DadosCliente:
     # quando virou cliente do escritório (opcional): base do trimestre do honorário
     # trimestral nas tarefas
     cliente_desde: date | None = None
+    # importação de planilha: subtipo que ainda não existe é cadastrado
+    criar_subtipo: bool = False
 
 
 @dataclass
@@ -71,7 +73,8 @@ class LinhaCliente:
 
 
 def _validar(sessao: Session, dados: DadosCliente, cliente_id: int | None = None) -> str:
-    if not (dados.codigo or "").strip():
+    # pessoa física pode ficar sem código: é achada pelo nome
+    if not (dados.codigo or "").strip() and dados.tipo_pessoa is not TipoPessoa.PF:
         raise ErroDeValidacao("Informe o código do cliente.", "codigo")
     if not (dados.nome or "").strip():
         raise ErroDeValidacao("Informe o nome ou a razão social.", "nome")
@@ -90,13 +93,12 @@ def _validar(sessao: Session, dados: DadosCliente, cliente_id: int | None = None
                 "documento",
             )
 
-    consulta = select(Cliente).where(
-        Cliente.codigo == dados.codigo.strip(), Cliente.excluido_em.is_(None)
-    )
+    codigo = (dados.codigo or "").strip()
+    consulta = select(Cliente).where(Cliente.codigo == codigo, Cliente.excluido_em.is_(None))
     if cliente_id:
         consulta = consulta.where(Cliente.id != cliente_id)
-    if sessao.scalar(consulta):
-        raise RegistroDuplicado(f"Já existe cliente com o código {dados.codigo}.")
+    if codigo and sessao.scalar(consulta):
+        raise RegistroDuplicado(f"Já existe cliente com o código {codigo}.")
 
     if documento:
         consulta = select(Cliente).where(
@@ -108,7 +110,7 @@ def _validar(sessao: Session, dados: DadosCliente, cliente_id: int | None = None
         if existente:
             raise RegistroDuplicado(
                 f"O CPF/CNPJ {formatar_documento(documento)} já está no cliente "
-                f"{existente.codigo} – {existente.nome}."
+                f"{existente.rotulo}."
             )
 
     _validar_vinculo(sessao, dados, cliente_id)
@@ -186,18 +188,27 @@ def validar(sessao: Session, dados: DadosCliente, cliente_id: int | None = None)
         raise ErroDeValidacao("Informe o juros por dia (R$) do cliente.", "juros_dia")
 
 
+def _subtipo(sessao: Session, dados: DadosCliente) -> str:
+    """Subtipo é de pessoa física; o nome sai como está cadastrado."""
+    from . import subtipos
+
+    if dados.tipo_pessoa is not TipoPessoa.PF:
+        return subtipos.SEM_SUBTIPO
+    return subtipos.resolver(sessao, dados.subtipo, criar_se_faltar=dados.criar_subtipo)
+
+
 def criar(sessao: Session, dados: DadosCliente) -> Cliente:
     documento = _validar(sessao, dados)
     if dados.juros_dia is None:
         raise ErroDeValidacao("Informe o juros por dia (R$) do cliente.", "juros_dia")
 
     cliente = Cliente(
-        codigo=dados.codigo.strip(),
+        codigo=(dados.codigo or "").strip(),
         nome=dados.nome.strip(),
         nome_busca=normalizar_busca(dados.nome),
         documento=documento,
         tipo_pessoa=dados.tipo_pessoa,
-        subtipo=dados.subtipo,
+        subtipo=_subtipo(sessao, dados),
         situacao=dados.situacao,
         observacoes=dados.observacoes or "",
         empresa_id=dados.empresa_id,
@@ -212,7 +223,7 @@ def criar(sessao: Session, dados: DadosCliente) -> Cliente:
             entidade="cliente",
             entidade_id=cliente.id,
             acao="CRIAR",
-            resumo=f"{cliente.codigo} – {cliente.nome}",
+            resumo=f"{cliente.rotulo}",
         )
     )
     sessao.flush()
@@ -221,13 +232,13 @@ def criar(sessao: Session, dados: DadosCliente) -> Cliente:
 
 def atualizar(sessao: Session, cliente: Cliente, dados: DadosCliente) -> Cliente:
     documento = _validar(sessao, dados, cliente.id)
-    antes = f"{cliente.codigo} – {cliente.nome}"
-    cliente.codigo = dados.codigo.strip()
+    antes = f"{cliente.rotulo}"
+    cliente.codigo = (dados.codigo or "").strip()
     cliente.nome = dados.nome.strip()
     cliente.nome_busca = normalizar_busca(dados.nome)
     cliente.documento = documento
     cliente.tipo_pessoa = dados.tipo_pessoa
-    cliente.subtipo = dados.subtipo
+    cliente.subtipo = _subtipo(sessao, dados)
     cliente.situacao = dados.situacao
     cliente.observacoes = dados.observacoes or ""
     cliente.empresa_id = dados.empresa_id
@@ -241,7 +252,7 @@ def atualizar(sessao: Session, cliente: Cliente, dados: DadosCliente) -> Cliente
             entidade_id=cliente.id,
             acao="EDITAR",
             antes=antes,
-            depois=f"{cliente.codigo} – {cliente.nome}",
+            depois=f"{cliente.rotulo}",
         )
     )
     sessao.flush()
@@ -448,6 +459,8 @@ def obter(sessao: Session, cliente_id: int) -> Cliente | None:
 
 
 def por_codigo(sessao: Session, codigo: str) -> Cliente | None:
+    if not str(codigo or "").strip():
+        return None   # sem código (pessoa física): não identifica ninguém
     return sessao.scalar(
         select(Cliente).where(
             Cliente.codigo == str(codigo).strip(), Cliente.excluido_em.is_(None)

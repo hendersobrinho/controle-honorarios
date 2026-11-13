@@ -273,7 +273,7 @@ class DialogoCobrar(QDialog):
         topo.setSpacing(16)
         cabecalho = widgets.Cabecalho(
             f"Cobrar {self.cliente.nome}",
-            f"Código {self.cliente.codigo} · {self.cliente.tipo_pessoa.rotulo}",
+            f"{self.cliente.texto_codigo}{self.cliente.tipo_pessoa.rotulo}",
         )
         topo.addWidget(cabecalho, 1)
 
@@ -1011,7 +1011,8 @@ class DialogoCobrar(QDialog):
     def _salvar_imagem(self) -> None:
         if not self._imagem_pronta():
             return
-        nome = f"cobranca_{self.cliente.codigo}_{self._data_dos_valores():%Y-%m-%d}.png"
+        quem = self.cliente.codigo or self.cliente.id
+        nome = f"cobranca_{quem}_{self._data_dos_valores():%Y-%m-%d}.png"
         destino, _ = QFileDialog.getSaveFileName(
             self, "Salvar imagem", str(pasta_exportacoes() / nome), "PNG (*.png)")
         if not destino:

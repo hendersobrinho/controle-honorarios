@@ -199,6 +199,7 @@ def abrir_agradecimento(parent, contexto, honorarios) -> None:
         return
     cliente = honorarios[0].cliente
     DialogoImagemCobranca(
-        contexto, dados, f"agradecimento_{cliente.codigo}_{dados.campos['data'].replace('/', '-')}",
+        contexto, dados,
+        f"agradecimento_{cliente.codigo or cliente.id}_{dados.campos['data'].replace('/', '-')}",
         f"Agradecimento – {cliente.nome}", parent, agradecimento=True,
     ).exec()

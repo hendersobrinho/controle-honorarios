@@ -578,7 +578,7 @@ def agrupar_por_empresa(
     for itens in ordem:
         itens.sort(key=lambda linha: linha.honorario.vencimento)
         cliente = itens[0].cliente
-        saida.append((f"{cliente.codigo} – {cliente.nome}", itens, len(itens) > 1))
+        saida.append((f"{cliente.rotulo}", itens, len(itens) > 1))
     return saida
 
 
@@ -598,7 +598,7 @@ def agrupar_por_cliente(
     for itens in ordem:
         itens.sort(key=lambda linha: linha.honorario.vencimento)
         cliente = itens[0].cliente
-        saida.append((f"{cliente.codigo} – {cliente.nome}", itens))
+        saida.append((f"{cliente.rotulo}", itens))
     return saida
 
 

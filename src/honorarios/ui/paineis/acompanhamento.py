@@ -202,7 +202,7 @@ class PainelAcompanhamento(QWidget):
                  "A cobrança foi registrada por engano", separar=True),
         ]
         return DadosCartao(
-            titulo=f"{linha.cliente.codigo} – {linha.cliente.nome}",
+            titulo=f"{linha.cliente.rotulo}",
             subtitulo=(
                 f"{linha.resultado.rotulo}"
                 + (f" · {linha.observacao}" if linha.observacao else "")

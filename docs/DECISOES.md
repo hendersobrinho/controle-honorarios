@@ -700,6 +700,16 @@ são uma tarefa; o acordo mais novo de cada honorário substitui o anterior; pag
 tudo, a tarefa some sem baixa, porque não há o que acompanhar. Passado o prazo ela
 continua, porque é aí que mais precisa de atenção.
 
+### Subtipos de cliente cadastrados pelo usuário
+O subtipo era uma lista fixa no código (só Doméstica). Virou a tabela
+`subtipo_cliente`, com Doméstica já cadastrada, e o cliente guarda o **nome** do
+subtipo (vazio = nenhum) em vez de uma chave: as importações de planilha seguem
+trabalhando com texto e não precisam do banco para ler. Por isso renomear um
+subtipo atualiza os clientes, e o nome é único sem diferença de acento ou
+maiúscula. No cadastro, só se escolhe subtipo existente; a importação cadastra o
+que a planilha trouxer de novo. O gerenciamento abre do próprio campo, no cadastro
+do cliente, para ficar tudo num lugar só.
+
 ### Campos de data e valor de digitação livre
 O `QDateEdit` divide a data em seções (dia, mês, ano): não deixa apagar nem digitar
 a data inteira de uma vez, e cada tecla cai numa seção. O `QDoubleSpinBox` mistura

@@ -207,7 +207,7 @@ def _achar(cadastro: _Cadastro, item: ItemContato) -> tuple[Cliente | None, str,
         if len(achados) == 1:
             return achados[0], "telefone", ""
         if len(achados) > 1:
-            nomes = ", ".join(f"{c.codigo} {c.nome}" for c in achados[:5])
+            nomes = ", ".join(c.rotulo for c in achados[:5])
             return None, "", f"o telefone {item.telefone_empresa} está em mais de um " \
                              f"cliente ({nomes})"
     if item.nome_empresa.strip():

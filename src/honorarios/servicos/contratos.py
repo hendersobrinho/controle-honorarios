@@ -248,7 +248,7 @@ def previa_geracao(
         if empresa is not None and empresa.excluido_em is None:
             # o que a empresa paga já cobre esta pessoa: não se gera honorário dela
             # (lançar um à mão continua possível, se um dia for preciso)
-            item.impedimento = f"Paga pela empresa {empresa.codigo} – {empresa.nome}"
+            item.impedimento = f"Paga pela empresa {empresa.rotulo}"
         elif contrato.suspenso:
             item.impedimento = "Contrato suspenso temporariamente"
         elif contrato.vigencia_inicio > _ultimo_dia(competencia):

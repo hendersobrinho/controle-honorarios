@@ -116,7 +116,7 @@ class PainelTarefas(QWidget):
     def _base(self, tarefa: servico.TarefaTrimestral) -> dict:
         cliente = tarefa.cliente
         return {
-            "titulo": f"{cliente.codigo} – {cliente.nome}",
+            "titulo": f"{cliente.rotulo}",
             "subtitulo": f"Enviar o honorário trimestral · {tarefa.contrato.tipo.nome}",
             "detalhes": [
                 ("Trimestre", tarefa.periodo),
@@ -168,7 +168,7 @@ class PainelTarefas(QWidget):
 
     def _cartao_sem_data(self, cliente) -> DadosCartao:
         return DadosCartao(
-            titulo=f"{cliente.codigo} – {cliente.nome}",
+            titulo=f"{cliente.rotulo}",
             subtitulo="Tem honorário trimestral, mas falta a data de entrada",
             situacao="Falta a data",
             cor=self._cor("texto_fraco"),
@@ -181,7 +181,7 @@ class PainelTarefas(QWidget):
     def _base_parcela(self, tarefa: servico.TarefaParcela) -> dict:
         cliente, honorario = tarefa.cliente, tarefa.honorario
         return {
-            "titulo": f"{cliente.codigo} – {cliente.nome}",
+            "titulo": f"{cliente.rotulo}",
             "subtitulo": f"Enviar a parcela {tarefa.periodo} do parcelamento",
             "detalhes": [
                 ("Valor", formatar_moeda(honorario.valor_original)),
@@ -240,7 +240,7 @@ class PainelTarefas(QWidget):
         honorarios = ", ".join(f"{h.tipo.nome} {h.competencia_rotulo}".strip()
                                for h in tarefa.honorarios)
         return {
-            "titulo": f"{cliente.codigo} – {cliente.nome}",
+            "titulo": f"{cliente.rotulo}",
             "subtitulo": f"Pagamento do acordo · {formatar_moeda(tarefa.total)} até "
                          f"{formatar_data(tarefa.vencimento)}",
             "detalhes": [

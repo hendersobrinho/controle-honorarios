@@ -70,7 +70,7 @@ class PainelContratos(QWidget):
 
         self.modelo = ModeloTabela(
             [
-                Coluna("Cliente", lambda c: f"{c.cliente.codigo} – {c.cliente.nome}"),
+                Coluna("Cliente", lambda c: f"{c.cliente.rotulo}"),
                 Coluna("Tipo", lambda c: c.tipo.nome),
                 Coluna("Periodicidade", lambda c: c.periodicidade.rotulo,
                        alinhamento=Qt.AlignmentFlag.AlignCenter),

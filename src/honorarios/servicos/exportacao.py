@@ -124,11 +124,11 @@ def extrato_pdf(
 
     referencia = data_referencia or hoje()
     arquivo = Path(destino) if destino else _nome_arquivo(
-        f"extrato-{cliente.codigo}", "pdf"
+        f"extrato-{cliente.codigo or cliente.id}", "pdf"
     )
     r = RelatorioPdf(
         "Extrato de débitos em aberto",
-        f"{cliente.codigo} – {cliente.nome}",
+        f"{cliente.rotulo}",
         recebedor,
         referencia,
         rodape="Extrato de débitos",
@@ -148,7 +148,8 @@ def extrato_pdf(
     dados.append(["", "", "", "", "", "Total", formatar_moeda(total)])
     corpo = [
         *r.inicio(),
-        r.p(f"<b>Cliente:</b> {texto(cliente.nome)} (código {cliente.codigo})"),
+        r.p(f"<b>Cliente:</b> {texto(cliente.nome)}"
+            + (f" (código {cliente.codigo})" if cliente.codigo else "")),
         r.p(f"<b>Valores atualizados para:</b> {formatar_data(referencia)}"),
         Spacer(1, 10),
         r.tabela(dados, r.larguras((0.28, 0.12, 0.12, 0.08, 0.14, 0.12, 0.14)), total=True),

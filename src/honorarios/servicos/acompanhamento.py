@@ -232,7 +232,7 @@ def por_empresa(
 ) -> list[tuple[str, list[LinhaAcompanhamento]]]:
     grupos: dict[str, list[LinhaAcompanhamento]] = {}
     for linha in linhas:
-        grupos.setdefault(f"{linha.cliente.codigo} – {linha.cliente.nome}", []).append(linha)
+        grupos.setdefault(f"{linha.cliente.rotulo}", []).append(linha)
     saida = []
     for rotulo in sorted(grupos):
         itens = grupos[rotulo]

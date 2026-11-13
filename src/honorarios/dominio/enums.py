@@ -24,11 +24,6 @@ class TipoPessoa(_Rotulado):
     PJ = "PJ"
 
 
-class SubtipoCliente(_Rotulado):
-    NENHUM = "NENHUM"
-    DOMESTICA = "DOMESTICA"
-
-
 class SituacaoCliente(_Rotulado):
     ATIVO = "ATIVO"
     INATIVO = "INATIVO"
@@ -141,8 +136,6 @@ class FormatoLinkWhatsapp(_Rotulado):
 ROTULOS: dict[_Rotulado, str] = {
     TipoPessoa.PF: "Pessoa física",
     TipoPessoa.PJ: "Pessoa jurídica",
-    SubtipoCliente.NENHUM: "—",
-    SubtipoCliente.DOMESTICA: "Doméstica",
     SituacaoCliente.ATIVO: "Ativo",
     SituacaoCliente.INATIVO: "Inativo",
     SituacaoCliente.SUSPENSO: "Suspenso",

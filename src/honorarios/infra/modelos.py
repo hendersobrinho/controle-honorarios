@@ -40,7 +40,6 @@ from ..dominio.enums import (
     SituacaoCliente,
     SituacaoEnvio,
     StatusPagamento,
-    SubtipoCliente,
     TipoPessoa,
 )
 from ..dominio.valores import ZERO, agora_utc
@@ -159,13 +158,34 @@ class FormaEnvio(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
+class SubtipoCliente(Base):
+    """Subtipo do cliente pessoa física (Doméstica…): a lista é do usuário.
+
+    O cliente guarda o nome (``Cliente.subtipo``); renomear aqui renomeia nos
+    clientes. Desativado, some da escolha, mas quem já tem continua com ele.
+    """
+
+    __tablename__ = "subtipo_cliente"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
 # -------------------------------------------------------------------- cliente
 
 
 class Cliente(Base):
     __tablename__ = "cliente"
     __table_args__ = (
-        UniqueConstraint("codigo", name="uq_cliente_codigo"),
+        # pessoa física pode ficar sem código: único só quando preenchido
+        Index(
+            "ix_cliente_codigo",
+            "codigo",
+            unique=True,
+            sqlite_where=text("codigo <> ''"),
+            postgresql_where=text("codigo <> ''"),
+        ),
         Index(
             "ix_cliente_documento",
             "documento",
@@ -182,10 +202,8 @@ class Cliente(Base):
     nome_busca: Mapped[str] = mapped_column(String(160), default="", nullable=False)
     documento: Mapped[str] = mapped_column(String(14), default="", nullable=False)
     tipo_pessoa: Mapped[TipoPessoa] = mapped_column(EnumTexto(TipoPessoa, 2), nullable=False)
-    subtipo: Mapped[SubtipoCliente] = mapped_column(
-        EnumTexto(SubtipoCliente, 20),
-        default=SubtipoCliente.NENHUM, nullable=False
-    )
+    # nome do subtipo (tabela subtipo_cliente); vazio = sem subtipo
+    subtipo: Mapped[str] = mapped_column(String(40), default="", nullable=False)
     situacao: Mapped[SituacaoCliente] = mapped_column(
         EnumTexto(SituacaoCliente, 20),
         default=SituacaoCliente.ATIVO, nullable=False
@@ -240,7 +258,13 @@ class Cliente(Base):
 
     @property
     def rotulo(self) -> str:
-        return f"{self.codigo} – {self.nome}"
+        """"123 – NOME", ou só o nome de quem não tem código (pessoa física)."""
+        return f"{self.codigo} – {self.nome}" if self.codigo else self.nome
+
+    @property
+    def texto_codigo(self) -> str:
+        """"Código 123 · " para os cabeçalhos; vazio para quem não tem código."""
+        return f"Código {self.codigo} · " if self.codigo else ""
 
     @property
     def contato_principal(self) -> ClienteContato | None:

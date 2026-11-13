@@ -3410,3 +3410,31 @@ def test_clientes_abre_o_painel_no_duplo_clique(qtbot, contexto, cliente_com_deb
     painel.tabela.selectRow(0)
     painel.tabela.doubleClicked.emit(painel.modelo.index(0, 0))
     assert abertos == [cliente_com_debito]
+
+
+def test_cadastro_do_cliente_cria_subtipo_na_hora(qtbot, contexto, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    from honorarios.dominio.enums import TipoPessoa
+    from honorarios.ui.dialogos import subtipos as dialogo_subtipos
+    from honorarios.ui.dialogos.cliente import DialogoCliente
+
+    dialogo = DialogoCliente(contexto)
+    qtbot.addWidget(dialogo)
+    dialogo.tipo.definir(TipoPessoa.PF)
+    campo = dialogo.subtipo
+    assert [campo.combo.itemData(i) for i in range(campo.combo.count())] == ["", "Doméstica"]
+
+    def criar_caseiro(janela):
+        monkeypatch.setattr(QInputDialog, "getText",
+                            staticmethod(lambda *a, **k: ("Caseiro", True)))
+        janela._novo()
+        return 1
+
+    monkeypatch.setattr(dialogo_subtipos.DialogoSubtipos, "exec", criar_caseiro)
+    campo.botao.click()
+    assert campo.valor() == "Caseiro"                 # o novo já vem escolhido
+
+    dialogo.tipo.definir(TipoPessoa.PJ)
+    dialogo._ajustar_subtipo()
+    assert campo.valor() == "" and not campo.combo.isEnabled()

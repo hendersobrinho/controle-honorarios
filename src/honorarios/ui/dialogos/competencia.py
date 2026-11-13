@@ -77,7 +77,7 @@ class DialogoGerarCompetencia(QDialog):
         self.modelo = ModeloTabelaMarcavel(
             [
                 Coluna("", lambda item: "", largura=28),
-                Coluna("Cliente", lambda item: f"{item.cliente.codigo} – {item.cliente.nome}"),
+                Coluna("Cliente", lambda item: f"{item.cliente.rotulo}"),
                 Coluna("Tipo", lambda item: item.contrato.tipo.nome),
                 Coluna(
                     "Periodicidade",

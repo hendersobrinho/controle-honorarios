@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...dominio.enums import SituacaoCliente, SubtipoCliente, TipoPessoa
+from ...dominio.enums import SituacaoCliente, TipoPessoa
 from ...dominio.valores import formatar_moeda, formatar_telefone
 from ...servicos import clientes
 from ..comum import widgets
@@ -77,6 +77,8 @@ class DialogoCliente(QDialog):
         formulario = QFormLayout(grupo)
         self.codigo = QLineEdit()
         self.codigo.setPlaceholderText("Código no sistema contábil")
+        self.codigo.setToolTip("Obrigatório na pessoa jurídica. Na pessoa física pode ficar "
+                               "em branco: ela é achada pelo nome.")
         formulario.addRow("Código:", self.codigo)
         self.nome = QLineEdit()
         formulario.addRow("Nome / razão social:", self.nome)
@@ -85,7 +87,11 @@ class DialogoCliente(QDialog):
         self.tipo = ComboEnum(TipoPessoa, TipoPessoa.PJ)
         self.tipo.currentIndexChanged.connect(self._ajustar_subtipo)
         formulario.addRow("Tipo:", self.tipo)
-        self.subtipo = ComboEnum(SubtipoCliente, SubtipoCliente.NENHUM)
+        from .subtipos import CampoSubtipo
+
+        self.subtipo = CampoSubtipo(self.contexto)
+        self.subtipo.setToolTip("Só para pessoa física (Doméstica, …). Subtipos… cria "
+                                "e renomeia os da lista.")
         formulario.addRow("Subtipo:", self.subtipo)
         self.situacao = ComboEnum(SituacaoCliente, SituacaoCliente.ATIVO)
         formulario.addRow("Situação:", self.situacao)
@@ -328,9 +334,11 @@ class DialogoCliente(QDialog):
     # ------------------------------------------------------------------ apoio
     def _ajustar_subtipo(self) -> None:
         so_pf = self.tipo.valor() is TipoPessoa.PF
+        self.codigo.setPlaceholderText(
+            "Opcional na pessoa física" if so_pf else "Código no sistema contábil")
         self.subtipo.setEnabled(so_pf)
         if not so_pf:
-            self.subtipo.definir(SubtipoCliente.NENHUM)
+            self.subtipo.definir("")
         # o vínculo é de pessoa física para a empresa que paga por ela
         self.empresa.setEnabled(so_pf)
         if not so_pf:

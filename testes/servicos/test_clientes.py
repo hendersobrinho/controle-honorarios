@@ -158,3 +158,24 @@ def test_um_unico_contato_principal(sessao):
     clientes.atualizar(sessao, cliente, dados)
     sessao.commit()
     assert sum(1 for c in cliente.contatos if c.principal) == 1
+
+
+def test_pessoa_fisica_pode_ficar_sem_codigo(sessao):
+    primeira = fabricas.cliente(sessao, codigo="", nome="FULANA DE TAL", documento="",
+                                tipo=TipoPessoa.PF)
+    # duas pessoas físicas sem código não se chocam
+    segunda = fabricas.cliente(sessao, codigo="  ", nome="BELTRANO DA SILVA", documento="",
+                               tipo=TipoPessoa.PF)
+    sessao.commit()
+    assert primeira.codigo == segunda.codigo == ""
+    assert primeira.rotulo == "FULANA DE TAL"           # sem o "– " na frente
+    assert primeira.texto_codigo == ""
+    assert clientes.por_codigo(sessao, "") is None
+    assert clientes.buscar(sessao, "fulana")[0] is primeira
+
+
+def test_pessoa_juridica_continua_com_codigo_obrigatorio(sessao):
+    with pytest.raises(ErroDeValidacao, match="código"):
+        fabricas.cliente(sessao, codigo="", nome="EMPRESA SEM CODIGO LTDA")
+    cliente = fabricas.cliente(sessao, codigo="901")
+    assert cliente.rotulo == "901 – EMPRESA EXEMPLO LTDA"

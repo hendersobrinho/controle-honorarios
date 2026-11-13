@@ -37,7 +37,7 @@ def exportar_extrato(parent, contexto: Contexto, cliente) -> None:
     if not dados["linhas"]:
         widgets.aviso(parent, f"{cliente.nome} não tem débito em aberto.")
         return
-    sugestao = str(pasta_exportacoes() / f"extrato-{cliente.codigo}.pdf")
+    sugestao = str(pasta_exportacoes() / f"extrato-{cliente.codigo or cliente.id}.pdf")
     caminho, _ = QFileDialog.getSaveFileName(
         parent, "Extrato de débitos em PDF", sugestao, "PDF (*.pdf)"
     )

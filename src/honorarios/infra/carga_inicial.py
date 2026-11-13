@@ -22,6 +22,7 @@ from .modelos import (
     FormaEnvio,
     GrupoHonorario,
     ModeloMensagem,
+    SubtipoCliente,
     TipoHonorario,
 )
 
@@ -141,6 +142,10 @@ CONFIGURACOES = (
 )
 
 
+# subtipos de pessoa física que já vêm cadastrados (o usuário cria outros)
+SUBTIPOS = ("Doméstica",)
+
+
 def aplicar(sessao: Session) -> None:
     for nome, ordem in GRUPOS:
         if not sessao.scalar(select(GrupoHonorario).where(GrupoHonorario.nome == nome)):
@@ -170,6 +175,10 @@ def aplicar(sessao: Session) -> None:
     for ordem, nome in enumerate(FORMAS_ENVIO, start=1):
         if not sessao.scalar(select(FormaEnvio).where(FormaEnvio.nome == nome)):
             sessao.add(FormaEnvio(nome=nome, ordem=ordem * 10))
+
+    for nome in SUBTIPOS:
+        if not sessao.scalar(select(SubtipoCliente).where(SubtipoCliente.nome == nome)):
+            sessao.add(SubtipoCliente(nome=nome))
 
     for chave, corpo in msg.MODELOS_PADRAO.items():
         if not sessao.scalar(select(ModeloMensagem).where(ModeloMensagem.chave == chave)):

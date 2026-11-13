@@ -169,7 +169,7 @@ def endereco_legivel(nome: str, endereco: str) -> str:
 
 
 def nome_no_email(cliente: Cliente) -> str:
-    return f"{cliente.codigo} – {cliente.nome}"
+    return f"{cliente.rotulo}"
 
 
 def assunto_de_resposta(assunto: str) -> str:

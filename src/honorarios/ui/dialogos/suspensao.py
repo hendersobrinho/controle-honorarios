@@ -34,7 +34,7 @@ class DialogoSuspensao(QDialog):
         layout.addWidget(
             widgets.Cabecalho(
                 self.cliente.nome,
-                f"Código {self.cliente.codigo} · {self.cliente.tipo_pessoa.rotulo}",
+                f"{self.cliente.texto_codigo}{self.cliente.tipo_pessoa.rotulo}",
             )
         )
 

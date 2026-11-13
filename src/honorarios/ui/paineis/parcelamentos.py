@@ -168,7 +168,7 @@ class PainelParcelamentos(QWidget):
             opcoes.append(Acao("Cancelar parcelamento…", self._cancelar,
                                "Os honorários voltam para Em aberto", separar=True))
         return DadosCartao(
-            titulo=f"{cliente.codigo} – {cliente.nome}",
+            titulo=f"{cliente.rotulo}",
             subtitulo=(f"Parcelamento de {formatar_data(acordo.data)} · {total}x · "
                        f"{len(parcelamento.originais)} honorário(s)"),
             detalhes=detalhes,
